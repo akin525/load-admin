@@ -1052,6 +1052,13 @@ export default function DashboardPage() {
               <ShieldCheck className="h-4 w-4" aria-hidden="true" />
               Admin Center
             </Link>
+            <Link
+              href="/reports"
+              className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              <BarChart3 className="h-4 w-4" aria-hidden="true" />
+              Reports
+            </Link>
             <button
               type="button"
               onClick={handleRefresh}

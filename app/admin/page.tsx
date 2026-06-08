@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   AlertCircle,
+  BarChart3,
   BadgeCheck,
   BriefcaseBusiness,
   CheckCircle2,
@@ -30,7 +31,7 @@ import {
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
 
-type AdminSection = "admins" | "roles" | "users" | "kyc" | "loans" | "tiers" | "support" | "content";
+type AdminSection = "admins" | "roles" | "users" | "kyc" | "loans" | "tiers" | "support" | "content" | "reports";
 type DataKey =
   | "admins"
   | "roles"
@@ -50,8 +51,22 @@ type DataKey =
   | "loanTypes"
   | "appLoans";
 
+type ReportKey = "financial" | "loanPerformance" | "profitLoss" | "revenue";
+
 type AdminCenterData = Record<DataKey, unknown> & {
   errors: Partial<Record<DataKey, string>>;
+};
+
+type ReportFilters = {
+  fromDate: string;
+  toDate: string;
+};
+
+type ReportState = {
+  data: Partial<Record<ReportKey, unknown>>;
+  errors: Partial<Record<ReportKey, string>>;
+  loaded: boolean;
+  loading: boolean;
 };
 
 type DetailState = {
@@ -117,8 +132,33 @@ const sections: Array<{ key: AdminSection; label: string; icon: typeof Users }> 
   { key: "content", label: "Content", icon: BriefcaseBusiness },
 ];
 
+const reportRequests: Array<[ReportKey, (params: Record<string, string>) => Promise<unknown>]> = [
+  ["financial", adminService.getFinancialReport],
+  ["loanPerformance", adminService.getLoanPerformanceReport],
+  ["profitLoss", adminService.getProfitLossReport],
+  ["revenue", adminService.getRevenueReport],
+];
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isNumericLike = (value: unknown) =>
+  typeof value === "number" || (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value)));
+
+const toDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getDefaultReportFilters = (): ReportFilters => {
+  const now = new Date();
+  return {
+    fromDate: toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1)),
+    toDate: toDateInputValue(now),
+  };
+};
 
 const unwrapPayload = (payload: unknown): unknown => {
   if (isRecord(payload) && "data" in payload) {
@@ -210,6 +250,112 @@ const formatDate = (value: unknown): string => {
   }).format(date);
 };
 
+const formatFieldValue = (key: string, value: unknown): string => {
+  if (value === null || value === undefined || value === "") {
+    return "Not available";
+  }
+
+  if (Array.isArray(value)) {
+    return `${value.length} item${value.length === 1 ? "" : "s"}`;
+  }
+
+  if (isRecord(value)) {
+    return `${Object.keys(value).length} field${Object.keys(value).length === 1 ? "" : "s"}`;
+  }
+
+  if (/(date|at)$/i.test(key) || /date/i.test(key)) {
+    return formatDate(value);
+  }
+
+  if (isNumericLike(value)) {
+    return /(amount|revenue|profit|loss|income|expense|interest|balance|payable|paid|outstanding|disbursed|collection|fee|earning)/i.test(key)
+      ? formatCurrency(value)
+      : formatValue(value);
+  }
+
+  return String(value);
+};
+
+const extractReportMetrics = (payload: unknown) => {
+  const data = unwrapPayload(payload);
+  if (!isRecord(data)) {
+    return [] as Array<{ label: string; value: string }>;
+  }
+
+  const metrics: Array<{ label: string; value: string }> = [];
+
+  Object.entries(data).forEach(([key, value]) => {
+    if (metrics.length >= 6) {
+      return;
+    }
+
+    if (isNumericLike(value)) {
+      metrics.push({ label: formatLabel(key), value: formatFieldValue(key, value) });
+      return;
+    }
+
+    if (isRecord(value)) {
+      Object.entries(value).forEach(([childKey, childValue]) => {
+        if (metrics.length >= 6 || !isNumericLike(childValue)) {
+          return;
+        }
+
+        metrics.push({
+          label: `${formatLabel(key)} ${formatLabel(childKey)}`,
+          value: formatFieldValue(childKey, childValue),
+        });
+      });
+    }
+  });
+
+  return metrics;
+};
+
+const extractReportDetails = (payload: unknown) => {
+  const data = unwrapPayload(payload);
+  if (!isRecord(data)) {
+    return [] as Array<{ label: string; value: string }>;
+  }
+
+  const details: Array<{ label: string; value: string }> = [];
+
+  Object.entries(data).forEach(([key, value]) => {
+    if (details.length >= 8) {
+      return;
+    }
+
+    if (Array.isArray(value) || isRecord(value) || isNumericLike(value)) {
+      return;
+    }
+
+    details.push({ label: formatLabel(key), value: formatFieldValue(key, value) });
+  });
+
+  return details;
+};
+
+const getReportColumns = (rows: Record<string, unknown>[]) => {
+  const firstRow = rows[0];
+  if (!firstRow) {
+    return [] as string[];
+  }
+
+  return Object.keys(firstRow).filter((key) => !isRecord(firstRow[key]) && !Array.isArray(firstRow[key])).slice(0, 6);
+};
+
+const getReportLead = (payload: unknown) => {
+  const metrics = extractReportMetrics(payload);
+  if (metrics.length) {
+    return metrics[0];
+  }
+
+  const rows = extractRows(payload);
+  return {
+    label: "Records",
+    value: formatValue(rows.length),
+  };
+};
+
 const getErrorMessage = (error: unknown) => {
   if (typeof error === "object" && error !== null && "message" in error) {
     const message = (error as { message?: unknown }).message;
@@ -293,6 +439,41 @@ const fetchAdminCenter = async (): Promise<AdminCenterData> => {
   };
 };
 
+const fetchReports = async (filters: ReportFilters): Promise<ReportState> => {
+  const params: Record<string, string> = {};
+
+  if (filters.fromDate) {
+    params.fromDate = filters.fromDate;
+  }
+
+  if (filters.toDate) {
+    params.toDate = filters.toDate;
+  }
+
+  const results = await Promise.allSettled(reportRequests.map(([, request]) => request(params)));
+  const data: Partial<Record<ReportKey, unknown>> = {};
+  const errors: Partial<Record<ReportKey, string>> = {};
+
+  results.forEach((result, index) => {
+    const key = reportRequests[index][0];
+
+    if (result.status === "fulfilled") {
+      data[key] = result.value;
+      return;
+    }
+
+    data[key] = null;
+    errors[key] = getErrorMessage(result.reason);
+  });
+
+  return {
+    data,
+    errors,
+    loaded: true,
+    loading: false,
+  };
+};
+
 function StatusBadge({ status }: { status: unknown }) {
   const normalized = String(status ?? "pending").toLowerCase();
   const isSuccess = ["active", "approved", "success", "successful", "completed"].includes(normalized);
@@ -335,6 +516,98 @@ function EmptyPanel({ label }: { label: string }) {
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400">
       {label}
     </div>
+  );
+}
+
+function ReportPanel({
+  title,
+  description,
+  payload,
+  error,
+  icon: Icon,
+}: {
+  title: string;
+  description: string;
+  payload: unknown;
+  error?: string;
+  icon: typeof Users;
+}) {
+  const metrics = extractReportMetrics(payload);
+  const details = extractReportDetails(payload);
+  const rows = extractRows(payload);
+  const columns = getReportColumns(rows);
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#069AFF]">{title}</p>
+          <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-950 dark:text-white">{description}</h3>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
+          <Icon className="h-5 w-5" aria-hidden="true" />
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5">
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+            {error}
+          </div>
+        )}
+
+        {!error && metrics.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {metrics.map((metric) => (
+              <div key={metric.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{metric.label}</p>
+                <p className="mt-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{metric.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!error && details.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {details.map((detail) => (
+              <div key={detail.label} className="rounded-lg border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035]">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{detail.label}</p>
+                <p className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">{detail.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!error && rows.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
+                  <tr>
+                    {columns.map((column) => (
+                      <th key={column} className="px-4 py-3">{formatLabel(column)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                  {rows.slice(0, 8).map((row, index) => (
+                    <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
+                      {columns.map((column) => (
+                        <td key={`${column}-${index}`} className="px-4 py-3 font-medium">
+                          {formatFieldValue(column, row[column])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {!error && !metrics.length && !details.length && !rows.length && <EmptyPanel label="No report data returned for this period." />}
+      </div>
+    </section>
   );
 }
 
@@ -1142,6 +1415,13 @@ function ManagementTable({
 export default function AdminCenterPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const [reportFilters, setReportFilters] = useState<ReportFilters>(() => getDefaultReportFilters());
+  const [reports, setReports] = useState<ReportState>({
+    data: {},
+    errors: {},
+    loaded: false,
+    loading: false,
+  });
   const [activeSection, setActiveSection] = useState<AdminSection>("admins");
   const [adminData, setAdminData] = useState<AdminCenterData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -1173,6 +1453,18 @@ export default function AdminCenterPage() {
     };
   }, [router]);
 
+  useEffect(() => {
+    if (activeSection !== "reports" || reports.loaded || reports.loading) {
+      return;
+    }
+
+    void (async () => {
+      setReports((current) => ({ ...current, loading: true }));
+      const result = await fetchReports(reportFilters);
+      setReports(result);
+    })();
+  }, [activeSection, reportFilters, reports.loaded, reports.loading]);
+
   const admins = useMemo(() => extractRows(adminData?.admins), [adminData]);
   const roles = useMemo(() => extractRows(adminData?.roles), [adminData]);
   const permissions = useMemo(() => extractRows(adminData?.permissions), [adminData]);
@@ -1188,12 +1480,22 @@ export default function AdminCenterPage() {
   const liveChat = useMemo(() => extractRows(adminData?.liveChat), [adminData]);
   const loanTypes = useMemo(() => extractRows(adminData?.loanTypes), [adminData]);
   const appLoans = useMemo(() => extractRows(adminData?.appLoans), [adminData]);
+  const financialLead = useMemo(() => getReportLead(reports.data.financial), [reports.data.financial]);
+  const loanPerformanceLead = useMemo(() => getReportLead(reports.data.loanPerformance), [reports.data.loanPerformance]);
+  const profitLossLead = useMemo(() => getReportLead(reports.data.profitLoss), [reports.data.profitLoss]);
+  const revenueLead = useMemo(() => getReportLead(reports.data.revenue), [reports.data.revenue]);
   const endpointErrors = adminData ? Object.entries(adminData.errors) : [];
 
   const refreshData = async () => {
     setRefreshing(true);
     setAdminData(await fetchAdminCenter());
     setRefreshing(false);
+  };
+
+  const refreshReports = async (filters = reportFilters) => {
+    setReports((current) => ({ ...current, loading: true }));
+    const result = await fetchReports(filters);
+    setReports(result);
   };
 
   const submitAndRefresh = async (request: () => Promise<unknown>) => {
@@ -1673,13 +1975,31 @@ export default function AdminCenterPage() {
             >
               Dashboard
             </Link>
+            <Link
+              href="/reports"
+              className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              <BarChart3 className="h-4 w-4" aria-hidden="true" />
+              Reports
+            </Link>
             <button
               type="button"
-              onClick={refreshData}
-              disabled={refreshing}
+              onClick={() => {
+                if (activeSection === "reports") {
+                  void refreshReports();
+                  return;
+                }
+
+                void refreshData();
+              }}
+              disabled={activeSection === "reports" ? reports.loading : refreshing}
               className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
             >
-              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+              {activeSection === "reports" ? (
+                reports.loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                refreshing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              )}
               Refresh
             </button>
             <button
@@ -2159,6 +2479,102 @@ export default function AdminCenterPage() {
                       </tr>
                     )}
                   </ManagementTable>
+                </div>
+              </div>
+            )}
+
+            {activeSection === "reports" && (
+              <div className="grid gap-6">
+                <section className="overflow-hidden rounded-lg border border-[#069AFF]/20 bg-white shadow-sm dark:border-[#069AFF]/25 dark:bg-white/[0.045]">
+                  <div className="grid gap-5 bg-[linear-gradient(135deg,#06172b_0%,#083d70_60%,#069AFF_150%)] p-5 text-white lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Financial intelligence</p>
+                      <h2 className="mt-2 text-2xl font-bold tracking-tight">Executive reports for finance, revenue, and loan quality</h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                        Pull live management reports with a controlled date window. Each report card reads the API response directly and surfaces the most useful figures first.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 rounded-lg border border-white/15 bg-white/10 p-4 backdrop-blur sm:grid-cols-2">
+                      <label>
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-sky-100">From date</span>
+                        <input
+                          type="date"
+                          value={reportFilters.fromDate}
+                          onChange={(event) => setReportFilters((current) => ({ ...current, fromDate: event.target.value }))}
+                          className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white outline-none transition focus:border-white/40"
+                        />
+                      </label>
+                      <label>
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-sky-100">To date</span>
+                        <input
+                          type="date"
+                          value={reportFilters.toDate}
+                          onChange={(event) => setReportFilters((current) => ({ ...current, toDate: event.target.value }))}
+                          className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white outline-none transition focus:border-white/40"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void refreshReports()}
+                        disabled={reports.loading}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:opacity-70"
+                      >
+                        {reports.loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                        Apply range
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const defaults = getDefaultReportFilters();
+                          setReportFilters(defaults);
+                          void refreshReports(defaults);
+                        }}
+                        disabled={reports.loading}
+                        className="inline-flex h-11 items-center justify-center rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10 disabled:opacity-70"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                  <SummaryCard label={`Financial · ${financialLead.label}`} value={financialLead.value} icon={Landmark} />
+                  <SummaryCard label={`Loan performance · ${loanPerformanceLead.label}`} value={loanPerformanceLead.value} icon={CreditCard} />
+                  <SummaryCard label={`Profit & loss · ${profitLossLead.label}`} value={profitLossLead.value} icon={BriefcaseBusiness} />
+                  <SummaryCard label={`Revenue · ${revenueLead.label}`} value={revenueLead.value} icon={WalletCards} />
+                </section>
+
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <ReportPanel
+                    title="Financial report"
+                    description="Balance, movement, and operating figures"
+                    payload={reports.data.financial}
+                    error={reports.errors.financial}
+                    icon={Landmark}
+                  />
+                  <ReportPanel
+                    title="Loan performance"
+                    description="Portfolio quality, repayments, and exposure"
+                    payload={reports.data.loanPerformance}
+                    error={reports.errors.loanPerformance}
+                    icon={CreditCard}
+                  />
+                  <ReportPanel
+                    title="Profit and loss"
+                    description="Income, expenses, and operating result"
+                    payload={reports.data.profitLoss}
+                    error={reports.errors.profitLoss}
+                    icon={BriefcaseBusiness}
+                  />
+                  <ReportPanel
+                    title="Revenue report"
+                    description="Collections, fees, and earnings summary"
+                    payload={reports.data.revenue}
+                    error={reports.errors.revenue}
+                    icon={WalletCards}
+                  />
                 </div>
               </div>
             )}

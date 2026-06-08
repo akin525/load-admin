@@ -415,5 +415,29 @@ export const adminService = {
     rejectAppLoanTopUp: async (id: string, payload: AdminPayload): Promise<unknown> => {
         const response = await api.post(`/admin/app-loans/${id}/top-up/reject`, payload);
         return response.data;
+    },
+
+    // GET /admin/reports/financial
+    getFinancialReport: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reports/financial', { params });
+        return response.data;
+    },
+
+    // GET /admin/reports/loan-performance
+    getLoanPerformanceReport: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reports/loan-performance', { params });
+        return response.data;
+    },
+
+    // GET /admin/reports/profit-loss
+    getProfitLossReport: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reports/profit-loss', { params });
+        return response.data;
+    },
+
+    // GET /admin/reports/revenue
+    getRevenueReport: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reports/revenue', { params });
+        return response.data;
     }
 };
