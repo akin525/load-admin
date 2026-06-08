@@ -201,6 +201,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/users/:userId/transactions
+    getUserTransactions: async (userId: string, params?: QueryParams): Promise<unknown> => {
+        const response = await api.get(`/admin/users/${userId}/transactions`, { params });
+        return response.data;
+    },
+
     // GET /admin/kycs
     getKycs: async (): Promise<unknown> => {
         const response = await api.get('/admin/kycs');

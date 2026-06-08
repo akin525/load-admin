@@ -76,8 +76,22 @@ type DetailState = {
   error: string;
 };
 
+type UserDashboardTab = "overview" | "transactions";
+
+type UserTransactionFilters = {
+  fromDate: string;
+  toDate: string;
+  status: string;
+  limit: string;
+};
+
 type UserDashboardState = DetailState & {
+  userId: string;
   userName: string;
+};
+
+type UserTransactionsState = DetailState & {
+  loaded: boolean;
 };
 
 type AppLoanDetailState = DetailState;
@@ -159,6 +173,13 @@ const getDefaultReportFilters = (): ReportFilters => {
     toDate: toDateInputValue(now),
   };
 };
+
+const getDefaultUserTransactionFilters = (): UserTransactionFilters => ({
+  fromDate: "",
+  toDate: "",
+  status: "",
+  limit: "50",
+});
 
 const unwrapPayload = (payload: unknown): unknown => {
   if (isRecord(payload) && "data" in payload) {
@@ -375,7 +396,7 @@ const getPersonName = (row: Record<string, unknown>) => {
   return combined || String(getRecordValue(row, ["name", "fullName", "email", "phone"]) ?? "Unnamed record");
 };
 
-const getDashboardCollection = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => {
+const getCollectionRows = (payload: unknown, key: string) => {
   const data = unwrapPayload(payload);
   if (!isRecord(data)) {
     return [];
@@ -384,15 +405,19 @@ const getDashboardCollection = (payload: unknown, key: "virtualAccounts" | "wall
   return extractRows(data[key]);
 };
 
-const getDashboardTotal = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => {
+const getCollectionTotal = (payload: unknown, key: string) => {
   const data = unwrapPayload(payload);
   if (!isRecord(data) || !isRecord(data[key])) {
-    return getDashboardCollection(payload, key).length;
+    return getCollectionRows(payload, key).length;
   }
 
   const total = data[key].total;
-  return typeof total === "number" ? total : getDashboardCollection(payload, key).length;
+  return typeof total === "number" ? total : getCollectionRows(payload, key).length;
 };
+
+const getDashboardCollection = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => getCollectionRows(payload, key);
+
+const getDashboardTotal = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => getCollectionTotal(payload, key);
 
 const sumCurrencyRows = (rows: Record<string, unknown>[], keys: string[]) =>
   rows.reduce((total, row) => {
@@ -516,6 +541,171 @@ function EmptyPanel({ label }: { label: string }) {
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400">
       {label}
     </div>
+  );
+}
+
+function DetailGrid({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<{ label: string; value: string }>;
+}) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+      <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+        <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{title}</h3>
+      </div>
+      <div className="grid gap-3 p-4 sm:grid-cols-2">
+        {items.map((item) => (
+          <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.label}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{item.value}</p>
+          </div>
+        ))}
+        {!items.length && <EmptyPanel label="No snapshot data returned." />}
+      </div>
+    </section>
+  );
+}
+
+function TransactionTimeline({
+  rows,
+}: {
+  rows: Record<string, unknown>[];
+}) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-white/10">
+        <div>
+          <h3 className="font-bold text-slate-950 dark:text-white">Timeline</h3>
+          <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Operational events returned for this customer.</p>
+        </div>
+        <span className="rounded-md bg-[#069AFF]/10 px-2.5 py-1 text-xs font-bold text-[#069AFF] dark:text-sky-200">
+          {formatValue(rows.length)}
+        </span>
+      </div>
+      <div className="max-h-[24rem] overflow-y-auto p-4">
+        {rows.length ? (
+          <div className="space-y-4">
+            {rows.map((row, index) => {
+              const title = String(getRecordValue(row, ["title", "event", "type", "status"]) ?? `Timeline event ${index + 1}`);
+              const note = String(getRecordValue(row, ["note", "description", "message"]) ?? "No note available");
+              const amount = getRecordValue(row, ["amount", "paidAmount", "totalAmount"]);
+
+              return (
+                <div key={getId(row) || `${title}-${index}`} className="relative pl-7">
+                  <span className="absolute left-0 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-[#069AFF]/30 bg-[#069AFF]/15">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#069AFF]" />
+                  </span>
+                  {index < rows.length - 1 && <span className="absolute left-[6px] top-5 h-[calc(100%-0.25rem)] w-px bg-slate-200 dark:bg-white/10" />}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-950 dark:text-white">{formatLabel(title)}</p>
+                        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt", "date"]))}</p>
+                      </div>
+                      {amount !== undefined && <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(amount)}</p>}
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{note}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyPanel label="No timeline events returned." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TransactionStreamCard({
+  title,
+  subtitle,
+  rows,
+  icon: Icon,
+}: {
+  title: string;
+  subtitle: string;
+  rows: Record<string, unknown>[];
+  icon: typeof Users;
+}) {
+  const totalAmount = sumCurrencyRows(rows, ["amount", "totalAmount", "paidAmount"]);
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
+            <Icon className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-950 dark:text-white">{title}</h3>
+            <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{subtitle}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-lg font-bold text-slate-950 dark:text-white">{formatCurrency(totalAmount)}</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{formatValue(rows.length)} records</p>
+        </div>
+      </div>
+      <div className="max-h-[24rem] overflow-y-auto p-4">
+        {rows.length ? (
+          <div className="space-y-3">
+            {rows.map((row, index) => {
+              const details = isRecord(row.details) ? row.details : null;
+              const typeValue = getRecordValue(row, ["type"]);
+              const categoryValue = getRecordValue(row, ["category", "billType", "transactionType"]);
+              const titleValue = String(
+                getRecordValue(row, ["note", "reference", "transactionType", "category"]) ??
+                  getRecordValue(details ?? {}, ["accountName", "recipient", "serviceID"]) ??
+                  `Record ${index + 1}`,
+              );
+              const contextValues = [
+                getRecordValue(row, ["reference"]),
+                getRecordValue(row, ["provider", "source"]),
+                getRecordValue(details ?? {}, ["accountName", "bankName", "recipient", "customerAccountNo", "serviceID"]),
+              ]
+                .filter((value) => typeof value === "string" && value.trim())
+                .slice(0, 3)
+                .join(" • ");
+
+              return (
+                <div key={getId(row) || `${titleValue}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{titleValue}</p>
+                      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{contextValues || "No additional context"}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["amount", "totalAmount", "paidAmount"]))}</p>
+                      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <StatusBadge status={getRecordValue(row, ["status"]) ?? "success"} />
+                    {typeValue !== null && typeValue !== undefined && String(typeValue).trim() !== "" && (
+                      <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                        {String(typeValue)}
+                      </span>
+                    )}
+                    {categoryValue !== null && categoryValue !== undefined && String(categoryValue).trim() !== "" && (
+                      <span className="rounded-md border border-[#069AFF]/20 bg-[#069AFF]/6 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#069AFF] dark:text-sky-200">
+                        {String(categoryValue)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyPanel label={`No ${title.toLowerCase()} returned.`} />
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -770,6 +960,16 @@ function ActionModal({ action, onClose }: { action: FormAction; onClose: () => v
 }
 
 function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardState; onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState<UserDashboardTab>("overview");
+  const [transactionFilters, setTransactionFilters] = useState<UserTransactionFilters>(() => getDefaultUserTransactionFilters());
+  const [transactions, setTransactions] = useState<UserTransactionsState>({
+    title: "User transactions",
+    loading: false,
+    data: null,
+    error: "",
+    loaded: false,
+  });
+
   const virtualAccounts = getDashboardCollection(dashboard.data, "virtualAccounts");
   const wallets = getDashboardCollection(dashboard.data, "wallets");
   const loans = getDashboardCollection(dashboard.data, "loans");
@@ -781,6 +981,91 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
     { label: "Loan records", value: formatValue(getDashboardTotal(dashboard.data, "loans")), icon: CreditCard },
   ];
 
+  const loadUserTransactions = async (filters: UserTransactionFilters) => {
+    setTransactions((current) => ({
+      ...current,
+      loading: true,
+      error: "",
+    }));
+
+    try {
+      const params = Object.entries(filters).reduce<Record<string, string | number>>((accumulator, [key, value]) => {
+        if (!value.trim()) {
+          return accumulator;
+        }
+
+        accumulator[key] = key === "limit" ? Number(value) : value;
+        return accumulator;
+      }, {});
+
+      const data = await adminService.getUserTransactions(dashboard.userId, params);
+      setTransactions({
+        title: "User transactions",
+        loading: false,
+        data,
+        error: "",
+        loaded: true,
+      });
+    } catch (error) {
+      setTransactions({
+        title: "User transactions",
+        loading: false,
+        data: null,
+        error: getErrorMessage(error),
+        loaded: true,
+      });
+    }
+  };
+
+  const handleTabChange = (nextTab: UserDashboardTab) => {
+    setActiveTab(nextTab);
+
+    if (nextTab === "transactions" && !transactions.loaded && !transactions.loading) {
+      void loadUserTransactions(transactionFilters);
+    }
+  };
+
+  const transactionSnapshot = useMemo(() => {
+    const payload = unwrapPayload(transactions.data);
+    const record = isRecord(payload) ? payload : null;
+    const summaryRecord = record && isRecord(record.summary) ? record.summary : null;
+    const walletTransactions = record ? getCollectionRows(record, "walletTransactions") : [];
+    const deposits = record ? getCollectionRows(record, "deposits") : [];
+    const bills = record ? getCollectionRows(record, "bills") : [];
+    const payouts = record ? [...getCollectionRows(record, "payouts"), ...getCollectionRows(record, "transfers")] : [];
+    const timeline = record ? getCollectionRows(record, "timeline") : [];
+    const summaryItems = summaryRecord
+      ? Object.entries(summaryRecord)
+          .filter(([, value]) => !Array.isArray(value) && !isRecord(value))
+          .slice(0, 8)
+          .map(([key, value]) => ({
+            label: formatLabel(key),
+            value: formatFieldValue(key, value),
+          }))
+      : [];
+
+    const cards = [
+      { label: "Wallet transactions", value: formatValue(getCollectionTotal(record, "walletTransactions")), icon: WalletCards },
+      { label: "Deposits", value: formatValue(getCollectionTotal(record, "deposits")), icon: Landmark },
+      { label: "Bills", value: formatValue(getCollectionTotal(record, "bills")), icon: CreditCard },
+      {
+        label: "Payouts & transfers",
+        value: formatValue(payouts.length),
+        icon: Send,
+      },
+    ];
+
+    return {
+      cards,
+      summaryItems,
+      timeline,
+      walletTransactions,
+      deposits,
+      bills,
+      payouts,
+    };
+  }, [transactions.data]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
       <div className="w-full max-w-6xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
@@ -789,8 +1074,11 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Customer finance dashboard</p>
             <h2 className="mt-2 text-2xl font-bold tracking-tight">{dashboard.userName}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              Virtual accounts, wallets, and loan exposure returned by the user dashboard endpoint.
+              Full customer operations view covering core balances, lending position, and account transaction history.
             </p>
+            <div className="mt-3 inline-flex rounded-md border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold tracking-[0.14em] text-sky-100">
+              {dashboard.userId}
+            </div>
           </div>
           <button
             type="button"
@@ -802,116 +1090,308 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
           </button>
         </div>
 
+        <div className="border-b border-slate-200 bg-slate-50/90 px-5 py-3 dark:border-white/10 dark:bg-white/[0.035]">
+          <div className="flex flex-wrap gap-2">
+            {[
+              {
+                key: "overview" as const,
+                label: "Overview",
+                description: "Accounts, wallets, and loans",
+              },
+              {
+                key: "transactions" as const,
+                label: "Transactions",
+                description: "Wallet, deposits, bills, and transfers",
+              },
+            ].map((tab) => {
+              const active = activeTab === tab.key;
+
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => handleTabChange(tab.key)}
+                  className={`rounded-lg border px-4 py-3 text-left transition ${
+                    active
+                      ? "border-[#069AFF]/25 bg-white text-slate-950 shadow-sm shadow-[#069AFF]/10 dark:border-[#069AFF]/35 dark:bg-[#069AFF]/10 dark:text-white"
+                      : "border-slate-200 bg-transparent text-slate-600 hover:border-[#069AFF]/25 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:text-slate-300 dark:hover:border-[#069AFF]/35 dark:hover:bg-white/[0.045] dark:hover:text-sky-200"
+                  }`}
+                >
+                  <p className="text-sm font-bold">{tab.label}</p>
+                  <p className={`mt-1 text-xs font-medium ${active ? "text-slate-500 dark:text-slate-300" : "text-slate-500 dark:text-slate-400"}`}>
+                    {tab.description}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="max-h-[76vh] overflow-y-auto p-5">
-          {dashboard.loading && (
-            <div className="flex min-h-72 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-              Loading customer dashboard
-            </div>
-          )}
+          {activeTab === "overview" ? (
+            <>
+              {dashboard.loading && (
+                <div className="flex min-h-72 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  Loading customer dashboard
+                </div>
+              )}
 
-          {dashboard.error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
-              {dashboard.error}
-            </div>
-          )}
+              {dashboard.error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                  {dashboard.error}
+                </div>
+              )}
 
-          {!dashboard.loading && !dashboard.error && (
+              {!dashboard.loading && !dashboard.error && (
+                <div className="grid gap-5">
+                  <section className="grid gap-4 md:grid-cols-3">
+                    {summary.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:text-sky-200">
+                            <Icon className="h-5 w-5" aria-hidden="true" />
+                          </div>
+                          <p className="text-2xl font-bold text-slate-950 dark:text-white">{item.value}</p>
+                          <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                        </div>
+                      );
+                    })}
+                  </section>
+
+                  <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+                    <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                      <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                        <h3 className="font-bold text-slate-950 dark:text-white">Virtual accounts</h3>
+                      </div>
+                      <div className="grid gap-3 p-4">
+                        {virtualAccounts.map((account, index) => (
+                          <div key={getId(account) || index} className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-bold text-slate-950 dark:text-white">{String(getRecordValue(account, ["accountName", "name"]) ?? `Account ${index + 1}`)}</p>
+                                <p className="mt-1 text-2xl font-bold tracking-tight text-[#069AFF]">{String(getRecordValue(account, ["accountNumber"]) ?? "No account number")}</p>
+                              </div>
+                              <StatusBadge status={getRecordValue(account, ["status"]) ?? "ACTIVE"} />
+                            </div>
+                            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                              <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Bank</p>
+                                <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{String(getRecordValue(account, ["bankName"]) ?? "Not available")}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Currency</p>
+                                <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{String(getRecordValue(account, ["currency"]) ?? "NGN")}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Provider</p>
+                                <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{String(getRecordValue(account, ["provider", "bankCode"]) ?? "Not available")}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {!virtualAccounts.length && <EmptyPanel label="No virtual accounts returned." />}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                      <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                        <h3 className="font-bold text-slate-950 dark:text-white">Wallets</h3>
+                      </div>
+                      <div className="grid gap-3 p-4">
+                        {wallets.map((wallet, index) => (
+                          <div key={getId(wallet) || index} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-bold text-slate-950 dark:text-white">{formatLabel(String(getRecordValue(wallet, ["type"]) ?? `Wallet ${index + 1}`))}</p>
+                                <p className="mt-1 text-xl font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(wallet, ["balance"]))}</p>
+                              </div>
+                              <span className="rounded-md bg-[#069AFF]/10 px-2.5 py-1 text-xs font-bold text-[#069AFF] dark:text-sky-200">
+                                {String(getRecordValue(wallet, ["currency"]) ?? "NGN")}
+                              </span>
+                            </div>
+                            <p className="mt-3 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(wallet, ["updatedAt", "createdAt"]))}</p>
+                          </div>
+                        ))}
+                        {!wallets.length && <EmptyPanel label="No wallets returned." />}
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                    <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                      <h3 className="font-bold text-slate-950 dark:text-white">Loans</h3>
+                    </div>
+                    <div className="grid gap-3 p-4">
+                      {loans.map((loan, index) => (
+                        <div key={getId(loan) || index} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                          <div>
+                            <p className="font-bold text-slate-950 dark:text-white">{String(getRecordValue(loan, ["purpose", "packageName", "loanId"]) ?? `Loan ${index + 1}`)}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(loan, ["createdAt", "applicationDate", "updatedAt"]))}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <p className="font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(loan, ["amount", "loanAmount", "principal"]))}</p>
+                            <StatusBadge status={getRecordValue(loan, ["status"]) ?? "pending"} />
+                          </div>
+                        </div>
+                      ))}
+                      {!loans.length && <EmptyPanel label="No loan records returned." />}
+                    </div>
+                  </section>
+                </div>
+              )}
+            </>
+          ) : (
             <div className="grid gap-5">
-              <section className="grid gap-4 md:grid-cols-3">
-                {summary.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
-                      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:text-sky-200">
-                        <Icon className="h-5 w-5" aria-hidden="true" />
-                      </div>
-                      <p className="text-2xl font-bold text-slate-950 dark:text-white">{item.value}</p>
-                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.label}</p>
-                    </div>
-                  );
-                })}
+              <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF]">Transactions intelligence</p>
+                    <h3 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">Customer transaction monitor</h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Wallet movements, funding, bill activity, payouts, and timeline events for this customer.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void loadUserTransactions(transactionFilters)}
+                      disabled={transactions.loading}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${transactions.loading ? "animate-spin" : ""}`} aria-hidden="true" />
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+                <form
+                  className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto_auto]"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void loadUserTransactions(transactionFilters);
+                  }}
+                >
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">From date</span>
+                    <input
+                      type="date"
+                      value={transactionFilters.fromDate}
+                      onChange={(event) => setTransactionFilters((current) => ({ ...current, fromDate: event.target.value }))}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">To date</span>
+                    <input
+                      type="date"
+                      value={transactionFilters.toDate}
+                      onChange={(event) => setTransactionFilters((current) => ({ ...current, toDate: event.target.value }))}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Status</span>
+                    <select
+                      value={transactionFilters.status}
+                      onChange={(event) => setTransactionFilters((current) => ({ ...current, status: event.target.value }))}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    >
+                      <option value="">All statuses</option>
+                      <option value="success">Success</option>
+                      <option value="pending">Pending</option>
+                      <option value="failed">Failed</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Limit</span>
+                    <select
+                      value={transactionFilters.limit}
+                      onChange={(event) => setTransactionFilters((current) => ({ ...current, limit: event.target.value }))}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    >
+                      <option value="25">25</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                      <option value="200">200</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaults = getDefaultUserTransactionFilters();
+                      setTransactionFilters(defaults);
+                      void loadUserTransactions(defaults);
+                    }}
+                    className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={transactions.loading}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0] disabled:opacity-60"
+                  >
+                    {transactions.loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <BarChart3 className="h-4 w-4" aria-hidden="true" />}
+                    Apply filters
+                  </button>
+                </form>
               </section>
 
-              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
-                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
-                    <h3 className="font-bold text-slate-950 dark:text-white">Virtual accounts</h3>
-                  </div>
-                  <div className="grid gap-3 p-4">
-                    {virtualAccounts.map((account, index) => (
-                      <div key={getId(account) || index} className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-bold text-slate-950 dark:text-white">{String(getRecordValue(account, ["accountName", "name"]) ?? `Account ${index + 1}`)}</p>
-                            <p className="mt-1 text-2xl font-bold tracking-tight text-[#069AFF]">{String(getRecordValue(account, ["accountNumber"]) ?? "No account number")}</p>
-                          </div>
-                          <StatusBadge status={getRecordValue(account, ["status"]) ?? "ACTIVE"} />
-                        </div>
-                        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Bank</p>
-                            <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{String(getRecordValue(account, ["bankName"]) ?? "Not available")}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Currency</p>
-                            <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{String(getRecordValue(account, ["currency"]) ?? "NGN")}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Provider</p>
-                            <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{String(getRecordValue(account, ["provider", "bankCode"]) ?? "Not available")}</p>
-                          </div>
-                        </div>
-                      </div>
+              {transactions.loading && !transactions.data && (
+                <div className="flex min-h-72 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  Loading customer transactions
+                </div>
+              )}
+
+              {transactions.error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                  {transactions.error}
+                </div>
+              )}
+
+              {!transactions.loading && !transactions.error && (
+                <>
+                  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {transactionSnapshot.cards.map((item) => (
+                      <SummaryCard key={item.label} label={item.label} value={item.value} icon={item.icon} />
                     ))}
-                    {!virtualAccounts.length && <EmptyPanel label="No virtual accounts returned." />}
-                  </div>
-                </div>
+                  </section>
 
-                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
-                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
-                    <h3 className="font-bold text-slate-950 dark:text-white">Wallets</h3>
-                  </div>
-                  <div className="grid gap-3 p-4">
-                    {wallets.map((wallet, index) => (
-                      <div key={getId(wallet) || index} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-bold text-slate-950 dark:text-white">{formatLabel(String(getRecordValue(wallet, ["type"]) ?? `Wallet ${index + 1}`))}</p>
-                            <p className="mt-1 text-xl font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(wallet, ["balance"]))}</p>
-                          </div>
-                          <span className="rounded-md bg-[#069AFF]/10 px-2.5 py-1 text-xs font-bold text-[#069AFF] dark:text-sky-200">
-                            {String(getRecordValue(wallet, ["currency"]) ?? "NGN")}
-                          </span>
-                        </div>
-                        <p className="mt-3 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(wallet, ["updatedAt", "createdAt"]))}</p>
-                      </div>
-                    ))}
-                    {!wallets.length && <EmptyPanel label="No wallets returned." />}
-                  </div>
-                </div>
-              </section>
+                  <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+                    <TransactionTimeline rows={transactionSnapshot.timeline} />
+                    <DetailGrid title="Summary snapshot" items={transactionSnapshot.summaryItems} />
+                  </section>
 
-              <section className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
-                <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
-                  <h3 className="font-bold text-slate-950 dark:text-white">Loans</h3>
-                </div>
-                <div className="grid gap-3 p-4">
-                  {loans.map((loan, index) => (
-                    <div key={getId(loan) || index} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                      <div>
-                        <p className="font-bold text-slate-950 dark:text-white">{String(getRecordValue(loan, ["purpose", "packageName", "loanId"]) ?? `Loan ${index + 1}`)}</p>
-                        <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(loan, ["createdAt", "applicationDate", "updatedAt"]))}</p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <p className="font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(loan, ["amount", "loanAmount", "principal"]))}</p>
-                        <StatusBadge status={getRecordValue(loan, ["status"]) ?? "pending"} />
-                      </div>
-                    </div>
-                  ))}
-                  {!loans.length && <EmptyPanel label="No loan records returned." />}
-                </div>
-              </section>
+                  <section className="grid gap-5 xl:grid-cols-2">
+                    <TransactionStreamCard
+                      title="Wallet transactions"
+                      subtitle="Full wallet movement stream for this customer."
+                      rows={transactionSnapshot.walletTransactions}
+                      icon={WalletCards}
+                    />
+                    <TransactionStreamCard
+                      title="Deposits"
+                      subtitle="Funding records captured for this customer."
+                      rows={transactionSnapshot.deposits}
+                      icon={Landmark}
+                    />
+                    <TransactionStreamCard
+                      title="Bills"
+                      subtitle="Bill payment activity and reversals."
+                      rows={transactionSnapshot.bills}
+                      icon={CreditCard}
+                    />
+                    <TransactionStreamCard
+                      title="Payouts & transfers"
+                      subtitle="Outbound payouts and transfer-related records."
+                      rows={transactionSnapshot.payouts}
+                      icon={Send}
+                    />
+                  </section>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1711,13 +2191,13 @@ export default function AdminCenterPage() {
   };
 
   const openUserDashboard = async (userId: string, userName: string) => {
-    setUserDashboard({ title: "User dashboard", userName, loading: true, data: null, error: "" });
+    setUserDashboard({ title: "User dashboard", userId, userName, loading: true, data: null, error: "" });
 
     try {
       const data = await adminService.getUserDashboard(userId);
-      setUserDashboard({ title: "User dashboard", userName, loading: false, data, error: "" });
+      setUserDashboard({ title: "User dashboard", userId, userName, loading: false, data, error: "" });
     } catch (error) {
-      setUserDashboard({ title: "User dashboard", userName, loading: false, data: null, error: getErrorMessage(error) });
+      setUserDashboard({ title: "User dashboard", userId, userName, loading: false, data: null, error: getErrorMessage(error) });
     }
   };
 
@@ -2817,7 +3297,7 @@ export default function AdminCenterPage() {
       </div>
 
       {detail && <DetailModal detail={detail} onClose={() => setDetail(null)} />}
-      {userDashboard && <UserDashboardModal dashboard={userDashboard} onClose={() => setUserDashboard(null)} />}
+      {userDashboard && <UserDashboardModal key={userDashboard.userId} dashboard={userDashboard} onClose={() => setUserDashboard(null)} />}
       {appLoanDetail && <AppLoanDetailsModal loan={appLoanDetail} onClose={() => setAppLoanDetail(null)} />}
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
       {roleModalOpen && (
