@@ -439,5 +439,11 @@ export const adminService = {
     getRevenueReport: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/reports/revenue', { params });
         return response.data;
+    },
+
+    // GET /admin/wallet-transactions
+    getWalletTransactions: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/wallet-transactions', { params });
+        return response.data;
     }
 };
