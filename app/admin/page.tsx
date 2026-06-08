@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -13,20 +14,41 @@ import {
   CreditCard,
   Eye,
   FileCheck2,
+  Landmark,
   Loader2,
   LogOut,
   Moon,
+  Plus,
   RefreshCw,
+  Send,
   ShieldCheck,
   Sun,
   UserCog,
   Users,
+  WalletCards,
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
 
-type AdminSection = "admins" | "roles" | "users" | "kyc" | "loans";
-type DataKey = "admins" | "roles" | "permissions" | "users" | "kycs" | "loans" | "loanPackages" | "loanStats" | "recentLoans";
+type AdminSection = "admins" | "roles" | "users" | "kyc" | "loans" | "tiers" | "support" | "content";
+type DataKey =
+  | "admins"
+  | "roles"
+  | "permissions"
+  | "users"
+  | "kycs"
+  | "loans"
+  | "loanPackages"
+  | "loanStats"
+  | "recentLoans"
+  | "accountTiers"
+  | "complaints"
+  | "complaintCategories"
+  | "contactUs"
+  | "faqs"
+  | "liveChat"
+  | "loanTypes"
+  | "appLoans";
 
 type AdminCenterData = Record<DataKey, unknown> & {
   errors: Partial<Record<DataKey, string>>;
@@ -39,6 +61,31 @@ type DetailState = {
   error: string;
 };
 
+type UserDashboardState = DetailState & {
+  userName: string;
+};
+
+type AppLoanDetailState = DetailState;
+
+type FormField = {
+  name: string;
+  label: string;
+  placeholder?: string;
+  type?: "email" | "tel" | "text" | "textarea";
+  required?: boolean;
+  helper?: string;
+};
+
+type FormAction = {
+  title: string;
+  eyebrow: string;
+  description: string;
+  submitLabel: string;
+  fields: FormField[];
+  initialValues?: Record<string, string>;
+  onSubmit: (values: Record<string, string>) => Promise<void>;
+};
+
 const endpoints: Array<[DataKey, () => Promise<unknown>]> = [
   ["admins", adminService.getAdmins],
   ["roles", adminService.getRoles],
@@ -49,6 +96,14 @@ const endpoints: Array<[DataKey, () => Promise<unknown>]> = [
   ["loanPackages", adminService.getLoanPackages],
   ["loanStats", adminService.getAdminLoansStats],
   ["recentLoans", adminService.getAdminRecentLoans],
+  ["accountTiers", adminService.getAccountTiers],
+  ["complaints", adminService.getComplaints],
+  ["complaintCategories", adminService.getComplaintCategories],
+  ["contactUs", adminService.getContactUs],
+  ["faqs", adminService.getFaqs],
+  ["liveChat", adminService.getLiveChat],
+  ["loanTypes", adminService.getLoanTypes],
+  ["appLoans", () => adminService.getAppLoans()],
 ];
 
 const sections: Array<{ key: AdminSection; label: string; icon: typeof Users }> = [
@@ -57,6 +112,9 @@ const sections: Array<{ key: AdminSection; label: string; icon: typeof Users }> 
   { key: "users", label: "Users", icon: Users },
   { key: "kyc", label: "KYC", icon: FileCheck2 },
   { key: "loans", label: "Loans", icon: CreditCard },
+  { key: "tiers", label: "Tiers", icon: BadgeCheck },
+  { key: "support", label: "Support", icon: Send },
+  { key: "content", label: "Content", icon: BriefcaseBusiness },
 ];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -171,6 +229,32 @@ const getPersonName = (row: Record<string, unknown>) => {
   return combined || String(getRecordValue(row, ["name", "fullName", "email", "phone"]) ?? "Unnamed record");
 };
 
+const getDashboardCollection = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => {
+  const data = unwrapPayload(payload);
+  if (!isRecord(data)) {
+    return [];
+  }
+
+  return extractRows(data[key]);
+};
+
+const getDashboardTotal = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => {
+  const data = unwrapPayload(payload);
+  if (!isRecord(data) || !isRecord(data[key])) {
+    return getDashboardCollection(payload, key).length;
+  }
+
+  const total = data[key].total;
+  return typeof total === "number" ? total : getDashboardCollection(payload, key).length;
+};
+
+const sumCurrencyRows = (rows: Record<string, unknown>[], keys: string[]) =>
+  rows.reduce((total, row) => {
+    const value = getRecordValue(row, keys);
+    const numeric = typeof value === "number" ? value : Number(value);
+    return Number.isNaN(numeric) ? total : total + numeric;
+  }, 0);
+
 const fetchAdminCenter = async (): Promise<AdminCenterData> => {
   const results = await Promise.allSettled(endpoints.map(([, request]) => request()));
   const data = {} as Record<DataKey, unknown>;
@@ -197,6 +281,14 @@ const fetchAdminCenter = async (): Promise<AdminCenterData> => {
     loanPackages: data.loanPackages,
     loanStats: data.loanStats,
     recentLoans: data.recentLoans,
+    accountTiers: data.accountTiers,
+    complaints: data.complaints,
+    complaintCategories: data.complaintCategories,
+    contactUs: data.contactUs,
+    faqs: data.faqs,
+    liveChat: data.liveChat,
+    loanTypes: data.loanTypes,
+    appLoans: data.appLoans,
     errors,
   };
 };
@@ -228,12 +320,20 @@ function SummaryCard({
   icon: typeof Users;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
-      <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200">
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-[#069AFF]/40 hover:shadow-lg hover:shadow-[#069AFF]/10 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/40">
+      <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
         <Icon className="h-5 w-5" aria-hidden="true" />
       </div>
       <p className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white">{value}</p>
       <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</p>
+    </div>
+  );
+}
+
+function EmptyPanel({ label }: { label: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400">
+      {label}
     </div>
   );
 }
@@ -293,22 +393,728 @@ function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => 
   );
 }
 
+function ActionModal({ action, onClose }: { action: FormAction; onClose: () => void }) {
+  const [values, setValues] = useState<Record<string, string>>(action.initialValues ?? {});
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+
+    try {
+      await action.onSubmit(values);
+    } catch (submitError) {
+      setError(getErrorMessage(submitError));
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-slate-100 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+              {action.eyebrow}
+            </p>
+            <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{action.title}</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">{action.description}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
+            aria-label="Close form"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="grid gap-4 p-5">
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              {error}
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {action.fields.map((field) => {
+              const fieldValue = values[field.name] ?? "";
+              const sharedClassName =
+                "mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-[#069AFF] dark:focus:ring-[#069AFF]/15";
+
+              return (
+                <label key={field.name} className={field.type === "textarea" ? "sm:col-span-2" : ""}>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{field.label}</span>
+                  {field.type === "textarea" ? (
+                    <textarea
+                      required={field.required}
+                      value={fieldValue}
+                      placeholder={field.placeholder}
+                      onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                      rows={4}
+                      className={`${sharedClassName} resize-none`}
+                    />
+                  ) : (
+                    <input
+                      required={field.required}
+                      type={field.type ?? "text"}
+                      value={fieldValue}
+                      placeholder={field.placeholder}
+                      onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                      className={sharedClassName}
+                    />
+                  )}
+                  {field.helper && <span className="mt-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{field.helper}</span>}
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="mt-2 flex flex-col-reverse gap-3 border-t border-slate-100 pt-4 dark:border-white/10 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70 dark:bg-[#069AFF] dark:text-white dark:hover:bg-[#27a7ff]"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+              {action.submitLabel}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardState; onClose: () => void }) {
+  const virtualAccounts = getDashboardCollection(dashboard.data, "virtualAccounts");
+  const wallets = getDashboardCollection(dashboard.data, "wallets");
+  const loans = getDashboardCollection(dashboard.data, "loans");
+  const walletBalance = sumCurrencyRows(wallets, ["balance", "availableBalance", "amount"]);
+
+  const summary = [
+    { label: "Virtual accounts", value: formatValue(getDashboardTotal(dashboard.data, "virtualAccounts")), icon: Landmark },
+    { label: "Wallet balance", value: formatCurrency(walletBalance), icon: WalletCards },
+    { label: "Loan records", value: formatValue(getDashboardTotal(dashboard.data, "loans")), icon: CreditCard },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-6xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_58%,#069AFF_145%)] px-5 py-5 text-white">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Customer finance dashboard</p>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight">{dashboard.userName}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Virtual accounts, wallets, and loan exposure returned by the user dashboard endpoint.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+            aria-label="Close user dashboard"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="max-h-[76vh] overflow-y-auto p-5">
+          {dashboard.loading && (
+            <div className="flex min-h-72 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              Loading customer dashboard
+            </div>
+          )}
+
+          {dashboard.error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              {dashboard.error}
+            </div>
+          )}
+
+          {!dashboard.loading && !dashboard.error && (
+            <div className="grid gap-5">
+              <section className="grid gap-4 md:grid-cols-3">
+                {summary.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:text-sky-200">
+                        <Icon className="h-5 w-5" aria-hidden="true" />
+                      </div>
+                      <p className="text-2xl font-bold text-slate-950 dark:text-white">{item.value}</p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                    </div>
+                  );
+                })}
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Virtual accounts</h3>
+                  </div>
+                  <div className="grid gap-3 p-4">
+                    {virtualAccounts.map((account, index) => (
+                      <div key={getId(account) || index} className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold text-slate-950 dark:text-white">{String(getRecordValue(account, ["accountName", "name"]) ?? `Account ${index + 1}`)}</p>
+                            <p className="mt-1 text-2xl font-bold tracking-tight text-[#069AFF]">{String(getRecordValue(account, ["accountNumber"]) ?? "No account number")}</p>
+                          </div>
+                          <StatusBadge status={getRecordValue(account, ["status"]) ?? "ACTIVE"} />
+                        </div>
+                        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Bank</p>
+                            <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{String(getRecordValue(account, ["bankName"]) ?? "Not available")}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Currency</p>
+                            <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{String(getRecordValue(account, ["currency"]) ?? "NGN")}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Provider</p>
+                            <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{String(getRecordValue(account, ["provider", "bankCode"]) ?? "Not available")}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {!virtualAccounts.length && <EmptyPanel label="No virtual accounts returned." />}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Wallets</h3>
+                  </div>
+                  <div className="grid gap-3 p-4">
+                    {wallets.map((wallet, index) => (
+                      <div key={getId(wallet) || index} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold text-slate-950 dark:text-white">{formatLabel(String(getRecordValue(wallet, ["type"]) ?? `Wallet ${index + 1}`))}</p>
+                            <p className="mt-1 text-xl font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(wallet, ["balance"]))}</p>
+                          </div>
+                          <span className="rounded-md bg-[#069AFF]/10 px-2.5 py-1 text-xs font-bold text-[#069AFF] dark:text-sky-200">
+                            {String(getRecordValue(wallet, ["currency"]) ?? "NGN")}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(wallet, ["updatedAt", "createdAt"]))}</p>
+                      </div>
+                    ))}
+                    {!wallets.length && <EmptyPanel label="No wallets returned." />}
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                  <h3 className="font-bold text-slate-950 dark:text-white">Loans</h3>
+                </div>
+                <div className="grid gap-3 p-4">
+                  {loans.map((loan, index) => (
+                    <div key={getId(loan) || index} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                      <div>
+                        <p className="font-bold text-slate-950 dark:text-white">{String(getRecordValue(loan, ["purpose", "packageName", "loanId"]) ?? `Loan ${index + 1}`)}</p>
+                        <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(loan, ["createdAt", "applicationDate", "updatedAt"]))}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <p className="font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(loan, ["amount", "loanAmount", "principal"]))}</p>
+                        <StatusBadge status={getRecordValue(loan, ["status"]) ?? "pending"} />
+                      </div>
+                    </div>
+                  ))}
+                  {!loans.length && <EmptyPanel label="No loan records returned." />}
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AppLoanDetailsModal({ loan, onClose }: { loan: AppLoanDetailState; onClose: () => void }) {
+  const data = unwrapPayload(loan.data);
+  const record = isRecord(data) ? data : {};
+  const repaymentSchedule = Array.isArray(record.repaymentSchedule) ? record.repaymentSchedule.filter(isRecord) : [];
+  const topUpHistory = Array.isArray(record.topUpHistory) ? record.topUpHistory.filter(isRecord) : [];
+  const activityLog = Array.isArray(record.activityLog) ? record.activityLog.filter(isRecord) : [];
+
+  const summary = [
+    { label: "Requested amount", value: formatCurrency(record.amount), icon: CreditCard },
+    { label: "Total payable", value: formatCurrency(record.totalPayable), icon: WalletCards },
+    { label: "Outstanding", value: formatCurrency(record.outstandingAmount), icon: AlertCircle },
+    { label: "Due date", value: formatDate(record.dueDate), icon: CheckCircle2 },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-7xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_58%,#069AFF_145%)] px-5 py-5 text-white">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Loan application details</p>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight">
+              {String(record.loanTypeName ?? "Application loan")} · {String(record.purposeText ?? "No purpose")}
+            </h2>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <StatusBadge status={record.status ?? "pending"} />
+              <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-bold text-white">
+                {String(record.durationLabel ?? `${String(record.durationDays ?? "0")} days`)}
+              </span>
+              <span className="rounded-md border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-bold text-white">
+                {String(record.installmentCount ?? "0")} installments
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+            aria-label="Close app loan details"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="max-h-[78vh] overflow-y-auto p-5">
+          {loan.loading && (
+            <div className="flex min-h-72 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              Loading application loan
+            </div>
+          )}
+
+          {loan.error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              {loan.error}
+            </div>
+          )}
+
+          {!loan.loading && !loan.error && (
+            <div className="grid gap-5">
+              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {summary.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:text-sky-200">
+                        <Icon className="h-5 w-5" aria-hidden="true" />
+                      </div>
+                      <p className="text-xl font-bold text-slate-950 dark:text-white">{item.value}</p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                    </div>
+                  );
+                })}
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Repayment schedule</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left text-sm">
+                      <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
+                        <tr>
+                          {["#", "Due date", "Principal", "Interest", "Total", "Paid", "Status"].map((header) => (
+                            <th key={header} className="px-4 py-3">{header}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                        {repaymentSchedule.map((item, index) => (
+                          <tr key={`${String(item.installmentNumber ?? index)}-${index}`}>
+                            <td className="px-4 py-3 font-bold text-slate-950 dark:text-white">{String(item.installmentNumber ?? index + 1)}</td>
+                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatDate(item.dueDate)}</td>
+                            <td className="px-4 py-3">{formatCurrency(item.principalAmount)}</td>
+                            <td className="px-4 py-3">{formatCurrency(item.interestAmount)}</td>
+                            <td className="px-4 py-3 font-bold text-slate-950 dark:text-white">{formatCurrency(item.totalAmount)}</td>
+                            <td className="px-4 py-3">{formatCurrency(item.amountPaid)}</td>
+                            <td className="px-4 py-3"><StatusBadge status={item.status ?? "pending"} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {!repaymentSchedule.length && <div className="p-4"><EmptyPanel label="No repayment schedule returned." /></div>}
+                </div>
+
+                <div className="grid gap-5">
+                  <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                    <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                      <h3 className="font-bold text-slate-950 dark:text-white">Application metadata</h3>
+                    </div>
+                    <div className="grid gap-0 divide-y divide-slate-100 dark:divide-white/10">
+                      {[
+                        ["User ID", record.userId],
+                        ["Loan type ID", record.loanTypeId],
+                        ["Interest rate", `${String(record.interestRate ?? "0")}%`],
+                        ["Received amount", formatCurrency(record.receivedAmount)],
+                        ["Paid amount", formatCurrency(record.paidAmount)],
+                        ["Approved at", formatDate(record.approvedAt)],
+                        ["Disbursed at", formatDate(record.disbursedAt)],
+                        ["Disbursement reference", record.disbursementReference],
+                        ["Loan wallet ID", record.loanWalletId],
+                        ["Reviewed by", record.reviewedBy],
+                      ].map(([label, value]) => (
+                        <div key={String(label)} className="grid gap-2 px-5 py-3 sm:grid-cols-[150px_minmax(0,1fr)]">
+                          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{String(label)}</p>
+                          <p className="break-words text-sm font-semibold text-slate-950 dark:text-white">{String(value ?? "Not available")}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Activity log</h3>
+                  </div>
+                  <div className="grid gap-3 p-4">
+                    {activityLog.map((item, index) => (
+                      <div key={`${String(item.type ?? "activity")}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-slate-950 dark:text-white">{String(item.title ?? formatLabel(String(item.type ?? "Activity")))}</p>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{String(item.note ?? "No note")}</p>
+                          </div>
+                          <p className="text-sm font-bold text-slate-950 dark:text-white">{formatCurrency(item.amount)}</p>
+                        </div>
+                        <p className="mt-3 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(item.createdAt)}</p>
+                      </div>
+                    ))}
+                    {!activityLog.length && <EmptyPanel label="No activity log returned." />}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Top-up history</h3>
+                  </div>
+                  <div className="grid gap-3 p-4">
+                    {topUpHistory.map((item, index) => (
+                      <div key={`${String(item.requestId ?? "topup")}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <p className="font-bold text-slate-950 dark:text-white">{String(item.requestId ?? `Top-up ${index + 1}`)}</p>
+                          <StatusBadge status={item.status ?? "pending"} />
+                        </div>
+                        <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                          <p><span className="font-bold">Amount:</span> {formatCurrency(item.amount)}</p>
+                          <p><span className="font-bold">Payable:</span> {formatCurrency(item.totalPayable)}</p>
+                          <p><span className="font-bold">Duration:</span> {String(item.durationLabel ?? "Not available")}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {!topUpHistory.length && <EmptyPanel label="No top-up history returned." />}
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PermissionLibrary({ permissions }: { permissions: Record<string, unknown>[] }) {
+  const groupedPermissions = permissions.reduce<Record<string, Record<string, unknown>[]>>((groups, permission) => {
+    const group = String(getRecordValue(permission, ["module", "group", "category", "resource"]) ?? "General");
+    groups[group] = [...(groups[group] ?? []), permission];
+    return groups;
+  }, {});
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-[#069AFF]/20 bg-white shadow-sm dark:border-[#069AFF]/25 dark:bg-white/[0.045]">
+      <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#06172b_0%,#083d70_65%,#069AFF_150%)] px-5 py-4 text-white dark:border-white/10">
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-100">Permission library</p>
+        <h2 className="mt-1 text-lg font-bold">Available access controls</h2>
+        <p className="mt-2 text-xs leading-5 text-slate-300">
+          Use these permissions when creating roles. Permissions are grouped so administrators can review access by module.
+        </p>
+      </div>
+      <div className="max-h-[620px] overflow-y-auto p-4">
+        {Object.entries(groupedPermissions).map(([group, groupPermissions]) => (
+          <div key={group} className="mb-4 rounded-lg border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/40">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10">
+              <h3 className="text-sm font-bold text-slate-950 dark:text-white">{formatLabel(group)}</h3>
+              <span className="rounded-md bg-[#069AFF]/10 px-2.5 py-1 text-xs font-bold text-[#069AFF] dark:text-sky-200">
+                {groupPermissions.length}
+              </span>
+            </div>
+            <div className="grid gap-2 p-3">
+              {groupPermissions.slice(0, 12).map((permission, index) => {
+                const id = getId(permission) || `${group}-${index}`;
+                const name = String(getRecordValue(permission, ["name", "title", "permission", "action"]) ?? `Permission ${index + 1}`);
+
+                return (
+                  <div key={id} className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-white/10 dark:bg-white/[0.035]">
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{formatLabel(name)}</p>
+                    <p className="mt-1 break-all text-[11px] font-medium text-slate-500 dark:text-slate-400">{id}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {!permissions.length && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400">
+            No permissions returned.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function RoleCreateModal({
+  permissions,
+  onClose,
+  onCreate,
+}: {
+  permissions: Record<string, unknown>[];
+  onClose: () => void;
+  onCreate: (name: string, permissionIds: string[]) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const filteredPermissions = permissions.filter((permission) => {
+    const label = String(getRecordValue(permission, ["name", "title", "permission", "action"]) ?? "");
+    const group = String(getRecordValue(permission, ["module", "group", "category", "resource"]) ?? "General");
+    return `${label} ${group}`.toLowerCase().includes(query.trim().toLowerCase());
+  });
+
+  const groupedPermissions = filteredPermissions.reduce<Record<string, Record<string, unknown>[]>>((groups, permission) => {
+    const group = String(getRecordValue(permission, ["module", "group", "category", "resource"]) ?? "General");
+    groups[group] = [...(groups[group] ?? []), permission];
+    return groups;
+  }, {});
+
+  const selectedSet = new Set(selectedIds);
+
+  const togglePermission = (id: string) => {
+    setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  };
+
+  const toggleGroup = (groupPermissions: Record<string, unknown>[]) => {
+    const ids = groupPermissions.map(getId).filter(Boolean);
+    const allSelected = ids.every((id) => selectedSet.has(id));
+
+    setSelectedIds((current) => {
+      if (allSelected) {
+        return current.filter((id) => !ids.includes(id));
+      }
+
+      return Array.from(new Set([...current, ...ids]));
+    });
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+
+    if (!name.trim()) {
+      setError("Role name is required.");
+      return;
+    }
+
+    if (!selectedIds.length) {
+      setError("Select at least one permission.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await onCreate(name.trim(), selectedIds);
+    } catch (submitError) {
+      setError(getErrorMessage(submitError));
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="grid max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-slate-100 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#069AFF]">Role control</p>
+            <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">Create role with permissions</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Select one or more permissions. The selected permission IDs are submitted as an array to the role endpoint.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+            aria-label="Close role creator"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="grid min-h-0 gap-0 lg:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="border-b border-slate-100 p-5 dark:border-white/10 lg:border-b-0 lg:border-r">
+            <label>
+              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Role name</span>
+              <input
+                required
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Operations Manager"
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              />
+            </label>
+
+            <div className="mt-5 rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/10 p-4">
+              <p className="text-3xl font-bold text-slate-950 dark:text-white">{selectedIds.length}</p>
+              <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF] dark:text-sky-200">Selected permissions</p>
+            </div>
+
+            {error && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                {error}
+              </div>
+            )}
+
+            <div className="mt-5 grid gap-3">
+              <button
+                type="button"
+                onClick={() => setSelectedIds(filteredPermissions.map(getId).filter(Boolean))}
+                className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+              >
+                Select visible
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+              >
+                Clear selected
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+                Create role
+              </button>
+            </div>
+          </aside>
+
+          <section className="min-h-0 p-5">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <label className="w-full sm:max-w-md">
+                <span className="sr-only">Search permissions</span>
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search permissions or modules"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                />
+              </label>
+              <p className="text-sm font-bold text-slate-500 dark:text-slate-400">{filteredPermissions.length} visible</p>
+            </div>
+
+            <div className="max-h-[58vh] overflow-y-auto pr-1">
+              {Object.entries(groupedPermissions).map(([group, groupPermissions]) => {
+                const groupIds = groupPermissions.map(getId).filter(Boolean);
+                const allSelected = groupIds.length > 0 && groupIds.every((id) => selectedSet.has(id));
+
+                return (
+                  <div key={group} className="mb-4 rounded-lg border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/40">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-950 dark:text-white">{formatLabel(group)}</h3>
+                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{groupPermissions.length} permissions</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(groupPermissions)}
+                        className="h-8 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                      >
+                        {allSelected ? "Clear group" : "Select group"}
+                      </button>
+                    </div>
+                    <div className="grid gap-2 p-3 sm:grid-cols-2">
+                      {groupPermissions.map((permission, index) => {
+                        const id = getId(permission);
+                        const label = String(getRecordValue(permission, ["name", "title", "permission", "action"]) ?? `Permission ${index + 1}`);
+                        const checked = selectedSet.has(id);
+
+                        return (
+                          <label
+                            key={id || `${group}-${index}`}
+                            className={`flex cursor-pointer gap-3 rounded-md border p-3 transition ${
+                              checked
+                                ? "border-[#069AFF]/40 bg-[#069AFF]/10"
+                                : "border-slate-200 bg-white hover:border-[#069AFF]/30 dark:border-white/10 dark:bg-white/[0.035]"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => id && togglePermission(id)}
+                              className="mt-1 h-4 w-4 accent-[#069AFF]"
+                            />
+                            <span>
+                              <span className="block text-sm font-bold text-slate-900 dark:text-white">{formatLabel(label)}</span>
+                              <span className="mt-1 block break-all text-[11px] font-medium text-slate-500 dark:text-slate-400">{id || "Missing id"}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function ManagementTable({
   title,
   rows,
   columns,
+  action,
   children,
 }: {
   title: string;
   rows: Record<string, unknown>[];
   columns: string[];
-  children: (row: Record<string, unknown>, index: number) => React.ReactNode;
+  action?: ReactNode;
+  children: (row: Record<string, unknown>, index: number) => ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30">
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-white/10">
         <h2 className="text-base font-bold text-slate-950 dark:text-white">{title}</h2>
-        <BriefcaseBusiness className="h-5 w-5 text-slate-400" aria-hidden="true" />
+        {action ?? <BriefcaseBusiness className="h-5 w-5 text-slate-400" aria-hidden="true" />}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] text-left text-sm">
@@ -340,6 +1146,10 @@ export default function AdminCenterPage() {
   const [adminData, setAdminData] = useState<AdminCenterData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [detail, setDetail] = useState<DetailState | null>(null);
+  const [userDashboard, setUserDashboard] = useState<UserDashboardState | null>(null);
+  const [appLoanDetail, setAppLoanDetail] = useState<AppLoanDetailState | null>(null);
+  const [formAction, setFormAction] = useState<FormAction | null>(null);
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const isDarkMode = resolvedTheme === "dark";
 
@@ -370,12 +1180,254 @@ export default function AdminCenterPage() {
   const kycs = useMemo(() => extractRows(adminData?.kycs), [adminData]);
   const loans = useMemo(() => extractRows(adminData?.loans), [adminData]);
   const loanPackages = useMemo(() => extractRows(adminData?.loanPackages), [adminData]);
+  const accountTiers = useMemo(() => extractRows(adminData?.accountTiers), [adminData]);
+  const complaints = useMemo(() => extractRows(adminData?.complaints), [adminData]);
+  const complaintCategories = useMemo(() => extractRows(adminData?.complaintCategories), [adminData]);
+  const contactUs = useMemo(() => extractRows(adminData?.contactUs), [adminData]);
+  const faqs = useMemo(() => extractRows(adminData?.faqs), [adminData]);
+  const liveChat = useMemo(() => extractRows(adminData?.liveChat), [adminData]);
+  const loanTypes = useMemo(() => extractRows(adminData?.loanTypes), [adminData]);
+  const appLoans = useMemo(() => extractRows(adminData?.appLoans), [adminData]);
   const endpointErrors = adminData ? Object.entries(adminData.errors) : [];
 
   const refreshData = async () => {
     setRefreshing(true);
     setAdminData(await fetchAdminCenter());
     setRefreshing(false);
+  };
+
+  const submitAndRefresh = async (request: () => Promise<unknown>) => {
+    await request();
+    await refreshData();
+    setFormAction(null);
+  };
+
+  const openCreateAdmin = () => {
+    setFormAction({
+      eyebrow: "Administrator",
+      title: "Create administrator",
+      description: "Create a staff account and send the generated password through the backend mailer.",
+      submitLabel: "Create admin",
+      fields: [
+        { name: "first_name", label: "First name", required: true, placeholder: "Amina" },
+        { name: "last_name", label: "Last name", required: true, placeholder: "Okafor" },
+        { name: "email", label: "Email address", type: "email", required: true, placeholder: "admin@eazycredit.com" },
+        { name: "phone", label: "Phone number", type: "tel", required: true, placeholder: "08000000000" },
+        { name: "role_id", label: "Role ID", required: true, placeholder: "Paste role id" },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.createAdmin(values)),
+    });
+  };
+
+  const openCreateRole = () => {
+    setRoleModalOpen(true);
+  };
+
+  const createRole = async (name: string, permissionIds: string[]) => {
+    await adminService.createRole({ name, permissions: permissionIds });
+    await refreshData();
+    setRoleModalOpen(false);
+  };
+
+  const openCreateUser = () => {
+    setFormAction({
+      eyebrow: "Customer account",
+      title: "Create user",
+      description: "Create a customer profile. The backend generates the password and stores the account as active.",
+      submitLabel: "Create user",
+      fields: [
+        { name: "first_name", label: "First name", required: true, placeholder: "Daniel" },
+        { name: "last_name", label: "Last name", required: true, placeholder: "Ibrahim" },
+        { name: "email", label: "Email address", type: "email", required: true, placeholder: "customer@example.com" },
+        { name: "phone", label: "Phone number", type: "tel", required: true, placeholder: "08000000000" },
+        { name: "bankone_customerid", label: "BankOne customer ID", placeholder: "Optional" },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.createUser(values)),
+    });
+  };
+
+  const openCreateKycNotice = () => {
+    setFormAction({
+      eyebrow: "KYC notice",
+      title: "Create KYC record",
+      description: "Submit a KYC notice through the admin KYC endpoint using the authenticated administrator.",
+      submitLabel: "Create record",
+      fields: [
+        { name: "title", label: "Title", required: true, placeholder: "Document review request" },
+        { name: "content", label: "Content", type: "textarea", required: true, placeholder: "Explain what needs review." },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.createKyc(values)),
+    });
+  };
+
+  const openCreateAccountTier = () => {
+    setFormAction({
+      eyebrow: "Account tier",
+      title: "Create account tier",
+      description: "Create deposit and withdrawal limits for a customer tier.",
+      submitLabel: "Create tier",
+      fields: [
+        { name: "tier", label: "Tier", required: true, placeholder: "Tier 1" },
+        { name: "description", label: "Description", required: true, placeholder: "Basic customer account" },
+        { name: "deposit", label: "Deposit limit", required: true, placeholder: "50000" },
+        { name: "withdrawal", label: "Withdrawal limit", required: true, placeholder: "20000" },
+        { name: "benefits", label: "Benefits", type: "textarea", required: true, placeholder: "List the benefits for this tier." },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.createAccountTier(values)),
+    });
+  };
+
+  const openEditAccountTier = (row: Record<string, unknown>) => {
+    const id = getId(row);
+    setFormAction({
+      eyebrow: "Account tier",
+      title: "Update account tier",
+      description: "Update tier limits and benefits.",
+      submitLabel: "Update tier",
+      initialValues: {
+        tier: String(getRecordValue(row, ["tier"]) ?? ""),
+        description: String(getRecordValue(row, ["description"]) ?? ""),
+        deposit: String(getRecordValue(row, ["deposit"]) ?? ""),
+        withdrawal: String(getRecordValue(row, ["withdrawal"]) ?? ""),
+        benefits: String(getRecordValue(row, ["benefits"]) ?? ""),
+      },
+      fields: [
+        { name: "tier", label: "Tier", required: true },
+        { name: "description", label: "Description", required: true },
+        { name: "deposit", label: "Deposit limit", required: true },
+        { name: "withdrawal", label: "Withdrawal limit", required: true },
+        { name: "benefits", label: "Benefits", type: "textarea", required: true },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.updateAccountTier(id, values)),
+    });
+  };
+
+  const openReplyComplaint = (id: string) => {
+    setFormAction({
+      eyebrow: "Complaint reply",
+      title: "Reply to complaint",
+      description: "Send an official response to the customer complaint.",
+      submitLabel: "Send reply",
+      fields: [{ name: "message", label: "Reply message", type: "textarea", required: true, placeholder: "Write the reply here." }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.replyComplaint(id, { message: values.message })),
+    });
+  };
+
+  const updateComplaintStatus = async (id: string, status: string) => {
+    setBusyAction(`complaint-${id}-${status}`);
+    try {
+      await adminService.updateComplaintStatus(id, { status });
+      await refreshData();
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const openCreateComplaintCategory = () => {
+    setFormAction({
+      eyebrow: "Complaint category",
+      title: "Create complaint category",
+      description: "Add a complaint category customers can select.",
+      submitLabel: "Create category",
+      fields: [{ name: "text", label: "Category", required: true, placeholder: "Loan repayment" }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.createComplaintCategory(values)),
+    });
+  };
+
+  const openCreateContact = () => {
+    setFormAction({
+      eyebrow: "Contact setting",
+      title: "Create contact entry",
+      description: "Add a public contact record.",
+      submitLabel: "Create contact",
+      fields: [
+        { name: "name", label: "Name", required: true, placeholder: "Support email" },
+        { name: "value", label: "Value", required: true, placeholder: "support@example.com" },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.createContactUs(values)),
+    });
+  };
+
+  const openEditContact = (row: Record<string, unknown>) => {
+    const id = getId(row);
+    setFormAction({
+      eyebrow: "Contact setting",
+      title: "Update contact entry",
+      description: "Update the value for this contact record.",
+      submitLabel: "Update contact",
+      initialValues: { value: String(getRecordValue(row, ["value"]) ?? "") },
+      fields: [{ name: "value", label: "Value", required: true }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.updateContactUs(id, values)),
+    });
+  };
+
+  const openCreateFaq = () => {
+    setFormAction({
+      eyebrow: "FAQ",
+      title: "Create FAQ",
+      description: "Add a frequently asked question.",
+      submitLabel: "Create FAQ",
+      fields: [
+        { name: "title", label: "Question", required: true, placeholder: "How do repayments work?" },
+        { name: "content", label: "Answer", type: "textarea", required: true, placeholder: "Write the answer here." },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.createFaq(values)),
+    });
+  };
+
+  const openEditFaq = (row: Record<string, unknown>) => {
+    const id = getId(row);
+    setFormAction({
+      eyebrow: "FAQ",
+      title: "Update FAQ",
+      description: "Update this question and answer.",
+      submitLabel: "Update FAQ",
+      initialValues: {
+        title: String(getRecordValue(row, ["title"]) ?? ""),
+        content: String(getRecordValue(row, ["content"]) ?? ""),
+      },
+      fields: [
+        { name: "title", label: "Question", required: true },
+        { name: "content", label: "Answer", type: "textarea", required: true },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.updateFaq(id, values)),
+    });
+  };
+
+  const openBroadcast = (userId: string, name: string) => {
+    setFormAction({
+      eyebrow: "Customer broadcast",
+      title: `Broadcast to ${name}`,
+      description: "Schedule a direct message for this customer.",
+      submitLabel: "Send broadcast",
+      fields: [
+        { name: "title", label: "Title", required: true, placeholder: "Account update" },
+        { name: "content", label: "Message", type: "textarea", required: true, placeholder: "Write the message here." },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.broadcastToUser(userId, values)),
+    });
+  };
+
+  const openUserDashboard = async (userId: string, userName: string) => {
+    setUserDashboard({ title: "User dashboard", userName, loading: true, data: null, error: "" });
+
+    try {
+      const data = await adminService.getUserDashboard(userId);
+      setUserDashboard({ title: "User dashboard", userName, loading: false, data, error: "" });
+    } catch (error) {
+      setUserDashboard({ title: "User dashboard", userName, loading: false, data: null, error: getErrorMessage(error) });
+    }
+  };
+
+  const openAppLoanDetail = async (id: string) => {
+    setAppLoanDetail({ title: "Application loan details", loading: true, data: null, error: "" });
+
+    try {
+      const data = await adminService.getAppLoanById(id);
+      setAppLoanDetail({ title: "Application loan details", loading: false, data, error: "" });
+    } catch (error) {
+      setAppLoanDetail({ title: "Application loan details", loading: false, data: null, error: getErrorMessage(error) });
+    }
   };
 
   const handleLogout = () => {
@@ -396,32 +1448,192 @@ export default function AdminCenterPage() {
 
   const toggleAdmin = async (id: string) => {
     setBusyAction(`admin-${id}`);
-    await adminService.toggleAdminStatus(id);
-    await refreshData();
-    setBusyAction(null);
+    try {
+      await adminService.toggleAdminStatus(id);
+      await refreshData();
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const disableRole = async (id: string) => {
+    setBusyAction(`role-${id}`);
+    try {
+      await adminService.updateRole(id, {});
+      await refreshData();
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   const reviewKyc = async (id: string, action: "approve" | "reject") => {
     setBusyAction(`kyc-${id}-${action}`);
-    await adminService.approveKyc(id, {
-      action,
-      reason: action === "approve" ? "Approved from admin center" : "Rejected from admin center",
-    });
-    await refreshData();
-    setBusyAction(null);
+    try {
+      await adminService.approveKyc(id, {
+        action,
+        reason: action === "approve" ? "Approved from admin center" : "Rejected from admin center",
+      });
+      await refreshData();
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   const reviewLoan = async (id: string, action: "approve" | "reject") => {
     setBusyAction(`loan-${id}-${action}`);
 
-    if (action === "approve") {
-      await adminService.approveLoan(id, { disburseToWallet: false });
-    } else {
-      await adminService.rejectLoan(id, { reason: "Rejected from admin center" });
-    }
+    try {
+      if (action === "approve") {
+        await adminService.approveLoan(id, { disburseToWallet: false });
+      } else {
+        await adminService.rejectLoan(id, { reason: "Rejected from admin center" });
+      }
 
-    await refreshData();
-    setBusyAction(null);
+      await refreshData();
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const parseCsvList = (value: string) =>
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  const parseDurations = (value: string) => {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const openCreateLoanType = () => {
+    setFormAction({
+      eyebrow: "Loan type",
+      title: "Create loan type",
+      description: "Create a loan product type. Durations must be a JSON array matching the backend schema.",
+      submitLabel: "Create loan type",
+      fields: [
+        { name: "name", label: "Name", required: true, placeholder: "Salary Loan" },
+        { name: "slug", label: "Slug", required: true, placeholder: "salary-loan" },
+        { name: "description", label: "Description", required: true, placeholder: "Short term salary-backed loan" },
+        { name: "badgeText", label: "Badge text", placeholder: "Popular" },
+        { name: "minAmount", label: "Minimum amount", required: true, placeholder: "10000" },
+        { name: "maxAmount", label: "Maximum amount", required: true, placeholder: "500000" },
+        { name: "currency", label: "Currency", required: true, placeholder: "NGN" },
+        { name: "requirements", label: "Requirements", placeholder: "BVN, Employment letter" },
+        {
+          name: "durations",
+          label: "Durations JSON",
+          type: "textarea",
+          required: true,
+          placeholder: `[{"days":30,"label":"30 days","interestRate":5,"installmentCount":1,"topUpAllowed":true}]`,
+        },
+      ],
+      onSubmit: (values) =>
+        submitAndRefresh(() =>
+          adminService.createLoanType({
+            ...values,
+            minAmount: Number(values.minAmount),
+            maxAmount: Number(values.maxAmount),
+            requirements: parseCsvList(values.requirements ?? ""),
+            durations: parseDurations(values.durations ?? "[]"),
+          }),
+        ),
+    });
+  };
+
+  const openEditLoanType = (row: Record<string, unknown>) => {
+    const id = getId(row);
+    setFormAction({
+      eyebrow: "Loan type",
+      title: "Update loan type",
+      description: "Update loan product settings.",
+      submitLabel: "Update loan type",
+      initialValues: {
+        name: String(getRecordValue(row, ["name"]) ?? ""),
+        slug: String(getRecordValue(row, ["slug"]) ?? ""),
+        description: String(getRecordValue(row, ["description"]) ?? ""),
+        badgeText: String(getRecordValue(row, ["badgeText"]) ?? ""),
+        minAmount: String(getRecordValue(row, ["minAmount"]) ?? ""),
+        maxAmount: String(getRecordValue(row, ["maxAmount"]) ?? ""),
+        currency: String(getRecordValue(row, ["currency"]) ?? "NGN"),
+        requirements: Array.isArray(row.requirements) ? row.requirements.join(", ") : "",
+        durations: JSON.stringify(Array.isArray(row.durations) ? row.durations : [], null, 2),
+      },
+      fields: [
+        { name: "name", label: "Name", required: true },
+        { name: "slug", label: "Slug", required: true },
+        { name: "description", label: "Description", required: true },
+        { name: "badgeText", label: "Badge text" },
+        { name: "minAmount", label: "Minimum amount", required: true },
+        { name: "maxAmount", label: "Maximum amount", required: true },
+        { name: "currency", label: "Currency", required: true },
+        { name: "requirements", label: "Requirements" },
+        { name: "durations", label: "Durations JSON", type: "textarea", required: true },
+      ],
+      onSubmit: (values) =>
+        submitAndRefresh(() =>
+          adminService.updateLoanType(id, {
+            ...values,
+            minAmount: Number(values.minAmount),
+            maxAmount: Number(values.maxAmount),
+            requirements: parseCsvList(values.requirements ?? ""),
+            durations: parseDurations(values.durations ?? "[]"),
+          }),
+        ),
+    });
+  };
+
+  const runAppLoanAction = async (id: string, action: string, request: () => Promise<unknown>) => {
+    setBusyAction(`app-loan-${id}-${action}`);
+    try {
+      await request();
+      await refreshData();
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const openRejectAppLoan = (id: string) => {
+    setFormAction({
+      eyebrow: "App loan",
+      title: "Reject application loan",
+      description: "Provide the official rejection reason.",
+      submitLabel: "Reject loan",
+      initialValues: { reason: "Insufficient score" },
+      fields: [{ name: "reason", label: "Reason", type: "textarea", required: true }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.rejectAppLoan(id, { reason: values.reason })),
+    });
+  };
+
+  const openApproveTopUp = (id: string) => {
+    setFormAction({
+      eyebrow: "Top up",
+      title: "Approve top-up request",
+      description: "Enter the top-up request ID to approve.",
+      submitLabel: "Approve top-up",
+      fields: [{ name: "requestId", label: "Request ID", required: true, placeholder: "TPU-xxxxxxxxxxxx" }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.approveAppLoanTopUp(id, { requestId: values.requestId })),
+    });
+  };
+
+  const openRejectTopUp = (id: string) => {
+    setFormAction({
+      eyebrow: "Top up",
+      title: "Reject top-up request",
+      description: "Enter the top-up request ID and reason.",
+      submitLabel: "Reject top-up",
+      initialValues: { reason: "Top up not approved" },
+      fields: [
+        { name: "requestId", label: "Request ID", required: true, placeholder: "TPU-xxxxxxxxxxxx" },
+        { name: "reason", label: "Reason", type: "textarea", required: true },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => adminService.rejectAppLoanTopUp(id, { requestId: values.requestId, reason: values.reason })),
+    });
   };
 
   const summaryCards = [
@@ -430,10 +1642,14 @@ export default function AdminCenterPage() {
     { label: "Users", value: formatValue(users.length), icon: Users },
     { label: "KYC reviews", value: formatValue(kycs.length), icon: FileCheck2 },
     { label: "Loans", value: formatValue(loans.length), icon: CreditCard },
+    { label: "App loans", value: formatValue(appLoans.length), icon: CreditCard },
+    { label: "Tiers", value: formatValue(accountTiers.length), icon: BadgeCheck },
+    { label: "Complaints", value: formatValue(complaints.length), icon: Send },
+    { label: "FAQs", value: formatValue(faqs.length), icon: BriefcaseBusiness },
   ];
 
   return (
-    <main className="min-h-screen bg-[#f4f7fb] text-slate-950 dark:bg-[#07111f] dark:text-white">
+    <main className="min-h-screen bg-[linear-gradient(180deg,#eef7ff_0%,#f4f7fb_38%,#f4f7fb_100%)] text-slate-950 dark:bg-[linear-gradient(180deg,#06182b_0%,#07111f_45%,#07111f_100%)] dark:text-white">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-white/10 dark:bg-[#07111f]/95">
         <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-5 py-4 sm:px-8 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-4">
@@ -453,7 +1669,7 @@ export default function AdminCenterPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/dashboard"
-              className="flex h-10 items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-sky-400/40 dark:hover:text-sky-200"
+              className="flex h-10 items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
             >
               Dashboard
             </Link>
@@ -461,7 +1677,7 @@ export default function AdminCenterPage() {
               type="button"
               onClick={refreshData}
               disabled={refreshing}
-              className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-sky-300 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+              className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
             >
               {refreshing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
               Refresh
@@ -469,7 +1685,7 @@ export default function AdminCenterPage() {
             <button
               type="button"
               onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-300 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
               aria-label="Toggle color theme"
             >
               <Sun className="hidden h-5 w-5 dark:block" aria-hidden="true" />
@@ -488,10 +1704,10 @@ export default function AdminCenterPage() {
       </header>
 
       <div className="mx-auto grid max-w-[1480px] gap-6 px-5 py-6 sm:px-8">
-        <section className="rounded-lg border border-slate-200 bg-[#0b1728] p-6 text-white shadow-xl dark:border-white/10 dark:bg-black">
+        <section className="rounded-lg border border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_50%,#069AFF_140%)] p-6 text-white shadow-xl shadow-[#069AFF]/15 dark:border-[#069AFF]/25 dark:bg-[linear-gradient(135deg,#030712_0%,#06294b_55%,#069AFF_150%)]">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-center">
             <div>
-              <div className="mb-5 inline-flex items-center gap-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-200">
+              <div className="mb-5 inline-flex items-center gap-2 rounded-md border border-[#069AFF]/40 bg-[#069AFF]/15 px-3 py-1.5 text-xs font-bold text-sky-100">
                 <BadgeCheck className="h-4 w-4" aria-hidden="true" />
                 Management workspace
               </div>
@@ -504,7 +1720,7 @@ export default function AdminCenterPage() {
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-2">
               {summaryCards.slice(0, 4).map((card) => (
-                <div key={card.label} className="rounded-lg border border-white/10 bg-white/[0.06] p-4">
+                <div key={card.label} className="rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 p-4 shadow-lg shadow-[#069AFF]/10">
                   <p className="text-2xl font-bold">{card.value}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-400">{card.label}</p>
                 </div>
@@ -541,8 +1757,8 @@ export default function AdminCenterPage() {
                 onClick={() => setActiveSection(section.key)}
                 className={`flex h-10 items-center gap-2 rounded-md px-4 text-sm font-bold transition ${
                   activeSection === section.key
-                    ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-white"
+                    ? "bg-[#069AFF] text-white shadow-sm shadow-[#069AFF]/25 dark:bg-[#069AFF] dark:text-white"
+                    : "text-slate-600 hover:bg-[#069AFF]/10 hover:text-[#069AFF] dark:text-slate-300 dark:hover:bg-[#069AFF]/10 dark:hover:text-sky-200"
                 }`}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
@@ -557,7 +1773,21 @@ export default function AdminCenterPage() {
         ) : (
           <>
             {activeSection === "admins" && (
-              <ManagementTable title="Administrators" rows={admins} columns={["Admin", "Email", "Role", "Status", "Created", "Action"]}>
+              <ManagementTable
+                title="Administrators"
+                rows={admins}
+                columns={["Admin", "Email", "Role", "Status", "Created", "Action"]}
+                action={
+                  <button
+                    type="button"
+                    onClick={openCreateAdmin}
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] dark:bg-[#069AFF] dark:text-white dark:hover:bg-[#27a7ff]"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    New admin
+                  </button>
+                }
+              >
                 {(row, index) => {
                   const id = getId(row);
                   const user = getRecordValue(row, ["user"]);
@@ -574,7 +1804,7 @@ export default function AdminCenterPage() {
                           type="button"
                           disabled={!id || busyAction === `admin-${id}`}
                           onClick={() => toggleAdmin(id)}
-                          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-sky-300 hover:text-sky-700 disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
                         >
                           {busyAction === `admin-${id}` ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
                           Toggle
@@ -587,58 +1817,368 @@ export default function AdminCenterPage() {
             )}
 
             {activeSection === "roles" && (
-              <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-                <ManagementTable title="Roles" rows={roles} columns={["Role", "Status", "Created", "Permissions"]}>
-                  {(row, index) => (
-                    <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
-                      <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["name", "title", "role"]) ?? `Role ${index + 1}`)}</td>
-                      <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "active"} /></td>
-                      <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
-                      <td className="px-5 py-4">{formatValue(getRecordValue(row, ["permissions", "permissionCount"]) ?? 0)}</td>
-                    </tr>
-                  )}
+              <div className="grid gap-6">
+                <section className="overflow-hidden rounded-lg border border-[#069AFF]/20 bg-white shadow-sm dark:border-[#069AFF]/25 dark:bg-white/[0.045]">
+                  <div className="grid gap-5 bg-[linear-gradient(135deg,#06172b_0%,#083d70_60%,#069AFF_150%)] p-5 text-white lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Access governance</p>
+                      <h2 className="mt-2 text-2xl font-bold tracking-tight">Roles and permission assignment</h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                        Create official admin roles by selecting multiple permissions from the library. This keeps permission IDs visible but removes manual copy-paste mistakes.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openCreateRole}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      Create role
+                    </button>
+                  </div>
+                  <div className="grid gap-4 border-t border-slate-100 p-5 dark:border-white/10 md:grid-cols-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                      <p className="text-2xl font-bold text-slate-950 dark:text-white">{formatValue(roles.length)}</p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Active role records</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                      <p className="text-2xl font-bold text-slate-950 dark:text-white">{formatValue(permissions.length)}</p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Permission controls</p>
+                    </div>
+                    <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/10 p-4">
+                      <p className="text-2xl font-bold text-slate-950 dark:text-white">
+                        {formatValue(roles.reduce((total, role) => total + (Array.isArray(role.permissions) ? role.permissions.length : 0), 0))}
+                      </p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF] dark:text-sky-200">Assigned links</p>
+                    </div>
+                  </div>
+                </section>
+
+                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_430px]">
+                  <ManagementTable
+                    title="Role directory"
+                    rows={roles}
+                    columns={["Role", "Status", "Created", "Permissions", "Action"]}
+                  >
+                    {(row, index) => {
+                      const id = getId(row);
+                      const permissionCount = Array.isArray(row.permissions) ? row.permissions.length : Number(getRecordValue(row, ["permissionCount"]) ?? 0);
+
+                      return (
+                        <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
+                          <td className="px-5 py-4">
+                            <p className="font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["name", "title", "role"]) ?? `Role ${index + 1}`)}</p>
+                            <p className="mt-1 break-all text-xs font-medium text-slate-500 dark:text-slate-400">{id || "No role id"}</p>
+                          </td>
+                          <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "active"} /></td>
+                          <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
+                          <td className="px-5 py-4">
+                            <span className="inline-flex rounded-md border border-[#069AFF]/20 bg-[#069AFF]/10 px-2.5 py-1 text-xs font-bold text-[#069AFF] dark:text-sky-200">
+                              {formatValue(permissionCount)} selected
+                            </span>
+                          </td>
+                          <td className="px-5 py-4">
+                            <button
+                              type="button"
+                              disabled={!id || busyAction === `role-${id}`}
+                              onClick={() => disableRole(id)}
+                              className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                            >
+                              Disable
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }}
+                  </ManagementTable>
+
+                  <PermissionLibrary permissions={permissions} />
+                </div>
+              </div>
+            )}
+
+            {activeSection === "users" && (
+              <div className="grid gap-6">
+                <section className="overflow-hidden rounded-lg border border-[#069AFF]/20 bg-white shadow-sm dark:border-[#069AFF]/25 dark:bg-white/[0.045]">
+                  <div className="grid gap-5 bg-[linear-gradient(135deg,#06172b_0%,#083d70_60%,#069AFF_150%)] p-5 text-white lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Customer operations</p>
+                      <h2 className="mt-2 text-2xl font-bold tracking-tight">User profiles and financial visibility</h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                        Open a customer dashboard to review virtual accounts, wallets, and loan exposure without leaving the admin workspace.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openCreateUser}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      Create user
+                    </button>
+                  </div>
+                  <div className="grid gap-4 border-t border-slate-100 p-5 dark:border-white/10 md:grid-cols-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                      <p className="text-2xl font-bold text-slate-950 dark:text-white">{formatValue(users.length)}</p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Loaded users</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                      <p className="text-2xl font-bold text-slate-950 dark:text-white">
+                        {formatValue(users.filter((user) => String(getRecordValue(user, ["status"]) ?? "active").toLowerCase() === "active").length)}
+                      </p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Active profiles</p>
+                    </div>
+                    <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/10 p-4">
+                      <p className="text-2xl font-bold text-slate-950 dark:text-white">
+                        {formatValue(users.filter((user) => Boolean(getRecordValue(user, ["email"]))).length)}
+                      </p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF] dark:text-sky-200">Reachable by email</p>
+                    </div>
+                  </div>
+                </section>
+
+                <ManagementTable
+                  title="Customer directory"
+                  rows={users}
+                  columns={["Customer", "Contact", "Status", "Created", "Action"]}
+                >
+                  {(row, index) => {
+                    const id = getId(row);
+                    const name = getPersonName(row);
+                    const email = String(getRecordValue(row, ["email"]) ?? "Not available");
+                    const phone = String(getRecordValue(row, ["phone", "phone_number"]) ?? "Not available");
+
+                    return (
+                      <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#069AFF]/10 text-sm font-bold text-[#069AFF] ring-1 ring-[#069AFF]/15">
+                              {name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-950 dark:text-white">{name}</p>
+                              <p className="mt-1 break-all text-xs font-medium text-slate-500 dark:text-slate-400">{id || `User ${index + 1}`}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-slate-800 dark:text-slate-200">{email}</p>
+                          <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{phone}</p>
+                        </td>
+                        <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "active"} /></td>
+                        <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openUserDashboard(id, name)}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                            >
+                              <Eye className="h-4 w-4" aria-hidden="true" />
+                              Dashboard
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openBroadcast(id, name)}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                            >
+                              <Send className="h-4 w-4" aria-hidden="true" />
+                              Broadcast
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }}
                 </ManagementTable>
-                <ManagementTable title="Permissions" rows={permissions} columns={["Permission", "Module"]}>
+              </div>
+            )}
+
+            {activeSection === "tiers" && (
+              <div className="grid gap-6">
+                <section className="overflow-hidden rounded-lg border border-[#069AFF]/20 bg-white shadow-sm dark:border-[#069AFF]/25 dark:bg-white/[0.045]">
+                  <div className="grid gap-5 bg-[linear-gradient(135deg,#06172b_0%,#083d70_60%,#069AFF_150%)] p-5 text-white lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Account limits</p>
+                      <h2 className="mt-2 text-2xl font-bold tracking-tight">Account tier management</h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                        Manage customer tier descriptions, deposit limits, withdrawal limits, and tier benefits.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openCreateAccountTier}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      Create tier
+                    </button>
+                  </div>
+                </section>
+
+                <ManagementTable title="Account tiers" rows={accountTiers} columns={["Tier", "Description", "Limits", "Benefits", "Action"]}>
                   {(row, index) => (
                     <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
-                      <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["name", "title", "permission"]) ?? `Permission ${index + 1}`)}</td>
-                      <td className="px-5 py-4">{String(getRecordValue(row, ["module", "group", "category"]) ?? "General")}</td>
+                      <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["tier", "name"]) ?? `Tier ${index + 1}`)}</td>
+                      <td className="px-5 py-4">{String(getRecordValue(row, ["description"]) ?? "Not available")}</td>
+                      <td className="px-5 py-4">
+                        <p className="font-semibold text-slate-950 dark:text-white">Deposit: {formatCurrency(getRecordValue(row, ["deposit"]))}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Withdrawal: {formatCurrency(getRecordValue(row, ["withdrawal"]))}</p>
+                      </td>
+                      <td className="px-5 py-4">{String(getRecordValue(row, ["benefits"]) ?? "Not available")}</td>
+                      <td className="px-5 py-4">
+                        <button
+                          type="button"
+                          disabled={!getId(row)}
+                          onClick={() => openEditAccountTier(row)}
+                          className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                        >
+                          <Eye className="h-4 w-4" aria-hidden="true" />
+                          Edit
+                        </button>
+                      </td>
                     </tr>
                   )}
                 </ManagementTable>
               </div>
             )}
 
-            {activeSection === "users" && (
-              <ManagementTable title="Users" rows={users} columns={["Customer", "Email", "Phone", "Status", "Created", "Action"]}>
-                {(row, index) => {
-                  const id = getId(row);
-                  return (
-                    <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
-                      <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{getPersonName(row)}</td>
-                      <td className="px-5 py-4">{String(getRecordValue(row, ["email"]) ?? "Not available")}</td>
-                      <td className="px-5 py-4">{String(getRecordValue(row, ["phone", "phone_number"]) ?? "Not available")}</td>
-                      <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "active"} /></td>
-                      <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
-                      <td className="px-5 py-4">
-                        <button
-                          type="button"
-                          disabled={!id}
-                          onClick={() => openDetail("User dashboard", () => adminService.getUserDashboard(id))}
-                          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-sky-300 hover:text-sky-700 disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                        >
-                          <Eye className="h-4 w-4" aria-hidden="true" />
-                          View
-                        </button>
-                      </td>
+            {activeSection === "support" && (
+              <div className="grid gap-6">
+                <section className="grid gap-5 md:grid-cols-3">
+                  <SummaryCard label="Complaints" value={formatValue(complaints.length)} icon={Send} />
+                  <SummaryCard label="Live chats" value={formatValue(liveChat.length)} icon={Users} />
+                  <SummaryCard label="Open complaints" value={formatValue(complaints.filter((item) => String(getRecordValue(item, ["status"]) ?? "open").toLowerCase() === "open").length)} icon={AlertCircle} />
+                </section>
+
+                <ManagementTable title="Complaints" rows={complaints} columns={["Customer", "Complaint", "Status", "Updated", "Action"]}>
+                  {(row, index) => {
+                    const id = getId(row);
+                    return (
+                      <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
+                        <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["customerName", "userName", "email", "userId"]) ?? `Complaint ${index + 1}`)}</td>
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-slate-950 dark:text-white">{String(getRecordValue(row, ["title", "subject", "category"]) ?? "Complaint")}</p>
+                          <p className="mt-1 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{String(getRecordValue(row, ["message", "content", "description"]) ?? "No message")}</p>
+                        </td>
+                        <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "open"} /></td>
+                        <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["updatedAt", "createdAt"]))}</td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openReplyComplaint(id)}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                            >
+                              <Send className="h-4 w-4" aria-hidden="true" />
+                              Reply
+                            </button>
+                            {["in-progress", "resolved", "closed"].map((status) => (
+                              <button
+                                key={status}
+                                type="button"
+                                disabled={!id || busyAction === `complaint-${id}-${status}`}
+                                onClick={() => updateComplaintStatus(id, status)}
+                                className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                              >
+                                {formatLabel(status)}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }}
+                </ManagementTable>
+
+                <ManagementTable title="Live chat inbox" rows={liveChat} columns={["Customer", "Last message", "Status", "Updated"]}>
+                  {(row, index) => (
+                    <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
+                      <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["customerName", "userName", "email", "userId"]) ?? `Chat ${index + 1}`)}</td>
+                      <td className="px-5 py-4">{String(getRecordValue(row, ["lastMessage", "message", "content", "text"]) ?? "No message")}</td>
+                      <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "open"} /></td>
+                      <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["updatedAt", "createdAt"]))}</td>
                     </tr>
-                  );
-                }}
-              </ManagementTable>
+                  )}
+                </ManagementTable>
+              </div>
+            )}
+
+            {activeSection === "content" && (
+              <div className="grid gap-6">
+                <section className="grid gap-5 md:grid-cols-3">
+                  <SummaryCard label="Complaint categories" value={formatValue(complaintCategories.length)} icon={BriefcaseBusiness} />
+                  <SummaryCard label="Contact entries" value={formatValue(contactUs.length)} icon={Users} />
+                  <SummaryCard label="FAQs" value={formatValue(faqs.length)} icon={FileCheck2} />
+                </section>
+
+                <div className="grid gap-6 xl:grid-cols-3">
+                  <ManagementTable
+                    title="Complaint categories"
+                    rows={complaintCategories}
+                    columns={["Category", "Created"]}
+                    action={<button type="button" onClick={openCreateComplaintCategory} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white"><Plus className="h-4 w-4" aria-hidden="true" />New</button>}
+                  >
+                    {(row, index) => (
+                      <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
+                        <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["text", "name", "title"]) ?? `Category ${index + 1}`)}</td>
+                        <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
+                      </tr>
+                    )}
+                  </ManagementTable>
+
+                  <ManagementTable
+                    title="Contact us"
+                    rows={contactUs}
+                    columns={["Name", "Value", "Action"]}
+                    action={<button type="button" onClick={openCreateContact} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white"><Plus className="h-4 w-4" aria-hidden="true" />New</button>}
+                  >
+                    {(row, index) => (
+                      <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
+                        <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["name"]) ?? `Contact ${index + 1}`)}</td>
+                        <td className="px-5 py-4">{String(getRecordValue(row, ["value"]) ?? "Not available")}</td>
+                        <td className="px-5 py-4"><button type="button" onClick={() => openEditContact(row)} className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF]">Edit</button></td>
+                      </tr>
+                    )}
+                  </ManagementTable>
+
+                  <ManagementTable
+                    title="FAQs"
+                    rows={faqs}
+                    columns={["Question", "Answer", "Action"]}
+                    action={<button type="button" onClick={openCreateFaq} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white"><Plus className="h-4 w-4" aria-hidden="true" />New</button>}
+                  >
+                    {(row, index) => (
+                      <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
+                        <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["title"]) ?? `FAQ ${index + 1}`)}</td>
+                        <td className="px-5 py-4"><span className="line-clamp-2">{String(getRecordValue(row, ["content"]) ?? "Not available")}</span></td>
+                        <td className="px-5 py-4"><button type="button" onClick={() => openEditFaq(row)} className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF]">Edit</button></td>
+                      </tr>
+                    )}
+                  </ManagementTable>
+                </div>
+              </div>
             )}
 
             {activeSection === "kyc" && (
-              <ManagementTable title="KYC reviews" rows={kycs} columns={["User", "Tier", "Status", "Created", "Action"]}>
+              <ManagementTable
+                title="KYC reviews"
+                rows={kycs}
+                columns={["User", "Tier", "Status", "Created", "Action"]}
+                action={
+                  <button
+                    type="button"
+                    onClick={openCreateKycNotice}
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] dark:bg-[#069AFF] dark:text-white dark:hover:bg-[#27a7ff]"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    New KYC
+                  </button>
+                }
+              >
                 {(row, index) => {
                   const id = getId(row);
                   const pending = String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "pending";
@@ -654,7 +2194,7 @@ export default function AdminCenterPage() {
                             type="button"
                             disabled={!id}
                             onClick={() => openDetail("KYC details", () => adminService.getKycById(id))}
-                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-sky-300 hover:text-sky-700 disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
                           >
                             <Eye className="h-4 w-4" aria-hidden="true" />
                             View
@@ -685,11 +2225,124 @@ export default function AdminCenterPage() {
 
             {activeSection === "loans" && (
               <div className="grid gap-6">
-                <section className="grid gap-5 md:grid-cols-3">
+                <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                   <SummaryCard label="Loan records" value={formatValue(loans.length)} icon={CreditCard} />
-                  <SummaryCard label="Loan packages" value={formatValue(loanPackages.length)} icon={BriefcaseBusiness} />
-                  <SummaryCard label="Recent loans" value={formatValue(extractRows(adminData.recentLoans).length)} icon={CheckCircle2} />
+                  <SummaryCard label="App loans" value={formatValue(appLoans.length)} icon={CreditCard} />
+                  <SummaryCard label="Loan types" value={formatValue(loanTypes.length)} icon={BriefcaseBusiness} />
+                  <SummaryCard label="Loan packages" value={formatValue(loanPackages.length)} icon={CheckCircle2} />
                 </section>
+
+                <ManagementTable
+                  title="Loan types"
+                  rows={loanTypes}
+                  columns={["Type", "Amount range", "Status", "Durations", "Action"]}
+                  action={
+                    <button type="button" onClick={openCreateLoanType} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white">
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      New type
+                    </button>
+                  }
+                >
+                  {(row, index) => (
+                    <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
+                      <td className="px-5 py-4">
+                        <p className="font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["name"]) ?? `Loan type ${index + 1}`)}</p>
+                        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{String(getRecordValue(row, ["slug", "description"]) ?? "No slug")}</p>
+                      </td>
+                      <td className="px-5 py-4 font-semibold text-slate-950 dark:text-white">
+                        {formatCurrency(getRecordValue(row, ["minAmount"]))} - {formatCurrency(getRecordValue(row, ["maxAmount"]))}
+                      </td>
+                      <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "active"} /></td>
+                      <td className="px-5 py-4">{formatValue(Array.isArray(row.durations) ? row.durations.length : 0)}</td>
+                      <td className="px-5 py-4">
+                        <button
+                          type="button"
+                          disabled={!getId(row)}
+                          onClick={() => openEditLoanType(row)}
+                          className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </ManagementTable>
+
+                <ManagementTable title="Application loans" rows={appLoans} columns={["Applicant", "Loan", "Exposure", "Status", "Action"]}>
+                  {(row, index) => {
+                    const id = getId(row);
+                    return (
+                      <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["customerName", "userName", "userId"]) ?? `Application ${index + 1}`)}</p>
+                          <p className="mt-1 break-all text-xs font-medium text-slate-500 dark:text-slate-400">{id || "No loan id"}</p>
+                        </td>
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-slate-950 dark:text-white">{String(getRecordValue(row, ["loanTypeName", "purposeText"]) ?? "Application loan")}</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{String(getRecordValue(row, ["durationLabel"]) ?? "No duration")}</p>
+                        </td>
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["amount"]))}</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Outstanding: {formatCurrency(getRecordValue(row, ["outstandingAmount"]))}</p>
+                        </td>
+                        <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "pending"} /></td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openAppLoanDetail(id)}
+                              className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                            >
+                              View
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!id || busyAction === `app-loan-${id}-score`}
+                              onClick={() => runAppLoanAction(id, "score", () => adminService.scoreAppLoan(id, { crb_provider: "crc" }))}
+                              className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                            >
+                              Score
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!id || busyAction === `app-loan-${id}-approve`}
+                              onClick={() => runAppLoanAction(id, "approve", () => adminService.approveAppLoan(id))}
+                              className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openRejectAppLoan(id)}
+                              className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openApproveTopUp(id)}
+                              className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                            >
+                              Top-up approve
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openRejectTopUp(id)}
+                              className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-red-200 hover:text-red-600 disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                            >
+                              Top-up reject
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }}
+                </ManagementTable>
+
                 <ManagementTable title="Loans" rows={loans} columns={["Customer", "Amount", "Status", "Created", "Action"]}>
                   {(row, index) => {
                     const id = getId(row);
@@ -707,7 +2360,7 @@ export default function AdminCenterPage() {
                               type="button"
                               disabled={!id}
                               onClick={() => openDetail("Loan details", () => adminService.getLoanDetails(id))}
-                              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-sky-300 hover:text-sky-700 disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
                             >
                               <Eye className="h-4 w-4" aria-hidden="true" />
                               View
@@ -741,6 +2394,16 @@ export default function AdminCenterPage() {
       </div>
 
       {detail && <DetailModal detail={detail} onClose={() => setDetail(null)} />}
+      {userDashboard && <UserDashboardModal dashboard={userDashboard} onClose={() => setUserDashboard(null)} />}
+      {appLoanDetail && <AppLoanDetailsModal loan={appLoanDetail} onClose={() => setAppLoanDetail(null)} />}
+      {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
+      {roleModalOpen && (
+        <RoleCreateModal
+          permissions={permissions}
+          onClose={() => setRoleModalOpen(false)}
+          onCreate={createRole}
+        />
+      )}
     </main>
   );
 }
