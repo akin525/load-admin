@@ -447,6 +447,18 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/audit-logs
+    getAuditLogs: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/audit-logs', { params });
+        return response.data;
+    },
+
+    // GET /admin/admins/:id/audit-logs
+    getAdminAuditLogs: async (id: string, params?: QueryParams): Promise<unknown> => {
+        const response = await api.get(`/admin/admins/${id}/audit-logs`, { params });
+        return response.data;
+    },
+
     // GET /admin/wallet-transactions
     getWalletTransactions: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/wallet-transactions', { params });
