@@ -140,9 +140,7 @@ const endpoints: Array<[DataKey, () => Promise<unknown>]> = [
 const sections: Array<{ key: AdminSection; label: string; icon: typeof Users }> = [
   { key: "admins", label: "Admins", icon: ShieldCheck },
   { key: "roles", label: "Roles", icon: UserCog },
-  { key: "users", label: "Users", icon: Users },
   { key: "kyc", label: "KYC", icon: FileCheck2 },
-  { key: "loans", label: "Loans", icon: CreditCard },
   { key: "tiers", label: "Tiers", icon: BadgeCheck },
   { key: "support", label: "Support", icon: Send },
   { key: "content", label: "Content", icon: BriefcaseBusiness },
@@ -2668,86 +2666,132 @@ export default function AdminCenterPage() {
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#eef7ff_0%,#f4f7fb_38%,#f4f7fb_100%)] text-slate-950 dark:bg-[linear-gradient(180deg,#06182b_0%,#07111f_45%,#07111f_100%)] dark:text-white">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-white/10 dark:bg-[#07111f]/95">
-        <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-5 py-4 sm:px-8 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex h-12 items-center rounded-lg border border-slate-200 bg-white px-3 shadow-sm dark:border-white/10">
-              <Image src="/eazy-logo.svg" alt="EazyCredit" width={140} height={29} priority className="h-auto w-[140px]" />
+        <div className="mx-auto max-w-[1480px] px-5 py-4 sm:px-8">
+          <div className="grid gap-4 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)] xl:items-start">
+            <div className="flex min-w-0 items-center gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+              <div className="flex h-14 items-center rounded-xl border border-slate-200 bg-white px-3 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+                <Image src="/eazy-logo.svg" alt="EazyCredit" width={140} height={29} priority className="h-auto w-[140px]" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Official administration
+                </p>
+                <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">
+                  Admin Center
+                </h1>
+                <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
+                  Governance, support, approval, and content controls.
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                Official administration
-              </p>
-              <h1 className="text-xl font-bold tracking-tight text-slate-950 dark:text-white">
-                Admin Center
-              </h1>
+
+            <div className="grid gap-3">
+              <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+                <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                      Workspace Navigation
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Move into specialist control surfaces without leaving the operations shell.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        href="/dashboard"
+                        className="inline-flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                      >
+                        Dashboard
+                      </Link>
+                      <Link
+                        href="/reports"
+                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                      >
+                        <BarChart3 className="h-4 w-4" aria-hidden="true" />
+                        Reports
+                      </Link>
+                      <Link
+                        href="/fees"
+                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                      >
+                        <Landmark className="h-4 w-4" aria-hidden="true" />
+                        Fees
+                      </Link>
+                      <Link
+                        href="/users"
+                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                      >
+                        <Users className="h-4 w-4" aria-hidden="true" />
+                        Users
+                      </Link>
+                      <Link
+                        href="/loans"
+                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                      >
+                        <CreditCard className="h-4 w-4" aria-hidden="true" />
+                        Loans
+                      </Link>
+                      <Link
+                        href="/wallet-transactions"
+                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                      >
+                        <WalletCards className="h-4 w-4" aria-hidden="true" />
+                        Wallet Ledger
+                      </Link>
+                      <Link
+                        href="/audit-logs"
+                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                      >
+                        <FileText className="h-4 w-4" aria-hidden="true" />
+                        Audit Logs
+                      </Link>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 xl:border-l xl:border-slate-200 xl:pl-3 dark:xl:border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (activeSection === "reports") {
+                            void refreshReports();
+                            return;
+                          }
+
+                          void refreshData();
+                        }}
+                        disabled={activeSection === "reports" ? reports.loading : refreshing}
+                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                      >
+                        {activeSection === "reports" ? (
+                          reports.loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                        ) : (
+                          refreshing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        Refresh
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTheme(isDarkMode ? "light" : "dark")}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                        aria-label="Toggle color theme"
+                      >
+                        <Sun className="hidden h-5 w-5 dark:block" aria-hidden="true" />
+                        <Moon className="h-5 w-5 dark:hidden" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
+                        aria-label="Log out"
+                      >
+                        <LogOut className="h-5 w-5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/dashboard"
-              className="flex h-10 items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/reports"
-              className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              <BarChart3 className="h-4 w-4" aria-hidden="true" />
-              Reports
-            </Link>
-            <Link
-              href="/wallet-transactions"
-              className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              <WalletCards className="h-4 w-4" aria-hidden="true" />
-              Wallet Ledger
-            </Link>
-            <Link
-              href="/audit-logs"
-              className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              <FileText className="h-4 w-4" aria-hidden="true" />
-              Audit Logs
-            </Link>
-            <button
-              type="button"
-              onClick={() => {
-                if (activeSection === "reports") {
-                  void refreshReports();
-                  return;
-                }
-
-                void refreshData();
-              }}
-              disabled={activeSection === "reports" ? reports.loading : refreshing}
-              className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              {activeSection === "reports" ? (
-                reports.loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                refreshing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              )}
-              Refresh
-            </button>
-            <button
-              type="button"
-              onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-              aria-label="Toggle color theme"
-            >
-              <Sun className="hidden h-5 w-5 dark:block" aria-hidden="true" />
-              <Moon className="h-5 w-5 dark:hidden" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-              aria-label="Log out"
-            >
-              <LogOut className="h-5 w-5" aria-hidden="true" />
-            </button>
           </div>
         </div>
       </header>
@@ -2761,10 +2805,10 @@ export default function AdminCenterPage() {
                 Management workspace
               </div>
               <h2 className="max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-                Central control for staff, roles, users, KYC, and loan operations.
+                Governance, KYC, support, and content controls from one administrative surface.
               </h2>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
-                Review operational records, inspect customer profiles, and perform controlled approvals from one administrative page.
+                Keep staff access, approvals, support queues, and platform content under one control plane while customer and loan operations move into their own specialist workspaces.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-2">

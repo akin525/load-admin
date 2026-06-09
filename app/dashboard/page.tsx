@@ -14,6 +14,7 @@ import {
   CreditCard,
   Eye,
   FileText,
+  Landmark,
   Loader2,
   LogOut,
   Moon,
@@ -22,6 +23,7 @@ import {
   Search,
   ShieldCheck,
   Sun,
+  Users,
   WalletCards,
   X,
 } from "lucide-react";
@@ -1090,6 +1092,27 @@ export default function DashboardPage() {
                     >
                       <BarChart3 className="h-4 w-4" aria-hidden="true" />
                       Reports
+                    </Link>
+                    <Link
+                      href="/fees"
+                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                    >
+                      <Landmark className="h-4 w-4" aria-hidden="true" />
+                      Fees
+                    </Link>
+                    <Link
+                      href="/users"
+                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                    >
+                      <Users className="h-4 w-4" aria-hidden="true" />
+                      Users
+                    </Link>
+                    <Link
+                      href="/loans"
+                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
+                    >
+                      <CreditCard className="h-4 w-4" aria-hidden="true" />
+                      Loans
                     </Link>
                     <Link
                       href="/wallet-transactions"

@@ -475,5 +475,23 @@ export const adminService = {
     getWalletTransactions: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/wallet-transactions', { params });
         return response.data;
+    },
+
+    // GET /admin/fees
+    getFees: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/fees', { params });
+        return response.data;
+    },
+
+    // POST /admin/fees/default
+    setDefaultFee: async (payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/fees/default', payload);
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/fees
+    setUserFee: async (userId: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/fees`, payload);
+        return response.data;
     }
 };
