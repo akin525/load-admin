@@ -2623,14 +2623,14 @@ export default function AdminCenterPage() {
       title: "Sync BankOne loan status",
       description: "Push a status sync request for this legacy loan using the institution code required by BankOne.",
       submitLabel: "Sync status",
-      initialValues: { institutionCode: "2" },
+      initialValues: { institutionCode: "101080" },
       fields: [
         {
           name: "institutionCode",
           label: "Institution code",
           required: true,
-          placeholder: "2",
-          helper: "Defaults to institution code 2.",
+          placeholder: "101080",
+          helper: "Defaults to institution code 101080.",
         },
       ],
       onSubmit: (values) =>
