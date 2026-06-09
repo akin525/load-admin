@@ -273,6 +273,18 @@ export const adminService = {
         return response.data;
     },
 
+    // POST /admin/loans/:loanId/create-app-loan
+    createAppLoanFromLoan: async (loanId: string): Promise<unknown> => {
+        const response = await api.post(`/admin/loans/${loanId}/create-app-loan`, {});
+        return response.data;
+    },
+
+    // POST /admin/loans/:loanId/sync-bankone-status
+    syncLoanBankoneStatus: async (loanId: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/loans/${loanId}/sync-bankone-status`, payload);
+        return response.data;
+    },
+
     // GET /admin/account-tier
     getAccountTiers: async (): Promise<unknown> => {
         const response = await api.get('/admin/account-tier');

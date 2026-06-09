@@ -96,6 +96,7 @@ type UserTransactionsState = DetailState & {
 };
 
 type AppLoanDetailState = DetailState;
+type BankoneSyncResultState = DetailState;
 
 type FormField = {
   name: string;
@@ -1587,6 +1588,193 @@ function AppLoanDetailsModal({ loan, onClose }: { loan: AppLoanDetailState; onCl
   );
 }
 
+function BankoneSyncResultModal({ result, onClose }: { result: BankoneSyncResultState; onClose: () => void }) {
+  const payload = unwrapPayload(result.data);
+  const record = isRecord(payload) ? payload : {};
+  const bankOneResponse = isRecord(record.bankOneResponse) ? record.bankOneResponse : {};
+  const loan = isRecord(record.loan) ? record.loan : {};
+  const appLoan = isRecord(record.appLoan) ? record.appLoan : {};
+  const bankoneStatusResponse = isRecord(loan.bankoneStatusResponse) ? loan.bankoneStatusResponse : {};
+  const appBankoneStatusResponse = isRecord(appLoan.bankoneStatusResponse) ? appLoan.bankoneStatusResponse : {};
+  const matchedRecord = record.matchedRecord;
+
+  const summary = [
+    { label: "BankOne status", value: String(record.bankOneStatus ?? "Not available"), icon: Landmark },
+    { label: "Core status", value: String(record.coreStatus ?? "Not available"), icon: CreditCard },
+    { label: "App status", value: String(record.appStatus ?? "Not available"), icon: CheckCircle2 },
+    { label: "Matched record", value: matchedRecord ? "Available" : "None", icon: AlertCircle },
+  ];
+
+  const primaryDetails = [
+    { label: "Tracking ref", value: String(getRecordValue(loan, ["bankoneLoanTrackingRef"]) ?? getRecordValue(appLoan, ["bankoneLoanTrackingRef"]) ?? "Not available") },
+    { label: "Loan account number", value: String(getRecordValue(loan, ["bankoneLoanAccountNumber", "bankoneLinkedAccountNumber"]) ?? "Not available") },
+    { label: "Customer ID", value: String(getRecordValue(loan, ["bankoneCustomerId"]) ?? getRecordValue(appLoan, ["bankoneCustomerId"]) ?? "Not available") },
+    { label: "Last synced", value: formatDate(getRecordValue(loan, ["bankoneLastSyncedAt"]) ?? getRecordValue(appLoan, ["bankoneLastSyncedAt"])) },
+  ];
+
+  const bankoneMessage = getRecordValue(bankOneResponse, ["Message"]);
+  const bankoneSuccess = getRecordValue(bankOneResponse, ["IsSuccessful"]);
+  const coreResponseMessage = getRecordValue(bankoneStatusResponse, ["Message"]);
+  const appResponseMessage = getRecordValue(appBankoneStatusResponse, ["Message"]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-6xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_58%,#069AFF_145%)] px-5 py-5 text-white">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">BankOne sync result</p>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight">{String(result.title || "Loan status synchronization")}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              {String(getRecordValue(record, ["message"]) ?? "BankOne loan status synced successfully")}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <StatusBadge status={record.bankOneStatus ?? "pending"} />
+              <span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-bold ${bankoneSuccess === true ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100"}`}>
+                BankOne response: {String(bankoneSuccess === true ? "Successful" : "Attention required")}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+            aria-label="Close BankOne sync result"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="max-h-[78vh] overflow-y-auto p-5">
+          {result.error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              {result.error}
+            </div>
+          )}
+
+          {!result.error && (
+            <div className="grid gap-5">
+              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {summary.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:text-sky-200">
+                        <Icon className="h-5 w-5" aria-hidden="true" />
+                      </div>
+                      <p className="text-xl font-bold text-slate-950 dark:text-white">{item.value}</p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                    </div>
+                  );
+                })}
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">BankOne response alert</h3>
+                  </div>
+                  <div className="grid gap-4 p-4">
+                    <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 p-4">
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#069AFF]">Gateway message</p>
+                      <p className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
+                        {typeof bankoneMessage === "string" ? bankoneMessage : JSON.stringify(bankoneMessage ?? "Not available")}
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {primaryDetails.map((item) => (
+                        <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                          <p className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-white">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Status alignment</h3>
+                  </div>
+                  <div className="grid gap-3 p-4">
+                    {[
+                      { label: "BankOne", value: String(record.bankOneStatus ?? "Not available") },
+                      { label: "Core loan", value: String(record.coreStatus ?? "Not available") },
+                      { label: "App loan", value: String(record.appStatus ?? "Not available") },
+                    ].map((item) => (
+                      <div key={item.label} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{item.label}</p>
+                        <StatusBadge status={item.value} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Core loan record</h3>
+                  </div>
+                  <div className="grid gap-3 p-4">
+                    {[
+                      { label: "Loan ID", value: String(getRecordValue(loan, ["_id"]) ?? "Not available") },
+                      { label: "Amount", value: formatCurrency(getRecordValue(loan, ["amount"])) },
+                      { label: "Status", value: String(getRecordValue(loan, ["status"]) ?? "Not available") },
+                      { label: "Outstanding", value: formatCurrency(getRecordValue(loan, ["outstandingAmount"])) },
+                      { label: "Application date", value: formatDate(getRecordValue(loan, ["applicationDate"])) },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                        <p className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-white">{item.value}</p>
+                      </div>
+                    ))}
+                    {coreResponseMessage !== null && coreResponseMessage !== undefined && (
+                      <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Core BankOne response</p>
+                        <p className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-white">
+                          {typeof coreResponseMessage === "string" ? coreResponseMessage : JSON.stringify(coreResponseMessage)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Application loan record</h3>
+                  </div>
+                  <div className="grid gap-3 p-4">
+                    {[
+                      { label: "App loan ID", value: String(getRecordValue(appLoan, ["_id"]) ?? "Not available") },
+                      { label: "Loan type", value: String(getRecordValue(appLoan, ["loanTypeName"]) ?? "Not available") },
+                      { label: "Status", value: String(getRecordValue(appLoan, ["status"]) ?? "Not available") },
+                      { label: "Total payable", value: formatCurrency(getRecordValue(appLoan, ["totalPayable"])) },
+                      { label: "Due date", value: formatDate(getRecordValue(appLoan, ["dueDate"])) },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                        <p className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-white">{item.value}</p>
+                      </div>
+                    ))}
+                    {appResponseMessage !== null && appResponseMessage !== undefined && (
+                      <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">App BankOne response</p>
+                        <p className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-white">
+                          {typeof appResponseMessage === "string" ? appResponseMessage : JSON.stringify(appResponseMessage)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PermissionLibrary({ permissions }: { permissions: Record<string, unknown>[] }) {
   const groupedPermissions = permissions.reduce<Record<string, Record<string, unknown>[]>>((groups, permission) => {
     const group = String(getRecordValue(permission, ["module", "group", "category", "resource"]) ?? "General");
@@ -1909,6 +2097,7 @@ export default function AdminCenterPage() {
   const [detail, setDetail] = useState<DetailState | null>(null);
   const [userDashboard, setUserDashboard] = useState<UserDashboardState | null>(null);
   const [appLoanDetail, setAppLoanDetail] = useState<AppLoanDetailState | null>(null);
+  const [bankoneSyncResult, setBankoneSyncResult] = useState<BankoneSyncResultState | null>(null);
   const [formAction, setFormAction] = useState<FormAction | null>(null);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -2278,6 +2467,17 @@ export default function AdminCenterPage() {
     }
   };
 
+  const runLoanMaintenanceAction = async (id: string, action: string, request: () => Promise<unknown>) => {
+    setBusyAction(`loan-${id}-${action}`);
+
+    try {
+      await request();
+      await refreshData();
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const parseCsvList = (value: string) =>
     value
       .split(",")
@@ -2416,6 +2616,40 @@ export default function AdminCenterPage() {
         { name: "reason", label: "Reason", type: "textarea", required: true },
       ],
       onSubmit: (values) => submitAndRefresh(() => adminService.rejectAppLoanTopUp(id, { requestId: values.requestId, reason: values.reason })),
+    });
+  };
+
+  const openSyncBankoneStatus = (id: string) => {
+    setFormAction({
+      eyebrow: "BankOne sync",
+      title: "Sync BankOne loan status",
+      description: "Push a status sync request for this legacy loan using the institution code required by BankOne.",
+      submitLabel: "Sync status",
+      initialValues: { institutionCode: "2" },
+      fields: [
+        {
+          name: "institutionCode",
+          label: "Institution code",
+          required: true,
+          placeholder: "2",
+          helper: "Defaults to institution code 2.",
+        },
+      ],
+      onSubmit: (values) =>
+        (async () => {
+          const response = await adminService.syncLoanBankoneStatus(id, {
+            institutionCode: values.institutionCode,
+          });
+
+          await refreshData();
+          setFormAction(null);
+          setBankoneSyncResult({
+            title: "BankOne loan status synced successfully",
+            loading: false,
+            data: response,
+            error: "",
+          });
+        })(),
     });
   };
 
@@ -3259,9 +3493,18 @@ export default function AdminCenterPage() {
                     const id = getId(row);
                     const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();
                     const canReview = !["approved", "active", "rejected"].includes(status);
+                    const trackingRef = String(getRecordValue(row, ["bankoneLoanTrackingRef"]) ?? "");
+                    const accountNumber = String(getRecordValue(row, ["bankoneLoanAccountNumber"]) ?? "");
                     return (
                       <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
-                        <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["customerName", "userId", "email"]) ?? `Loan ${index + 1}`)}</td>
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["customerName", "userId", "email"]) ?? `Loan ${index + 1}`)}</p>
+                          <div className="mt-2 grid gap-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                            {trackingRef && <p className="break-all">Tracking ref: {trackingRef}</p>}
+                            {accountNumber && <p className="break-all">Account no: {accountNumber}</p>}
+                            {!trackingRef && !accountNumber && <p>No BankOne identifiers on this record.</p>}
+                          </div>
+                        </td>
                         <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["amount", "loanAmount", "principal"]))}</td>
                         <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "pending"} /></td>
                         <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
@@ -3292,6 +3535,22 @@ export default function AdminCenterPage() {
                             >
                               Reject
                             </button>
+                            <button
+                              type="button"
+                              disabled={!id || busyAction === `loan-${id}-create-app-loan`}
+                              onClick={() => runLoanMaintenanceAction(id, "create-app-loan", () => adminService.createAppLoanFromLoan(id))}
+                              className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                            >
+                              Create app loan
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openSyncBankoneStatus(id)}
+                              className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                            >
+                              Sync BankOne
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -3307,6 +3566,7 @@ export default function AdminCenterPage() {
       {detail && <DetailModal detail={detail} onClose={() => setDetail(null)} />}
       {userDashboard && <UserDashboardModal key={userDashboard.userId} dashboard={userDashboard} onClose={() => setUserDashboard(null)} />}
       {appLoanDetail && <AppLoanDetailsModal loan={appLoanDetail} onClose={() => setAppLoanDetail(null)} />}
+      {bankoneSyncResult && <BankoneSyncResultModal result={bankoneSyncResult} onClose={() => setBankoneSyncResult(null)} />}
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
       {roleModalOpen && (
         <RoleCreateModal
