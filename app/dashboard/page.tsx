@@ -1003,173 +1003,59 @@ export default function DashboardPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#eef7ff_0%,#f4f7fb_38%,#f4f7fb_100%)] text-slate-950 dark:bg-[linear-gradient(180deg,#06182b_0%,#07111f_45%,#07111f_100%)] dark:text-white">
-      <header className="border-b border-slate-200 bg-white/95 backdrop-blur dark:border-white/10 dark:bg-[#07111f]/95">
-        <div className="mx-auto grid max-w-[1480px] gap-5 px-5 py-4 sm:px-8 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)] xl:items-start">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex h-14 items-center rounded-xl border border-slate-200 bg-white px-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-              <Image
-                src="/eazy-logo.svg"
-                alt="EazyCredit"
-                width={140}
-                height={29}
-                priority
-                className="h-auto w-[140px]"
-              />
-            </div>
-            <div className="hidden h-8 w-px bg-slate-200 dark:bg-white/10 sm:block" />
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                Official administration
-              </p>
-              <h1 className="text-xl font-bold tracking-tight text-slate-950 dark:text-white">
-                Operations Control Center
-              </h1>
-              <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                Central workspace for finance operations, reviews, and governance.
-              </p>
-            </div>
+    <main className="min-h-screen pb-20 text-slate-950 dark:text-white">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#07111f]/80">
+        <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between sm:px-8">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              Operations Dashboard
+            </h1>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Real-time monitoring of financial flows and system health.
+            </p>
           </div>
 
-          <div className="grid gap-3">
-            <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Local Views
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                    Switch between dashboard panels without leaving the page.
-                  </p>
-                </div>
-                <div className="inline-flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5 dark:border-white/10 dark:bg-slate-950/40">
-                  {[
-                    { key: "overview", label: "Overview", icon: Activity },
-                    { key: "bills", label: "Bills", icon: CreditCard },
-                    { key: "deposits", label: "Deposits", icon: WalletCards },
-                  ].map(({ key, label, icon: Icon }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setActiveSection(key as ActiveSection)}
-                      className={`inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-bold transition ${
-                        activeSection === key
-                          ? "bg-[#069AFF] text-white shadow-sm shadow-[#069AFF]/30"
-                          : "text-slate-600 hover:bg-white hover:text-[#069AFF] dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-sky-200"
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" aria-hidden="true" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </section>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-white/10 dark:bg-slate-950/40">
+              {[
+                { key: "overview", label: "Overview", icon: Activity },
+                { key: "bills", label: "Bills", icon: CreditCard },
+                { key: "deposits", label: "Deposits", icon: WalletCards },
+              ].map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveSection(key as ActiveSection)}
+                  className={`inline-flex h-9 items-center gap-2 rounded-lg px-4 text-xs font-bold transition-all ${
+                    activeSection === key
+                      ? "bg-[#069AFF] text-white shadow-sm shadow-[#069AFF]/30"
+                      : "text-slate-600 hover:bg-white hover:text-[#069AFF] dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-sky-200"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {label}
+                </button>
+              ))}
+            </div>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-              <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Connected Workspaces
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                    Move into specialist operations and control surfaces.
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      href="/admin"
-                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                    >
-                      <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                      Admin Center
-                    </Link>
-                    <Link
-                      href="/reports"
-                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                    >
-                      <BarChart3 className="h-4 w-4" aria-hidden="true" />
-                      Reports
-                    </Link>
-                    <Link
-                      href="/fees"
-                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                    >
-                      <Landmark className="h-4 w-4" aria-hidden="true" />
-                      Fees
-                    </Link>
-                    <Link
-                      href="/users"
-                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                    >
-                      <Users className="h-4 w-4" aria-hidden="true" />
-                      Users
-                    </Link>
-                    <Link
-                      href="/loans"
-                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                    >
-                      <CreditCard className="h-4 w-4" aria-hidden="true" />
-                      Loans
-                    </Link>
-                    <Link
-                      href="/wallet-transactions"
-                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                    >
-                      <WalletCards className="h-4 w-4" aria-hidden="true" />
-                      Wallet Ledger
-                    </Link>
-                    <Link
-                      href="/audit-logs"
-                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                    >
-                      <FileText className="h-4 w-4" aria-hidden="true" />
-                      Audit Logs
-                    </Link>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 xl:border-l xl:border-slate-200 xl:pl-3 dark:xl:border-white/10">
-                    <button
-                      type="button"
-                      onClick={handleRefresh}
-                      disabled={refreshing}
-                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                    >
-                      {refreshing ? (
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                      )}
-                      Refresh
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                      aria-label="Toggle color theme"
-                    >
-                      <Sun className="hidden h-5 w-5 dark:block" aria-hidden="true" />
-                      <Moon className="h-5 w-5 dark:hidden" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
-                      aria-label="Log out"
-                    >
-                      <LogOut className="h-5 w-5" aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </section>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              {refreshing ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              )}
+              Sync
+            </button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1480px] gap-6 px-5 py-6 sm:px-8">
+      <div className="mx-auto grid max-w-[1480px] gap-6 px-6 py-8 sm:px-8">
         {!dashboardData ? (
           <LoadingDashboard />
         ) : (

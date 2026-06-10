@@ -2,10 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
 import {
   AlertCircle,
   BarChart3,
@@ -18,13 +15,10 @@ import {
   FileText,
   Landmark,
   Loader2,
-  LogOut,
-  Moon,
   Plus,
   RefreshCw,
   Send,
   ShieldCheck,
-  Sun,
   UserCog,
   Users,
   WalletCards,
@@ -2081,7 +2075,6 @@ function ManagementTable({
 
 export default function AdminCenterPage() {
   const router = useRouter();
-  const { resolvedTheme, setTheme } = useTheme();
   const [reportFilters, setReportFilters] = useState<ReportFilters>(() => getDefaultReportFilters());
   const [reports, setReports] = useState<ReportState>({
     data: {},
@@ -2099,7 +2092,6 @@ export default function AdminCenterPage() {
   const [formAction, setFormAction] = useState<FormAction | null>(null);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
     let cancelled = false;
@@ -2400,11 +2392,6 @@ export default function AdminCenterPage() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    router.replace("/auth/login");
-  };
-
   const openDetail = async (title: string, request: () => Promise<unknown>) => {
     setDetail({ title, loading: true, data: null, error: "" });
 
@@ -2664,139 +2651,61 @@ export default function AdminCenterPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#eef7ff_0%,#f4f7fb_38%,#f4f7fb_100%)] text-slate-950 dark:bg-[linear-gradient(180deg,#06182b_0%,#07111f_45%,#07111f_100%)] dark:text-white">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-white/10 dark:bg-[#07111f]/95">
-        <div className="mx-auto max-w-[1480px] px-5 py-4 sm:px-8">
-          <div className="grid gap-4 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)] xl:items-start">
-            <div className="flex min-w-0 items-center gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-              <div className="flex h-14 items-center rounded-xl border border-slate-200 bg-white px-3 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-                <Image src="/eazy-logo.svg" alt="EazyCredit" width={140} height={29} priority className="h-auto w-[140px]" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  Official administration
-                </p>
-                <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">
-                  Admin Center
-                </h1>
-                <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Governance, support, approval, and content controls.
-                </p>
-              </div>
+    <main className="min-h-screen pb-20 text-slate-950 dark:text-white">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#07111f]/80">
+        <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between sm:px-8">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              Administration Center
+            </h1>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Manage system access, roles, customer verification, and core configurations.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-white/10 dark:bg-slate-950/40">
+              {sections.map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveSection(key as AdminSection)}
+                  className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-[11px] font-bold uppercase tracking-wider transition-all ${
+                    activeSection === key
+                      ? "bg-[#069AFF] text-white shadow-sm shadow-[#069AFF]/30"
+                      : "text-slate-600 hover:bg-white hover:text-[#069AFF] dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-sky-200"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {label}
+                </button>
+              ))}
             </div>
 
-            <div className="grid gap-3">
-              <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-                <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                      Workspace Navigation
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                      Move into specialist control surfaces without leaving the operations shell.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        href="/dashboard"
-                        className="inline-flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        Dashboard
-                      </Link>
-                      <Link
-                        href="/reports"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <BarChart3 className="h-4 w-4" aria-hidden="true" />
-                        Reports
-                      </Link>
-                      <Link
-                        href="/fees"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <Landmark className="h-4 w-4" aria-hidden="true" />
-                        Fees
-                      </Link>
-                      <Link
-                        href="/users"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <Users className="h-4 w-4" aria-hidden="true" />
-                        Users
-                      </Link>
-                      <Link
-                        href="/loans"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <CreditCard className="h-4 w-4" aria-hidden="true" />
-                        Loans
-                      </Link>
-                      <Link
-                        href="/wallet-transactions"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <WalletCards className="h-4 w-4" aria-hidden="true" />
-                        Wallet Ledger
-                      </Link>
-                      <Link
-                        href="/audit-logs"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <FileText className="h-4 w-4" aria-hidden="true" />
-                        Audit Logs
-                      </Link>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 xl:border-l xl:border-slate-200 xl:pl-3 dark:xl:border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (activeSection === "reports") {
-                            void refreshReports();
-                            return;
-                          }
-
-                          void refreshData();
-                        }}
-                        disabled={activeSection === "reports" ? reports.loading : refreshing}
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                      >
-                        {activeSection === "reports" ? (
-                          reports.loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                        ) : (
-                          refreshing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                        )}
-                        Refresh
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                        aria-label="Toggle color theme"
-                      >
-                        <Sun className="hidden h-5 w-5 dark:block" aria-hidden="true" />
-                        <Moon className="h-5 w-5 dark:hidden" aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleLogout}
-                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
-                        aria-label="Log out"
-                      >
-                        <LogOut className="h-5 w-5" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (activeSection === "reports") {
+                  void refreshReports();
+                  return;
+                }
+                void refreshData();
+              }}
+              disabled={activeSection === "reports" ? reports.loading : refreshing}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              {(activeSection === "reports" ? reports.loading : refreshing) ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              )}
+              Sync
+            </button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1480px] gap-6 px-5 py-6 sm:px-8">
+      <div className="mx-auto grid max-w-[1480px] gap-6 px-6 py-8 sm:px-8">
         <section className="rounded-lg border border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_50%,#069AFF_140%)] p-6 text-white shadow-xl shadow-[#069AFF]/15 dark:border-[#069AFF]/25 dark:bg-[linear-gradient(135deg,#030712_0%,#06294b_55%,#069AFF_150%)]">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-center">
             <div>

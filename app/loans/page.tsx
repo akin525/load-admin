@@ -790,117 +790,515 @@ function CoreLoanDetailsModal({ loan, onClose }: { loan: CoreLoanDetailState; on
   );
 }
 
-function BankoneSyncResultModal({ result, onClose }: { result: BankoneSyncResultState; onClose: () => void }) {
-  const payload = unwrapPayload(result.data);
-  const record = isRecord(payload) ? payload : {};
-  const bankOneResponse = isRecord(record.bankOneResponse) ? record.bankOneResponse : {};
-  const loan = isRecord(record.loan) ? record.loan : {};
-  const appLoan = isRecord(record.appLoan) ? record.appLoan : {};
-  const matchedRecord = record.matchedRecord;
+const safeText = (value: unknown, fallback = "Not available") => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
 
-  const summary = [
-    { label: "BankOne status", value: String(record.bankOneStatus ?? "Not available"), icon: Landmark },
-    { label: "Core status", value: String(record.coreStatus ?? "Not available"), icon: CreditCard },
-    { label: "App status", value: String(record.appStatus ?? "Not available"), icon: CheckCircle2 },
-    { label: "Matched record", value: matchedRecord ? "Available" : "None", icon: AlertCircle },
-  ];
+  return String(value);
+};
 
-  const primaryDetails = [
-    { label: "Tracking ref", value: String(getRecordValue(loan, ["bankoneLoanTrackingRef"]) ?? getRecordValue(appLoan, ["bankoneLoanTrackingRef"]) ?? "Not available") },
-    { label: "Loan account number", value: String(getRecordValue(loan, ["bankoneLoanAccountNumber", "bankoneLinkedAccountNumber"]) ?? "Not available") },
-    { label: "Customer ID", value: String(getRecordValue(loan, ["bankoneCustomerId"]) ?? getRecordValue(appLoan, ["bankoneCustomerId"]) ?? "Not available") },
-    { label: "Last synced", value: formatDate(getRecordValue(loan, ["bankoneLastSyncedAt"]) ?? getRecordValue(appLoan, ["bankoneLastSyncedAt"])) },
-  ];
+const toRecordList = (value: unknown): Record<string, unknown>[] => {
+  if (Array.isArray(value)) {
+    return value.filter(isRecord);
+  }
 
-  const bankoneMessage = getRecordValue(bankOneResponse, ["Message"]);
-  const bankoneSuccess = getRecordValue(bankOneResponse, ["IsSuccessful"]);
+  return isRecord(value) ? [value] : [];
+};
+
+const formatBankoneMoney = (value: unknown): string => {
+  if (value === null || value === undefined || value === "") {
+    return "Not available";
+  }
+
+  if (typeof value === "string") {
+    const cleaned = value.replace(/,/g, "");
+    const numeric = Number(cleaned);
+
+    if (!Number.isNaN(numeric)) {
+      return new Intl.NumberFormat("en-NG", {
+        style: "currency",
+        currency: "NGN",
+        maximumFractionDigits: 2,
+      }).format(numeric);
+    }
+
+    return value;
+  }
+
+  if (typeof value === "number") {
+    /**
+     * BankOne numeric values like 1000000 represent ₦10,000.00.
+     */
+    return new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency: "NGN",
+      maximumFractionDigits: 2,
+    }).format(value / 100);
+  }
+
+  return String(value);
+};
+
+const isSuccessfulValue = (value: unknown) =>
+    value === true || String(value).toLowerCase() === "true" || String(value).toLowerCase() === "success";
+
+function MiniInfoCard({
+                        label,
+                        value,
+                        tone = "default",
+                      }: {
+  label: string;
+  value: ReactNode;
+  tone?: "default" | "success" | "warning" | "danger";
+}) {
+  const toneClass =
+      tone === "success"
+          ? "border-emerald-200 bg-emerald-50 dark:border-emerald-400/20 dark:bg-emerald-400/10"
+          : tone === "danger"
+              ? "border-red-200 bg-red-50 dark:border-red-400/20 dark:bg-red-400/10"
+              : tone === "warning"
+                  ? "border-amber-200 bg-amber-50 dark:border-amber-400/20 dark:bg-amber-400/10"
+                  : "border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/40";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-6xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
-        <div className="flex items-start justify-between gap-5 border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_58%,#069AFF_145%)] px-5 py-5 text-white">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">BankOne sync result</p>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight">{String(result.title || "Loan status synchronization")}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              {String(getRecordValue(record, ["message"]) ?? "BankOne loan status synced successfully")}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
-            aria-label="Close BankOne sync result"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="max-h-[78vh] overflow-y-auto p-5">
-          {result.error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
-              {result.error}
-            </div>
-          )}
-
-          {!result.error && (
-            <div className="grid gap-5">
-              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {summary.map((item) => (
-                  <SummaryCard key={item.label} label={item.label} value={item.value} icon={item.icon} />
-                ))}
-              </section>
-
-              <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
-                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
-                    <h3 className="font-bold text-slate-950 dark:text-white">BankOne response alert</h3>
-                  </div>
-                  <div className="grid gap-4 p-4">
-                    <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 p-4">
-                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#069AFF]">Gateway message</p>
-                      <p className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
-                        {typeof bankoneMessage === "string" ? bankoneMessage : JSON.stringify(bankoneMessage ?? "Not available")}
-                      </p>
-                    </div>
-                    <div className={`rounded-lg border p-4 ${bankoneSuccess === true ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200" : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100"}`}>
-                      <p className="text-xs font-bold uppercase tracking-[0.12em]">Gateway outcome</p>
-                      <p className="mt-2 text-base font-semibold">{String(bankoneSuccess === true ? "Successful" : "Attention required")}</p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {primaryDetails.map((item) => (
-                        <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{item.label}</p>
-                          <p className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-white">{item.value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
-                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
-                    <h3 className="font-bold text-slate-950 dark:text-white">Status alignment</h3>
-                  </div>
-                  <div className="grid gap-3 p-4">
-                    {[
-                      { label: "BankOne", value: String(record.bankOneStatus ?? "Not available") },
-                      { label: "Core loan", value: String(record.coreStatus ?? "Not available") },
-                      { label: "App loan", value: String(record.appStatus ?? "Not available") },
-                    ].map((item) => (
-                      <div key={item.label} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
-                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{item.label}</p>
-                        <StatusBadge status={item.value} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            </div>
-          )}
+      <div className={`rounded-xl border px-4 py-3 ${toneClass}`}>
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+          {label}
+        </p>
+        <div className="mt-1 break-words text-sm font-bold text-slate-950 dark:text-white">
+          {value}
         </div>
       </div>
-    </div>
+  );
+}
+
+function SectionCard({
+                       title,
+                       description,
+                       children,
+                     }: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+        <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+          <h3 className="text-base font-bold text-slate-950 dark:text-white">{title}</h3>
+          {description && (
+              <p className="mt-1 text-sm font-medium leading-6 text-slate-500 dark:text-slate-400">
+                {description}
+              </p>
+          )}
+        </div>
+
+        <div className="p-5">{children}</div>
+      </section>
+  );
+}
+function BankoneSyncResultModal({
+                                  result,
+                                  onClose,
+                                }: {
+  result: BankoneSyncResultState;
+  onClose: () => void;
+}) {
+  const payload = unwrapPayload(result.data);
+  const record = isRecord(payload) ? payload : {};
+
+  const bankOneResponse = isRecord(record.bankOneResponse) ? record.bankOneResponse : {};
+  const gatewayRecords = toRecordList(bankOneResponse.Message);
+
+  const loan = isRecord(record.loan) ? record.loan : {};
+  const appLoan = isRecord(record.appLoan) ? record.appLoan : {};
+  const matchedRecord = isRecord(record.matchedRecord) ? record.matchedRecord : {};
+
+  const creationResponse = isRecord(loan.bankoneResponse) ? loan.bankoneResponse : {};
+  const creationMessage = isRecord(creationResponse.Message) ? creationResponse.Message : {};
+
+  const gatewaySuccess = isSuccessfulValue(bankOneResponse.IsSuccessful);
+  const matchedAvailable = Object.keys(matchedRecord).length > 0;
+
+  const matchedTrackingRef = safeText(
+      matchedRecord.AccountOpenningTrackingRef ??
+      loan.bankoneLoanTrackingRef ??
+      appLoan.bankoneLoanTrackingRef
+  );
+
+  const matchedAccountNumber = safeText(
+      matchedRecord.Number ??
+      loan.bankoneLoanAccountNumber ??
+      loan.bankoneLinkedAccountNumber ??
+      appLoan.bankoneLoanAccountNumber ??
+      appLoan.bankoneLinkedAccountNumber
+  );
+
+  const customerName = safeText(
+      matchedRecord.Name ??
+      creationMessage.FullName ??
+      appLoan.userName ??
+      loan.userName
+  );
+
+  const customerId = safeText(
+      matchedRecord.CustomerID ??
+      bankOneResponse.CustomerIDInString ??
+      loan.bankoneCustomerId ??
+      appLoan.bankoneCustomerId
+  );
+
+  const topSummary = [
+    {
+      label: "Gateway",
+      value: gatewaySuccess ? "Successful" : "Failed",
+      icon: ShieldCheck,
+      tone: gatewaySuccess ? "success" : "danger",
+    },
+    {
+      label: "BankOne status",
+      value: safeText(record.bankOneStatus),
+      icon: Landmark,
+      tone: String(record.bankOneStatus).toLowerCase() === "failed" ? "danger" : "warning",
+    },
+    {
+      label: "Real loan status",
+      value: safeText(matchedRecord.RealLoanStatus),
+      icon: BarChart3,
+      tone: String(matchedRecord.RealLoanStatus).toLowerCase() === "active" ? "success" : "warning",
+    },
+    {
+      label: "Matched record",
+      value: matchedAvailable ? "Found" : "Not found",
+      icon: FileText,
+      tone: matchedAvailable ? "success" : "warning",
+    },
+  ];
+
+  const syncSnapshot = [
+    { label: "Tracking reference", value: matchedTrackingRef },
+    { label: "Loan account number", value: matchedAccountNumber },
+    { label: "Customer ID", value: customerId },
+    { label: "Customer name", value: customerName },
+    { label: "Account officer", value: safeText(matchedRecord.AccountOfficer) },
+    { label: "Last synced", value: formatDate(loan.bankoneLastSyncedAt ?? appLoan.bankoneLastSyncedAt) },
+  ];
+
+  const bankoneLoanDetails = [
+    { label: "BankOne account", value: safeText(matchedRecord.Number) },
+    { label: "Name and number", value: safeText(matchedRecord.NameAndNumber) },
+    { label: "Opening tracking ref", value: safeText(matchedRecord.AccountOpenningTrackingRef) },
+    { label: "Loan amount", value: formatBankoneMoney(matchedRecord.LoanAmount) },
+    { label: "Ledger balance", value: formatBankoneMoney(matchedRecord.LedgerBalanceWithAccessLevelInNaira ?? matchedRecord.LedgerBalance) },
+    { label: "Available balance", value: formatBankoneMoney(matchedRecord.AvailableBalanceInNaira ?? matchedRecord.AvailableBalance) },
+    { label: "Interest rate", value: `${safeText(matchedRecord.InterestRate, "0")}%` },
+    { label: "Loan cycle", value: safeText(matchedRecord.LoanCycle) },
+    { label: "Security pledged", value: safeText(matchedRecord.SecurityPledged) },
+    { label: "Date created", value: formatDate(matchedRecord.DateCreated) },
+  ];
+
+  const localCoreDetails = [
+    { label: "Core loan ID", value: safeText(loan._id) },
+    { label: "Core status", value: <StatusBadge status={record.coreStatus ?? loan.status} /> },
+    { label: "Local amount", value: formatCurrency(loan.amount) },
+    { label: "Outstanding", value: formatCurrency(loan.outstandingAmount) },
+    { label: "Paid amount", value: formatCurrency(loan.paidAmount) },
+    { label: "Purpose", value: safeText(loan.purpose) },
+    { label: "Term", value: `${safeText(loan.term, "0")} month(s)` },
+    { label: "Application date", value: formatDate(loan.applicationDate) },
+  ];
+
+  const localAppDetails = [
+    { label: "App loan ID", value: safeText(appLoan._id) },
+    { label: "App status", value: <StatusBadge status={record.appStatus ?? appLoan.status} /> },
+    { label: "Loan type", value: safeText(appLoan.loanTypeName) },
+    { label: "Duration", value: safeText(appLoan.durationLabel) },
+    { label: "Requested amount", value: formatCurrency(appLoan.amount) },
+    { label: "Interest amount", value: formatCurrency(appLoan.interestAmount) },
+    { label: "Total payable", value: formatCurrency(appLoan.totalPayable) },
+    { label: "Source provider", value: safeText(appLoan.sourceProvider) },
+  ];
+
+  const creationDetails = [
+    { label: "Creation success", value: safeText(creationResponse.IsSuccessful) },
+    { label: "Creation tracking ref", value: safeText(creationResponse.TransactionTrackingRef) },
+    { label: "Created customer ID", value: safeText(creationMessage.CustomerID) },
+    { label: "Created account number", value: safeText(creationMessage.BankoneAccountNumber) },
+    { label: "Created full name", value: safeText(creationMessage.FullName) },
+    { label: "Creation message", value: safeText(creationMessage.CreationMessage) },
+  ];
+
+  return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+        <div className="w-full max-w-7xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+          <div className="relative overflow-hidden border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_50%,#069AFF_140%)] px-6 py-6 text-white">
+            <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
+            <div className="absolute -bottom-24 left-1/2 h-56 w-56 rounded-full bg-[#069AFF]/30 blur-3xl" />
+
+            <div className="relative flex items-start justify-between gap-5">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-sky-100">
+                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                  BankOne sync result
+                </div>
+
+                <h2 className="mt-4 text-2xl font-black tracking-tight md:text-3xl">
+                  {safeText(result.title || record.message || "Loan status synchronization")}
+                </h2>
+
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
+                  {safeText(
+                      record.message,
+                      "BankOne response has been received and compared with the local core loan and app loan records."
+                  )}
+                </p>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                  Tracking Ref: {matchedTrackingRef}
+                </span>
+
+                  <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                  Account: {matchedAccountNumber}
+                </span>
+
+                  <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                  Records returned: {gatewayRecords.length}
+                </span>
+                </div>
+              </div>
+
+              <button
+                  type="button"
+                  onClick={onClose}
+                  className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+                  aria-label="Close BankOne sync result"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <div className="max-h-[78vh] overflow-y-auto bg-slate-50 p-5 dark:bg-[#07111f]">
+            {result.loading && (
+                <div className="flex min-h-72 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  Syncing BankOne status
+                </div>
+            )}
+
+            {result.error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                  {result.error}
+                </div>
+            )}
+
+            {!result.loading && !result.error && (
+                <div className="grid gap-5">
+                  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {topSummary.map((item) => {
+                      const Icon = item.icon;
+
+                      return (
+                          <div
+                              key={item.label}
+                              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.045]"
+                          >
+                            <div className="mb-4 flex items-center justify-between gap-3">
+                              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
+                                <Icon className="h-5 w-5" aria-hidden="true" />
+                              </div>
+
+                              <StatusBadge status={item.value} />
+                            </div>
+
+                            <p className="text-sm font-bold text-slate-500 dark:text-slate-400">
+                              {item.label}
+                            </p>
+                            <p className="mt-1 text-2xl font-black text-slate-950 dark:text-white">
+                              {item.value}
+                            </p>
+                          </div>
+                      );
+                    })}
+                  </section>
+
+                  <SectionCard
+                      title="Sync snapshot"
+                      description="Clean summary of the exact BankOne loan matched to the local loan record."
+                  >
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {syncSnapshot.map((item) => (
+                          <MiniInfoCard key={item.label} label={item.label} value={item.value} />
+                      ))}
+                    </div>
+                  </SectionCard>
+
+                  <section className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+                    <SectionCard
+                        title="Matched BankOne loan"
+                        description="This is the BankOne record selected as the match from the gateway response."
+                    >
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {bankoneLoanDetails.map((item) => (
+                            <MiniInfoCard key={item.label} label={item.label} value={item.value} />
+                        ))}
+                      </div>
+                    </SectionCard>
+
+                    <div className="grid gap-5">
+                      <SectionCard title="Core loan status">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {localCoreDetails.map((item) => (
+                              <MiniInfoCard key={item.label} label={item.label} value={item.value} />
+                          ))}
+                        </div>
+                      </SectionCard>
+
+                      <SectionCard title="App loan status">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {localAppDetails.map((item) => (
+                              <MiniInfoCard key={item.label} label={item.label} value={item.value} />
+                          ))}
+                        </div>
+                      </SectionCard>
+                    </div>
+                  </section>
+
+                  <SectionCard
+                      title="BankOne loan creation response"
+                      description="Formatted creation response previously returned when the BankOne loan account was created."
+                  >
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {creationDetails.map((item) => (
+                          <MiniInfoCard key={item.label} label={item.label} value={item.value} />
+                      ))}
+                    </div>
+                  </SectionCard>
+
+                  <SectionCard
+                      title="Gateway response from BankOne"
+                      description="Formatted records returned inside bankOneResponse.Message. The matched record is highlighted."
+                  >
+                    <div className="mb-4 grid gap-3 md:grid-cols-3">
+                      <MiniInfoCard
+                          label="Gateway success"
+                          value={gatewaySuccess ? "Successful" : "Failed"}
+                          tone={gatewaySuccess ? "success" : "danger"}
+                      />
+                      <MiniInfoCard
+                          label="Customer ID string"
+                          value={safeText(bankOneResponse.CustomerIDInString)}
+                      />
+                      <MiniInfoCard
+                          label="Records returned"
+                          value={gatewayRecords.length}
+                      />
+                    </div>
+
+                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-950/40">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1100px] text-left text-sm">
+                          <thead className="bg-slate-100 text-xs font-black uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+                          <tr>
+                            <th className="px-5 py-3">Match</th>
+                            <th className="px-5 py-3">Tracking ref</th>
+                            <th className="px-5 py-3">Account number</th>
+                            <th className="px-5 py-3">Customer</th>
+                            <th className="px-5 py-3">Loan amount</th>
+                            <th className="px-5 py-3">Balance</th>
+                            <th className="px-5 py-3">Interest</th>
+                            <th className="px-5 py-3">Cycle</th>
+                            <th className="px-5 py-3">Status</th>
+                            <th className="px-5 py-3">Created</th>
+                          </tr>
+                          </thead>
+
+                          <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                          {gatewayRecords.map((item, index) => {
+                            const isMatched =
+                                safeText(item.AccountOpenningTrackingRef, "") === matchedTrackingRef ||
+                                safeText(item.Number, "") === matchedAccountNumber ||
+                                safeText(item.ID, "") === safeText(matchedRecord.ID, "");
+
+                            return (
+                                <tr
+                                    key={`${safeText(item.ID, index)}-${index}`}
+                                    className={
+                                      isMatched
+                                          ? "bg-emerald-50/70 text-slate-800 dark:bg-emerald-400/10 dark:text-slate-200"
+                                          : "text-slate-700 dark:text-slate-300"
+                                    }
+                                >
+                                  <td className="px-5 py-4">
+                                    {isMatched ? (
+                                        <span className="rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200">
+                                    Matched
+                                  </span>
+                                    ) : (
+                                        <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
+                                    Other
+                                  </span>
+                                    )}
+                                  </td>
+
+                                  <td className="px-5 py-4 font-semibold">
+                                    {safeText(item.AccountOpenningTrackingRef)}
+                                  </td>
+                                  <td className="px-5 py-4 font-semibold">
+                                    {safeText(item.Number)}
+                                  </td>
+                                  <td className="px-5 py-4">
+                                    <p className="font-bold text-slate-950 dark:text-white">
+                                      {safeText(item.Name)}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                      Customer ID: {safeText(item.CustomerID)}
+                                    </p>
+                                  </td>
+                                  <td className="px-5 py-4 font-bold">
+                                    {formatBankoneMoney(item.LoanAmount)}
+                                  </td>
+                                  <td className="px-5 py-4">
+                                    {formatBankoneMoney(item.BalanceInNaira ?? item.LedgerBalance)}
+                                  </td>
+                                  <td className="px-5 py-4">{safeText(item.InterestRate, "0")}%</td>
+                                  <td className="px-5 py-4">{safeText(item.LoanCycle)}</td>
+                                  <td className="px-5 py-4">
+                                    <StatusBadge status={item.RealLoanStatus ?? "pending"} />
+                                  </td>
+                                  <td className="px-5 py-4">{formatDate(item.DateCreated)}</td>
+                                </tr>
+                            );
+                          })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {!gatewayRecords.length && (
+                          <div className="px-5 py-10 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                            No BankOne gateway records returned.
+                          </div>
+                      )}
+                    </div>
+                  </SectionCard>
+
+                  <details className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                    <summary className="cursor-pointer list-none px-5 py-4 text-sm font-black text-slate-950 dark:text-white">
+                      View raw sync payload
+                    </summary>
+
+                    <div className="border-t border-slate-100 px-5 py-4 dark:border-white/10">
+                  <pre className="max-h-[420px] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">
+                    {JSON.stringify(record, null, 2)}
+                  </pre>
+                    </div>
+                  </details>
+                </div>
+            )}
+          </div>
+        </div>
+      </div>
   );
 }
 
@@ -960,8 +1358,8 @@ export default function LoansPage() {
   };
 
   const summaryCards = [
-    { label: "Core loans", value: formatValue(loans.length), icon: CreditCard },
-    { label: "Application loans", value: formatValue(appLoans.length), icon: WalletCards },
+    { label: "BankOne loans", value: formatValue(loans.length), icon: CreditCard },
+    { label: "App Loans", value: formatValue(appLoans.length), icon: WalletCards },
     { label: "Loan types", value: formatValue(loanTypes.length), icon: BriefcaseBusiness },
     { label: "Loan packages", value: formatValue(loanPackages.length), icon: CheckCircle2 },
   ];
@@ -1181,14 +1579,14 @@ export default function LoansPage() {
       title: "Sync BankOne loan status",
       description: "Push a status sync request for this legacy loan using the institution code required by BankOne.",
       submitLabel: "Sync status",
-      initialValues: { institutionCode: "2" },
+      initialValues: { institutionCode: "101080" },
       fields: [
         {
           name: "institutionCode",
           label: "Institution code",
           required: true,
-          placeholder: "2",
-          helper: "Defaults to institution code 2.",
+          placeholder: "101080",
+          helper: "Defaults to institution code 101080.",
         },
       ],
       onSubmit: (values) =>
@@ -1210,83 +1608,37 @@ export default function LoansPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(6,154,255,0.12),transparent_28%),linear-gradient(180deg,#f8fbff_0%,#eef4fb_48%,#f8fbff_100%)] text-slate-950 dark:bg-[radial-gradient(circle_at_top_left,rgba(6,154,255,0.16),transparent_22%),linear-gradient(180deg,#020817_0%,#07111f_52%,#020817_100%)] dark:text-white">
-      <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur-xl dark:border-white/10 dark:bg-[#081120]/92">
-        <div className="mx-auto max-w-[1480px] px-5 py-4 sm:px-8">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex min-w-0 items-center gap-4">
-              <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-                <Image src="/eazy-logo.svg" alt="EazyCredit" width={176} height={40} className="h-10 w-auto" priority />
-                <div className="h-10 w-px bg-slate-200 dark:bg-white/10" />
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Specialist workspace
-                  </p>
-                  <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Loans</h1>
-                </div>
-              </div>
-            </div>
+    <main className="min-h-screen pb-20 text-slate-950 dark:text-white">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#07111f]/80">
+        <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between sm:px-8">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              Loan Management
+            </h1>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Comprehensive view of all loan applications, portfolios, and packages.
+            </p>
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href="/dashboard" className="flex h-10 items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200">
-                Dashboard
-              </Link>
-              <Link href="/admin" className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200">
-                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                Admin Center
-              </Link>
-              <Link href="/users" className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200">
-                <Users className="h-4 w-4" aria-hidden="true" />
-                Users
-              </Link>
-              <Link href="/reports" className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200">
-                <BarChart3 className="h-4 w-4" aria-hidden="true" />
-                Reports
-              </Link>
-              <Link href="/fees" className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200">
-                <Landmark className="h-4 w-4" aria-hidden="true" />
-                Fees
-              </Link>
-              <Link href="/wallet-transactions" className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200">
-                <WalletCards className="h-4 w-4" aria-hidden="true" />
-                Wallet Ledger
-              </Link>
-              <Link href="/audit-logs" className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200">
-                <FileText className="h-4 w-4" aria-hidden="true" />
-                Audit Logs
-              </Link>
-              <button
-                type="button"
-                onClick={() => void refreshData()}
-                disabled={refreshing}
-                className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-              >
-                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-                aria-label="Toggle color theme"
-              >
-                <Sun className="hidden h-5 w-5 dark:block" aria-hidden="true" />
-                <Moon className="h-5 w-5 dark:hidden" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
-                aria-label="Log out"
-              >
-                <LogOut className="h-5 w-5" aria-hidden="true" />
-              </button>
-            </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void refreshData()}
+              disabled={refreshing}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              {refreshing ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              )}
+              Sync
+            </button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1480px] gap-6 px-5 py-6 sm:px-8">
+      <div className="mx-auto grid max-w-[1480px] gap-6 px-6 py-8 sm:px-8">
         {!workspaceData ? (
           <div className="grid gap-5">
             <div className="h-48 animate-pulse rounded-lg bg-slate-200 dark:bg-white/10" />
@@ -1310,14 +1662,14 @@ export default function LoansPage() {
                     Dedicated workspace for core loans, app loans, product setup, and BankOne maintenance.
                   </h2>
                   <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
-                    Review legacy loans, application loans, repayment schedules, product types, and synchronization flows without crowding the Admin Center.
+                    Review legacy loans, App Loans, repayment schedules, product types, and synchronization flows without crowding the Admin Center.
                   </p>
                 </div>
 
                 <div className="grid gap-3 rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 p-4 shadow-lg shadow-[#069AFF]/10">
                   {[
-                    ["Core loans", loans.length],
-                    ["Application loans", appLoans.length],
+                    ["BankOne loans", loans.length],
+                    ["App Loans", appLoans.length],
                     ["Loan types", loanTypes.length],
                   ].map(([label, value]) => (
                     <div key={String(label)} className="rounded-lg border border-white/10 bg-white/[0.08] p-4 text-center">
@@ -1381,7 +1733,7 @@ export default function LoansPage() {
               )}
             </ManagementTable>
 
-            <ManagementTable title="Application loans" rows={appLoans} columns={["Applicant", "Loan", "Exposure", "Status", "Action"]}>
+            <ManagementTable title="App Loans" rows={appLoans} columns={["Applicant", "Loan", "Exposure", "Status", "Action"]}>
               {(row, index) => {
                 const id = getId(row);
                 return (
@@ -1456,7 +1808,7 @@ export default function LoansPage() {
               }}
             </ManagementTable>
 
-            <ManagementTable title="Core loans" rows={loans} columns={["Customer", "Amount", "Status", "Created", "Action"]}>
+            <ManagementTable title="BankOne loans" rows={loans} columns={["Customer", "Amount", "Status", "Created", "Action"]}>
               {(row, index) => {
                 const id = getId(row);
                 const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();

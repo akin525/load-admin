@@ -1298,126 +1298,37 @@ export default function UsersPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(6,154,255,0.12),transparent_28%),linear-gradient(180deg,#f8fbff_0%,#eef4fb_48%,#f8fbff_100%)] text-slate-950 dark:bg-[radial-gradient(circle_at_top_left,rgba(6,154,255,0.16),transparent_22%),linear-gradient(180deg,#020817_0%,#07111f_52%,#020817_100%)] dark:text-white">
-      <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur-xl dark:border-white/10 dark:bg-[#081120]/92">
-        <div className="mx-auto max-w-[1480px] px-5 py-4 sm:px-8">
-          <div className="grid gap-4 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)] xl:items-start">
-            <div className="flex min-w-0 items-center gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-              <div className="flex h-14 items-center rounded-xl border border-slate-200 bg-white px-3 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-                <Image src="/eazy-logo.svg" alt="EazyCredit" width={176} height={40} className="h-10 w-auto" priority />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                  Specialist workspace
-                </p>
-                <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Users</h1>
-                <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Customer directory, profile visibility, and broadcast control.
-                </p>
-              </div>
-            </div>
+    <main className="min-h-screen pb-20 text-slate-950 dark:text-white">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#07111f]/80">
+        <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between sm:px-8">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              User Directory
+            </h1>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Detailed management of system users, profiles, and activities.
+            </p>
+          </div>
 
-            <div className="grid gap-3">
-              <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-                <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                      Workspace Navigation
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                      Move between customer, lending, reporting, and governance surfaces.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        href="/dashboard"
-                        className="inline-flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        Dashboard
-                      </Link>
-                      <Link
-                        href="/admin"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                        Admin Center
-                      </Link>
-                      <Link
-                        href="/loans"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <CreditCard className="h-4 w-4" aria-hidden="true" />
-                        Loans
-                      </Link>
-                      <Link
-                        href="/reports"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <BarChart3 className="h-4 w-4" aria-hidden="true" />
-                        Reports
-                      </Link>
-                      <Link
-                        href="/fees"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <Landmark className="h-4 w-4" aria-hidden="true" />
-                        Fees
-                      </Link>
-                      <Link
-                        href="/wallet-transactions"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <WalletCards className="h-4 w-4" aria-hidden="true" />
-                        Wallet Ledger
-                      </Link>
-                      <Link
-                        href="/audit-logs"
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:bg-white hover:text-[#069AFF] dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:bg-white/[0.04] dark:hover:text-sky-200"
-                      >
-                        <FileText className="h-4 w-4" aria-hidden="true" />
-                        Audit Logs
-                      </Link>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 xl:border-l xl:border-slate-200 xl:pl-3 dark:xl:border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => void refreshUsers()}
-                        disabled={refreshing}
-                        className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                      >
-                        {refreshing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
-                        Refresh
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                        aria-label="Toggle color theme"
-                      >
-                        <Sun className="hidden h-5 w-5 dark:block" aria-hidden="true" />
-                        <Moon className="h-5 w-5 dark:hidden" aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleLogout}
-                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
-                        aria-label="Log out"
-                      >
-                        <LogOut className="h-5 w-5" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void refreshUsers()}
+              disabled={refreshing}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              {refreshing ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              )}
+              Sync
+            </button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1480px] gap-6 px-5 py-6 sm:px-8">
+      <div className="mx-auto grid max-w-[1480px] gap-6 px-6 py-8 sm:px-8">
         {!usersState.loaded ? (
           <div className="grid gap-5">
             <div className="h-48 animate-pulse rounded-lg bg-slate-200 dark:bg-white/10" />

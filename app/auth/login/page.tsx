@@ -96,7 +96,7 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f4f7fb] text-slate-950 transition-colors dark:bg-[#07111f] dark:text-white">
+    <main className="min-h-screen bg-slate-50 text-slate-950 transition-colors dark:bg-[#07111f] dark:text-white">
       <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(520px,0.88fr)]">
         <section className="relative flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(180deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:56px_56px] dark:bg-[linear-gradient(90deg,rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(180deg,rgba(148,163,184,0.055)_1px,transparent_1px)]" />
