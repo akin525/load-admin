@@ -7,20 +7,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  BarChart3,
-  CheckCircle2,
-  CreditCard,
+  Activity,
+  AlertTriangle,
+  BadgeCheck,
+  BarChart3, CalendarDays,
+  CheckCircle2, Clock3, Copy,
+  CreditCard, Database,
   Eye,
-  FileText,
+  FileText, Fingerprint, Globe2, KeyRound,
   Landmark,
   Loader2,
-  LogOut,
-  Moon,
+  LogOut, Mail, MapPin,
+  Moon, Phone,
   Plus,
   RefreshCw,
   Send,
-  ShieldCheck,
-  Sun,
+  ShieldCheck, Smartphone,
+  Sun, UserRound,
   Users,
   WalletCards,
   X,
@@ -120,8 +123,16 @@ const getRecordValue = (record: Record<string, unknown>, keys: string[]) => {
 const getId = (record: Record<string, unknown>) => String(getRecordValue(record, ["_id", "id", "userId"]) ?? "");
 
 const getPersonName = (record: Record<string, unknown>) => {
-  const joined = [record.firstName, record.lastName].filter((value) => typeof value === "string" && value.trim()).join(" ");
-  return String((getRecordValue(record, ["name"]) ?? joined) || record.email || "Unknown user");
+  const firstName = String(getRecordValue(record, ["first_name", "firstName"]) ?? "").trim();
+  const lastName = String(getRecordValue(record, ["last_name", "lastName"]) ?? "").trim();
+  const fullName = [firstName, lastName].filter(Boolean).join(" ");
+
+  return String(
+      getRecordValue(record, ["name", "fullName"]) ??
+      fullName ??
+      record.email ??
+      "Unknown user"
+  );
 };
 
 const formatLabel = (key: string) =>
@@ -484,59 +495,593 @@ function TransactionStreamCard({
     </section>
   );
 }
+const safeText = (value: unknown, fallback = "Not available") => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
 
-function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => void }) {
-  const data = unwrapPayload(detail.data);
-  const entries = isRecord(data) ? Object.entries(data).slice(0, 36) : [];
+  return String(value);
+};
+
+const getBooleanStatus = (value: unknown) =>
+    value === true || String(value).toLowerCase() === "true";
+
+const maskMiddle = (value: unknown, visibleStart = 3, visibleEnd = 3) => {
+  const text = safeText(value, "");
+
+  if (!text) return "Not available";
+  if (text.length <= visibleStart + visibleEnd) return "••••";
+
+  return `${text.slice(0, visibleStart)}${"•".repeat(Math.min(8, text.length - visibleStart - visibleEnd))}${text.slice(-visibleEnd)}`;
+};
+
+const getUserInitials = (record: Record<string, unknown>) => {
+  const firstName = safeText(getRecordValue(record, ["first_name", "firstName"]), "");
+  const lastName = safeText(getRecordValue(record, ["last_name", "lastName"]), "");
+  const email = safeText(record.email, "");
+
+  const initials = [firstName, lastName]
+      .filter(Boolean)
+      .map((name) => name.charAt(0))
+      .join("");
+
+  return (initials || email.slice(0, 2) || "US").toUpperCase();
+};
+
+const sanitizeProfileRecord = (record: Record<string, unknown>) => {
+  const hiddenKeys = ["password", "pin", "verificationCode"];
+  const maskedKeys = ["bvn", "nin"];
+
+  return Object.entries(record).reduce<Record<string, unknown>>((accumulator, [key, value]) => {
+    if (hiddenKeys.includes(key)) {
+      accumulator[key] = "********";
+      return accumulator;
+    }
+
+    if (maskedKeys.includes(key)) {
+      accumulator[key] = maskMiddle(value);
+      return accumulator;
+    }
+
+    accumulator[key] = value;
+    return accumulator;
+  }, {});
+};
+
+const getProfileCompletion = (record: Record<string, unknown>) => {
+  const requiredFields = [
+    "first_name",
+    "last_name",
+    "email",
+    "phone",
+    "dob",
+    "gender",
+    "bvn",
+    "nin",
+    "bankone_customerid",
+    "bankone_account_number",
+  ];
+
+  const completed = requiredFields.filter((field) => {
+    const value = record[field];
+    return value !== null && value !== undefined && String(value).trim() !== "";
+  }).length;
+
+  return Math.round((completed / requiredFields.length) * 100);
+};
+
+function VerificationPill({ verified, label }: { verified: boolean; label: string }) {
+  return (
+      <span
+          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ${
+              verified
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+                  : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100"
+          }`}
+      >
+      {verified ? <BadgeCheck className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+        {label}
+    </span>
+  );
+}
+
+function ProfileMetricCard({
+                             label,
+                             value,
+                             icon: Icon,
+                             tone = "blue",
+                           }: {
+  label: string;
+  value: string;
+  icon: typeof Users;
+  tone?: "blue" | "green" | "amber" | "slate";
+}) {
+  const toneClass =
+      tone === "green"
+          ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-400/10 dark:text-emerald-200 dark:ring-emerald-400/20"
+          : tone === "amber"
+              ? "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-400/10 dark:text-amber-100 dark:ring-amber-400/20"
+              : tone === "slate"
+                  ? "bg-slate-100 text-slate-700 ring-slate-200 dark:bg-white/10 dark:text-slate-200 dark:ring-white/10"
+                  : "bg-[#069AFF]/10 text-[#069AFF] ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200 dark:ring-[#069AFF]/25";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-              Customer profile record
-            </p>
-            <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{detail.title}</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
-            aria-label="Close details"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+        <div className={`mb-4 flex h-11 w-11 items-center justify-center rounded-xl ring-1 ${toneClass}`}>
+          <Icon className="h-5 w-5" aria-hidden="true" />
         </div>
-        <div className="max-h-[76vh] overflow-y-auto p-5">
-          {detail.loading && (
-            <div className="flex min-h-60 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-              Loading details
-            </div>
+        <p className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{value}</p>
+        <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+          {label}
+        </p>
+      </div>
+  );
+}
+
+function ProfileSection({
+                          title,
+                          description,
+                          children,
+                        }: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+        <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+          <h3 className="text-base font-black text-slate-950 dark:text-white">{title}</h3>
+          {description && (
+              <p className="mt-1 text-sm font-medium leading-6 text-slate-500 dark:text-slate-400">
+                {description}
+              </p>
           )}
-          {detail.error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
-              {detail.error}
+        </div>
+
+        <div className="p-5">{children}</div>
+      </section>
+  );
+}
+
+function ProfileInfoTile({
+                           label,
+                           value,
+                           icon: Icon,
+                           copyValue,
+                           copied,
+                           onCopy,
+                         }: {
+  label: string;
+  value: ReactNode;
+  icon: typeof Users;
+  copyValue?: string;
+  copied?: boolean;
+  onCopy?: () => void;
+}) {
+  return (
+      <div className="group rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-[#069AFF]/35 hover:bg-white dark:border-white/10 dark:bg-slate-950/40 dark:hover:border-[#069AFF]/35 dark:hover:bg-white/[0.045]">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#069AFF] ring-1 ring-slate-200 dark:bg-white/[0.06] dark:ring-white/10">
+            <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+              {label}
+            </p>
+            <div className="mt-1 break-words text-sm font-bold text-slate-950 dark:text-white">
+              {value}
             </div>
-          )}
-          {!detail.loading && !detail.error && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {entries.map(([key, value]) => (
-                <div key={key} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.045]">
-                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                    {formatLabel(key)}
-                  </p>
-                  <p className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-white">
-                    {typeof value === "object" && value !== null ? JSON.stringify(value) : String(value ?? "Not available")}
-                  </p>
-                </div>
-              ))}
-            </div>
+          </div>
+
+          {copyValue && copyValue !== "Not available" && (
+              <button
+                  type="button"
+                  onClick={onCopy}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 opacity-100 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-400 dark:hover:text-sky-200 md:opacity-0 md:group-hover:opacity-100"
+                  title="Copy"
+              >
+                {copied ? <BadgeCheck className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+              </button>
           )}
         </div>
       </div>
-    </div>
+  );
+}
+function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => void }) {
+  const [copiedKey, setCopiedKey] = useState("");
+
+  const data = unwrapPayload(detail.data);
+  const record = isRecord(data) ? data : {};
+
+  const fullName = getPersonName(record);
+  const email = safeText(record.email);
+  const phone = safeText(record.phone);
+  const userId = safeText(record._id);
+  const profileCompletion = getProfileCompletion(record);
+
+  const emailVerified = getBooleanStatus(record.emailVerified);
+  const phoneVerified = getBooleanStatus(record.phoneVerified);
+
+  const loginLocation = isRecord(record.lastLoginLocation) ? record.lastLoginLocation : {};
+
+  const copyText = async (key: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+
+      window.setTimeout(() => {
+        setCopiedKey("");
+      }, 1200);
+    } catch {
+      setCopiedKey("");
+    }
+  };
+
+  const identityItems = [
+    {
+      label: "First name",
+      value: safeText(getRecordValue(record, ["first_name", "firstName"])),
+      icon: UserRound,
+    },
+    {
+      label: "Last name",
+      value: safeText(getRecordValue(record, ["last_name", "lastName"])),
+      icon: UserRound,
+    },
+    {
+      label: "Gender",
+      value: safeText(record.gender),
+      icon: Users,
+    },
+    {
+      label: "Date of birth",
+      value: formatDate(record.dob),
+      icon: CalendarDays,
+    },
+    {
+      label: "Nationality",
+      value: safeText(record.nationality),
+      icon: Globe2,
+    },
+    {
+      label: "Tier",
+      value: `Tier ${safeText(record.tier, "0")}`,
+      icon: ShieldCheck,
+    },
+  ];
+
+  const contactItems = [
+    {
+      label: "Email address",
+      value: email,
+      icon: Mail,
+      copyKey: "email",
+      copyValue: email,
+    },
+    {
+      label: "Phone number",
+      value: phone,
+      icon: Phone,
+      copyKey: "phone",
+      copyValue: phone,
+    },
+    {
+      label: "Email status",
+      value: <VerificationPill verified={emailVerified} label={emailVerified ? "Verified" : "Unverified"} />,
+      icon: BadgeCheck,
+    },
+    {
+      label: "Phone status",
+      value: <VerificationPill verified={phoneVerified} label={phoneVerified ? "Verified" : "Unverified"} />,
+      icon: BadgeCheck,
+    },
+  ];
+
+  const kycItems = [
+    {
+      label: "BVN",
+      value: maskMiddle(record.bvn),
+      icon: Fingerprint,
+      copyKey: "bvn",
+      copyValue: safeText(record.bvn),
+    },
+    {
+      label: "NIN",
+      value: maskMiddle(record.nin),
+      icon: Fingerprint,
+      copyKey: "nin",
+      copyValue: safeText(record.nin),
+    },
+    {
+      label: "Xpress customer ID",
+      value: safeText(record.xpressCustomerId),
+      icon: Database,
+      copyKey: "xpressCustomerId",
+      copyValue: safeText(record.xpressCustomerId),
+    },
+    {
+      label: "Xpress wallet ID",
+      value: safeText(record.xpressWalletId),
+      icon: WalletCards,
+      copyKey: "xpressWalletId",
+      copyValue: safeText(record.xpressWalletId),
+    },
+    {
+      label: "BankOne customer ID",
+      value: safeText(record.bankone_customerid),
+      icon: Landmark,
+      copyKey: "bankone_customerid",
+      copyValue: safeText(record.bankone_customerid),
+    },
+    {
+      label: "BankOne account number",
+      value: safeText(record.bankone_account_number),
+      icon: CreditCard,
+      copyKey: "bankone_account_number",
+      copyValue: safeText(record.bankone_account_number),
+    },
+  ];
+
+  const securityItems = [
+    {
+      label: "Last login",
+      value: formatDate(record.lastLoginAt),
+      icon: Clock3,
+    },
+    {
+      label: "Login count",
+      value: safeText(record.loginCount, "0"),
+      icon: BarChart3,
+    },
+    {
+      label: "Last login IP",
+      value: safeText(record.lastLoginIp),
+      icon: KeyRound,
+      copyKey: "lastLoginIp",
+      copyValue: safeText(record.lastLoginIp),
+    },
+    {
+      label: "Device / User agent",
+      value: safeText(record.lastLoginUserAgent),
+      icon: Smartphone,
+    },
+    {
+      label: "Location",
+      value: [loginLocation.city, loginLocation.region, loginLocation.country].filter(Boolean).join(", ") || "Not available",
+      icon: MapPin,
+    },
+    {
+      label: "Timezone",
+      value: safeText(loginLocation.timezone),
+      icon: Globe2,
+    },
+  ];
+
+  const sanitizedRecord = sanitizeProfileRecord(record);
+
+  return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+        <div className="w-full max-w-7xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+          <div className="relative overflow-hidden border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_52%,#069AFF_145%)] px-6 py-6 text-white">
+            <div className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+            <div className="absolute -bottom-28 left-1/2 h-64 w-64 rounded-full bg-[#069AFF]/25 blur-3xl" />
+
+            <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl border border-white/15 bg-white/15 text-2xl font-black text-white shadow-lg shadow-black/10">
+                  {getUserInitials(record)}
+                </div>
+
+                <div>
+                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-sky-100">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Customer profile
+                  </div>
+
+                  <h2 className="text-2xl font-black tracking-tight md:text-3xl">
+                    {detail.loading ? "Loading profile..." : fullName}
+                  </h2>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-200">
+                    <span>{email}</span>
+                    <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-flex" />
+                    <span>{phone}</span>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <VerificationPill verified={emailVerified} label={emailVerified ? "Email verified" : "Email pending"} />
+                    <VerificationPill verified={phoneVerified} label={phoneVerified ? "Phone verified" : "Phone pending"} />
+
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-white">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Tier {safeText(record.tier, "0")}
+                  </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative flex items-center gap-3">
+                <button
+                    type="button"
+                    onClick={() => void copyText("userId", userId)}
+                    disabled={userId === "Not available"}
+                    className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {copiedKey === "userId" ? <BadgeCheck className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  Copy ID
+                </button>
+
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+                    aria-label="Close details"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-h-[78vh] overflow-y-auto bg-slate-50 p-5 dark:bg-[#07111f]">
+            {detail.loading && (
+                <div className="flex min-h-72 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  Loading customer profile
+                </div>
+            )}
+
+            {detail.error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                  {detail.error}
+                </div>
+            )}
+
+            {!detail.loading && !detail.error && (
+                <div className="grid gap-5">
+                  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <ProfileMetricCard
+                        label="Profile completion"
+                        value={`${profileCompletion}%`}
+                        icon={BarChart3}
+                        tone={profileCompletion >= 80 ? "green" : "amber"}
+                    />
+                    <ProfileMetricCard
+                        label="Verification"
+                        value={emailVerified && phoneVerified ? "Verified" : "Pending"}
+                        icon={BadgeCheck}
+                        tone={emailVerified && phoneVerified ? "green" : "amber"}
+                    />
+                    <ProfileMetricCard
+                        label="Login count"
+                        value={safeText(record.loginCount, "0")}
+                        icon={Activity}
+                        tone="blue"
+                    />
+                    <ProfileMetricCard
+                        label="Account tier"
+                        value={`Tier ${safeText(record.tier, "0")}`}
+                        icon={ShieldCheck}
+                        tone="slate"
+                    />
+                  </section>
+
+                  <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+                    <div className="grid gap-5">
+                      <ProfileSection
+                          title="Personal information"
+                          description="Core customer identity information returned from the user profile endpoint."
+                      >
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {identityItems.map((item) => (
+                              <ProfileInfoTile
+                                  key={item.label}
+                                  label={item.label}
+                                  value={item.value}
+                                  icon={item.icon}
+                              />
+                          ))}
+                        </div>
+                      </ProfileSection>
+
+                      <ProfileSection
+                          title="KYC, wallet and BankOne identifiers"
+                          description="Sensitive values are masked in the UI. Use copy only when operationally required."
+                      >
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {kycItems.map((item) => (
+                              <ProfileInfoTile
+                                  key={item.label}
+                                  label={item.label}
+                                  value={item.value}
+                                  icon={item.icon}
+                                  copyValue={item.copyValue}
+                                  copied={copiedKey === item.copyKey}
+                                  onCopy={() => void copyText(item.copyKey, item.copyValue)}
+                              />
+                          ))}
+                        </div>
+                      </ProfileSection>
+                    </div>
+
+                    <div className="grid gap-5">
+                      <ProfileSection title="Contact verification">
+                        <div className="grid gap-3">
+                          {contactItems.map((item) => (
+                              <ProfileInfoTile
+                                  key={item.label}
+                                  label={item.label}
+                                  value={item.value}
+                                  icon={item.icon}
+                                  copyValue={item.copyValue}
+                                  copied={copiedKey === item.copyKey}
+                                  onCopy={() => void copyText(item.copyKey ?? item.label, item.copyValue ?? "")}
+                              />
+                          ))}
+                        </div>
+                      </ProfileSection>
+
+                      <ProfileSection title="Audit timestamps">
+                        <div className="grid gap-3">
+                          <ProfileInfoTile
+                              label="Created at"
+                              value={formatDate(record.createdAt)}
+                              icon={CalendarDays}
+                          />
+                          <ProfileInfoTile
+                              label="Updated at"
+                              value={formatDate(record.updatedAt)}
+                              icon={Clock3}
+                          />
+                          <ProfileInfoTile
+                              label="User ID"
+                              value={userId}
+                              icon={Database}
+                              copyValue={userId}
+                              copied={copiedKey === "profileUserId"}
+                              onCopy={() => void copyText("profileUserId", userId)}
+                          />
+                        </div>
+                      </ProfileSection>
+                    </div>
+                  </section>
+
+                  <ProfileSection
+                      title="Login and security intelligence"
+                      description="Last known sign-in metadata for monitoring account access."
+                  >
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {securityItems.map((item) => (
+                          <ProfileInfoTile
+                              key={item.label}
+                              label={item.label}
+                              value={item.value}
+                              icon={item.icon}
+                              copyValue={item.copyValue}
+                              copied={copiedKey === item.copyKey}
+                              onCopy={() => void copyText(item.copyKey ?? item.label, item.copyValue ?? "")}
+                          />
+                      ))}
+                    </div>
+                  </ProfileSection>
+
+                  <details className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                    <summary className="cursor-pointer list-none px-5 py-4 text-sm font-black text-slate-950 dark:text-white">
+                      View sanitized raw profile payload
+                    </summary>
+
+                    <div className="border-t border-slate-100 px-5 py-4 dark:border-white/10">
+                  <pre className="max-h-[420px] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">
+                    {JSON.stringify(sanitizedRecord, null, 2)}
+                  </pre>
+                    </div>
+                  </details>
+                </div>
+            )}
+          </div>
+        </div>
+      </div>
   );
 }
 
