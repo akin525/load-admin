@@ -7,7 +7,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
   BarChart3,
   ChevronRight,
   CreditCard,
@@ -16,12 +15,14 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  Menu,
   Moon,
   ShieldCheck,
   Sparkles,
   Sun,
   Users,
   WalletCards,
+  X,
 } from "lucide-react";
 
 type NavItem = {
@@ -70,57 +71,33 @@ const cn = (...classes: Array<string | false | null | undefined>) => {
   return classes.filter(Boolean).join(" ");
 };
 
-export function Sidebar() {
-  const pathname = usePathname();
-  const router = useRouter();
-  const { resolvedTheme, setTheme } = useTheme();
-
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const isDarkMode = mounted && resolvedTheme === "dark";
-
-  const activeLabel = useMemo(() => {
-    for (const group of navGroups) {
-      const activeItem = group.items.find((item) => {
-        if (item.exact) return pathname === item.href;
-        return pathname === item.href || pathname.startsWith(`${item.href}/`);
-      });
-
-      if (activeItem) return activeItem.label;
-    }
-
-    return "Workspace";
-  }, [pathname]);
-
-  if (hiddenRoutes.includes(pathname)) {
-    return null;
-  }
-
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("token");
-      localStorage.removeItem("admin");
-    }
-
-    router.replace("/auth/login");
-  };
-
+function SidebarContent({
+                          pathname,
+                          activeLabel,
+                          isDarkMode,
+                          onToggleTheme,
+                          onLogout,
+                          onNavigate,
+                          onClose,
+                          mobile = false,
+                        }: {
+  pathname: string;
+  activeLabel: string;
+  isDarkMode: boolean;
+  onToggleTheme: () => void;
+  onLogout: () => void;
+  onNavigate?: () => void;
+  onClose?: () => void;
+  mobile?: boolean;
+}) {
   return (
-      <aside className="sticky top-0 z-40 hidden h-screen w-[292px] shrink-0 flex-col border-r border-slate-200/80 bg-white/95 shadow-[12px_0_40px_rgba(15,23,42,0.04)] backdrop-blur-2xl transition-all duration-300 dark:border-white/[0.08] dark:bg-[#07111f]/95 dark:shadow-none lg:flex">
+      <div className="flex h-full flex-col">
         <div className="flex h-[78px] items-center border-b border-slate-100 px-5 dark:border-white/[0.06]">
           <Link
               href="/dashboard"
-              className="group flex w-full items-center gap-3 rounded-2xl px-2 py-2 transition hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+              onClick={onNavigate}
+              className="group flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-2 py-2 transition hover:bg-slate-50 dark:hover:bg-white/[0.04]"
           >
-            {/*<div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#069AFF] via-[#078dec] to-[#0057b8] shadow-lg shadow-[#069AFF]/25">*/}
-            {/*  <Activity className="h-5 w-5 text-white" strokeWidth={2.7} />*/}
-            {/*  <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 dark:border-[#07111f]" />*/}
-            {/*</div>*/}
-
             <div className="min-w-0 flex-1">
               <Image
                   src="/eazy-logo.svg"
@@ -135,8 +112,21 @@ export function Sidebar() {
               </p>
             </div>
 
-            <ChevronRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[#069AFF] dark:text-slate-600" />
+            {!mobile && (
+                <ChevronRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[#069AFF] dark:text-slate-600" />
+            )}
           </Link>
+
+          {mobile && (
+              <button
+                  type="button"
+                  onClick={onClose}
+                  className="ml-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-red-500/30 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+                  aria-label="Close navigation menu"
+              >
+                <X className="h-5 w-5" />
+              </button>
+          )}
         </div>
 
         <div className="border-b border-slate-100 px-5 py-4 dark:border-white/[0.06]">
@@ -197,6 +187,7 @@ export function Sidebar() {
                           <Link
                               key={item.href}
                               href={item.href}
+                              onClick={onNavigate}
                               aria-current={isActive ? "page" : undefined}
                               className={cn(
                                   "group relative flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-bold transition-all duration-200",
@@ -266,7 +257,7 @@ export function Sidebar() {
           <div className="flex items-center gap-2">
             <button
                 type="button"
-                onClick={() => setTheme(isDarkMode ? "light" : "dark")}
+                onClick={onToggleTheme}
                 className="flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-sm font-black text-slate-700 transition hover:border-[#069AFF]/30 hover:bg-[#069AFF]/5 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-300 dark:hover:border-[#069AFF]/30 dark:hover:bg-[#069AFF]/10 dark:hover:text-sky-300"
                 title="Toggle theme"
             >
@@ -285,7 +276,7 @@ export function Sidebar() {
 
             <button
                 type="button"
-                onClick={handleLogout}
+                onClick={onLogout}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400 dark:hover:border-red-500/30 dark:hover:bg-red-500/10 dark:hover:text-red-300"
                 title="Logout"
             >
@@ -293,6 +284,159 @@ export function Sidebar() {
             </button>
           </div>
         </div>
-      </aside>
+      </div>
+  );
+}
+
+export function Sidebar() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { resolvedTheme, setTheme } = useTheme();
+
+  const [mounted, setMounted] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [mobileOpen]);
+
+  const isDarkMode = mounted && resolvedTheme === "dark";
+
+  const activeLabel = useMemo(() => {
+    for (const group of navGroups) {
+      const activeItem = group.items.find((item) => {
+        if (item.exact) return pathname === item.href;
+        return pathname === item.href || pathname.startsWith(`${item.href}/`);
+      });
+
+      if (activeItem) return activeItem.label;
+    }
+
+    return "Workspace";
+  }, [pathname]);
+
+  if (hiddenRoutes.includes(pathname)) {
+    return null;
+  }
+
+  const handleLogout = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("token");
+      localStorage.removeItem("admin");
+    }
+
+    router.replace("/auth/login");
+  };
+
+  const toggleTheme = () => {
+    setTheme(isDarkMode ? "light" : "dark");
+  };
+
+  return (
+      <>
+        {/* Mobile Top Bar */}
+        <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-2xl dark:border-white/[0.08] dark:bg-[#07111f]/95 lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
+              <div className="min-w-0">
+                <Image
+                    src="/eazy-logo.svg"
+                    alt="EazyCredit"
+                    width={110}
+                    height={22}
+                    priority
+                    className="h-auto w-[110px] dark:brightness-0 dark:invert"
+                />
+                <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                  {activeLabel}
+                </p>
+              </div>
+            </Link>
+
+            <div className="flex items-center gap-2">
+              <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-[#069AFF]/30 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:text-sky-300"
+                  aria-label="Toggle theme"
+              >
+                {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
+
+              <button
+                  type="button"
+                  onClick={() => setMobileOpen(true)}
+                  className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#069AFF] text-white shadow-lg shadow-[#069AFF]/25"
+                  aria-label="Open navigation menu"
+                  aria-expanded={mobileOpen}
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Mobile Drawer */}
+        <div
+            className={cn(
+                "fixed inset-0 z-50 lg:hidden",
+                mobileOpen ? "pointer-events-auto" : "pointer-events-none"
+            )}
+        >
+          <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close navigation overlay"
+              className={cn(
+                  "absolute inset-0 bg-slate-950/70 backdrop-blur-sm transition-opacity duration-300",
+                  mobileOpen ? "opacity-100" : "opacity-0"
+              )}
+          />
+
+          <aside
+              className={cn(
+                  "absolute left-0 top-0 flex h-screen h-dvh w-[88vw] max-w-[350px] flex-col border-r border-slate-200/80 bg-white shadow-2xl transition-transform duration-300 dark:border-white/[0.08] dark:bg-[#07111f]",
+                  mobileOpen ? "translate-x-0" : "-translate-x-full"
+              )}
+          >
+            <SidebarContent
+                pathname={pathname}
+                activeLabel={activeLabel}
+                isDarkMode={isDarkMode}
+                onToggleTheme={toggleTheme}
+                onLogout={handleLogout}
+                onNavigate={() => setMobileOpen(false)}
+                onClose={() => setMobileOpen(false)}
+                mobile
+            />
+          </aside>
+        </div>
+
+        {/* Desktop Sidebar */}
+        <aside className="sticky top-0 z-40 hidden h-screen w-[292px] shrink-0 flex-col border-r border-slate-200/80 bg-white/95 shadow-[12px_0_40px_rgba(15,23,42,0.04)] backdrop-blur-2xl transition-all duration-300 dark:border-white/[0.08] dark:bg-[#07111f]/95 dark:shadow-none lg:flex">
+          <SidebarContent
+              pathname={pathname}
+              activeLabel={activeLabel}
+              isDarkMode={isDarkMode}
+              onToggleTheme={toggleTheme}
+              onLogout={handleLogout}
+          />
+        </aside>
+      </>
   );
 }
