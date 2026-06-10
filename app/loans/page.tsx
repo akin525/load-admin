@@ -1223,7 +1223,7 @@ function BankoneSyncResultModal({
 
                             return (
                                 <tr
-                                    key={`${safeText(item.ID, index)}-${index}`}
+                                    key={`${safeText(item.ID, String(index))}-${index}`}
                                     className={
                                       isMatched
                                           ? "bg-emerald-50/70 text-slate-800 dark:bg-emerald-400/10 dark:text-slate-200"
