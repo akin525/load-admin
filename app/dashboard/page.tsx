@@ -21,6 +21,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Send,
   ShieldCheck,
   Sun,
   Users,
@@ -846,6 +847,232 @@ function DetailModal({
   );
 }
 
+function BillDetailSection({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<{ label: string; value: string }>;
+}) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.035]">
+      <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+        <h3 className="font-bold text-slate-950 dark:text-white">{title}</h3>
+      </div>
+      <div className="grid gap-3 p-4 sm:grid-cols-2">
+        {items.map((item) => (
+          <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{item.label}</p>
+            <p className="mt-1 break-words text-sm font-semibold text-slate-950 dark:text-white">{item.value}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BillDetailsModal({
+  data,
+  loading,
+  error,
+  onClose,
+}: {
+  data: unknown;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+}) {
+  const detail = unwrapPayload(data);
+  const record = isRecord(detail) ? detail : {};
+  const providerResponse = isRecord(getRecordValue(record, ["providerResponse"])) ? getRecordValue(record, ["providerResponse"]) as Record<string, unknown> : null;
+  const providerContent = providerResponse && isRecord(providerResponse.content) ? providerResponse.content : null;
+  const providerTransaction = providerContent && isRecord(providerContent.transactions)
+    ? providerContent.transactions
+    : null;
+  const commissionDetails = providerTransaction && isRecord(providerTransaction.commission_details)
+    ? providerTransaction.commission_details
+    : null;
+
+  const summaryCards = [
+    { label: "Recipient", value: String(getRecordValue(record, ["recipient"]) ?? "Not available"), icon: Send },
+    { label: "Customer account", value: String(getRecordValue(record, ["customerAccountNo"]) ?? "Not available"), icon: CreditCard },
+    { label: "Bill amount", value: formatCurrency(getRecordValue(record, ["amount"])), icon: WalletCards },
+    { label: "Created", value: formatDate(getRecordValue(record, ["createdAt"])), icon: ShieldCheck },
+  ];
+
+  const transactionItems = [
+    { label: "Bill ID", value: String(getRecordValue(record, ["billId"]) ?? "Not available") },
+    { label: "Service type", value: String(getRecordValue(record, ["serviceType"]) ?? "Not available") },
+    { label: "Provider type", value: String(getRecordValue(record, ["providerType"]) ?? "Not available") },
+    { label: "Reference", value: String(getRecordValue(record, ["reference"]) ?? "Not available") },
+    { label: "User ID", value: String(getRecordValue(record, ["userId"]) ?? "Not available") },
+    {
+      label: "Token / purchased code",
+      value: String(getRecordValue(record, ["token"]) || getRecordValue(providerResponse ?? {}, ["purchased_code"]) || "Not available"),
+    },
+  ];
+
+  const customerItems = [
+    { label: "Recipient", value: String(getRecordValue(record, ["recipient"]) ?? "Not available") },
+    { label: "Customer account no", value: String(getRecordValue(record, ["customerAccountNo"]) ?? "Not available") },
+    { label: "Provider email", value: String(getRecordValue(providerTransaction ?? {}, ["email"]) ?? "Not available") },
+    { label: "Provider phone", value: String(getRecordValue(providerTransaction ?? {}, ["phone"]) ?? "Not available") },
+    { label: "Unique element", value: String(getRecordValue(providerTransaction ?? {}, ["unique_element"]) ?? "Not available") },
+    { label: "Product name", value: String(getRecordValue(providerTransaction ?? {}, ["product_name"]) ?? "Not available") },
+  ];
+
+  const settlementItems = [
+    { label: "Unit price", value: formatCurrency(getRecordValue(providerTransaction ?? {}, ["unit_price"])) },
+    { label: "Quantity", value: formatValue(getRecordValue(providerTransaction ?? {}, ["quantity"])) },
+    { label: "Commission", value: formatCurrency(getRecordValue(providerTransaction ?? {}, ["commission"])) },
+    { label: "Net total", value: formatCurrency(getRecordValue(providerTransaction ?? {}, ["total_amount"])) },
+    { label: "Convenience fee", value: formatCurrency(getRecordValue(providerTransaction ?? {}, ["convinience_fee"])) },
+    { label: "Discount", value: String(getRecordValue(providerTransaction ?? {}, ["discount"]) ?? "Not available") },
+  ];
+
+  const deliveryItems = [
+    { label: "Response code", value: String(getRecordValue(providerResponse ?? {}, ["code"]) ?? "Not available") },
+    { label: "Response description", value: String(getRecordValue(providerResponse ?? {}, ["response_description"]) ?? "Not available") },
+    { label: "Provider request ID", value: String(getRecordValue(providerResponse ?? {}, ["requestId"]) ?? "Not available") },
+    { label: "Transaction status", value: String(getRecordValue(providerTransaction ?? {}, ["status"]) ?? "Not available") },
+    { label: "Transaction ID", value: String(getRecordValue(providerTransaction ?? {}, ["transactionId"]) ?? "Not available") },
+    { label: "Transaction date", value: formatDate(getRecordValue(providerResponse ?? {}, ["transaction_date"])) },
+    { label: "Channel", value: String(getRecordValue(providerTransaction ?? {}, ["channel"]) ?? "Not available") },
+    { label: "Platform", value: String(getRecordValue(providerTransaction ?? {}, ["platform"]) ?? "Not available") },
+    { label: "Method", value: String(getRecordValue(providerTransaction ?? {}, ["method"]) ?? "Not available") },
+  ];
+
+  const commissionItems = commissionDetails
+    ? [
+        { label: "Commission amount", value: formatCurrency(getRecordValue(commissionDetails, ["amount"])) },
+        { label: "Rate", value: String(getRecordValue(commissionDetails, ["rate"]) ?? "Not available") },
+        { label: "Rate type", value: String(getRecordValue(commissionDetails, ["rate_type"]) ?? "Not available") },
+        { label: "Computation type", value: String(getRecordValue(commissionDetails, ["computation_type"]) ?? "Not available") },
+      ]
+    : [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-6xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_55%,#069AFF_145%)] px-5 py-5 text-white">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Bill transaction details</p>
+            <h2 className="mt-2 break-words text-2xl font-bold tracking-tight">
+              {String(getRecordValue(record, ["serviceType", "providerType"]) ?? "Bill transaction")}
+            </h2>
+            <p className="mt-2 break-words text-sm leading-6 text-slate-300">
+              Provider: {String(getRecordValue(record, ["providerType"]) ?? "Not available")} · Reference: {String(getRecordValue(record, ["reference"]) ?? "No reference")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+            aria-label="Close bill details"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="max-h-[80vh] overflow-y-auto p-5">
+          {loading && (
+            <div className="flex min-h-60 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              Loading bill details
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && (
+            <div className="grid gap-5">
+              <section className="rounded-lg border border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_55%,#069AFF_145%)] p-5 text-white shadow-lg shadow-[#069AFF]/10 dark:border-[#069AFF]/25">
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Primary reference</p>
+                    <p className="mt-2 break-words text-lg font-bold">{String(getRecordValue(record, ["reference"]) ?? "No reference")}</p>
+                    <p className="mt-2 text-sm text-slate-300">{formatDate(getRecordValue(record, ["updatedAt", "createdAt"]))}</p>
+                  </div>
+                  <div className="rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 p-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-300">Bill amount</p>
+                    <p className="mt-2 text-2xl font-bold tracking-tight">{formatCurrency(getRecordValue(record, ["amount"]))}</p>
+                    <div className="mt-3">
+                      <StatusBadge status={getRecordValue(record, ["status"])} />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {summaryCards.map((item) => {
+                  const Icon = item.icon;
+
+                  return (
+                    <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:text-sky-200">
+                        <Icon className="h-5 w-5" aria-hidden="true" />
+                      </div>
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                      <p className="mt-2 break-words text-sm font-bold text-slate-950 dark:text-white">{item.value}</p>
+                    </div>
+                  );
+                })}
+              </section>
+
+              <div className="grid gap-5 xl:grid-cols-2">
+                <BillDetailSection title="Transaction profile" items={transactionItems} />
+                <BillDetailSection title="Customer and service routing" items={customerItems} />
+                <BillDetailSection title="Settlement and charges" items={settlementItems} />
+                <BillDetailSection title="Provider delivery response" items={deliveryItems} />
+              </div>
+
+              {commissionItems.length > 0 && <BillDetailSection title="Commission details" items={commissionItems} />}
+
+              <div className="grid gap-5 xl:grid-cols-2">
+                <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Provider response payload</h3>
+                  </div>
+                  <div className="p-4">
+                    {providerResponse ? (
+                      <div className="overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 dark:border-white/10">
+                        <pre className="whitespace-pre-wrap break-words text-xs leading-6 text-slate-200">
+                          {JSON.stringify(providerResponse, null, 2)}
+                        </pre>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400">
+                        No provider response returned.
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.035]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="font-bold text-slate-950 dark:text-white">Core bill record</h3>
+                  </div>
+                  <div className="p-4">
+                    <div className="overflow-auto rounded-lg border border-slate-200 bg-slate-950 p-4 dark:border-white/10">
+                      <pre className="whitespace-pre-wrap break-words text-xs leading-6 text-slate-200">
+                        {JSON.stringify(record, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LoadingDashboard() {
   return (
     <div className="grid gap-5">
@@ -1180,8 +1407,7 @@ export default function DashboardPage() {
       </div>
 
       {selectedBill && (
-        <DetailModal
-          title="Bill details"
+        <BillDetailsModal
           data={selectedBill.data}
           loading={selectedBill.loading}
           error={selectedBill.error}
