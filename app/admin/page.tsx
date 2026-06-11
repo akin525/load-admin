@@ -2652,60 +2652,47 @@ export default function AdminCenterPage() {
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#07111f]/80">
-        <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between sm:px-8">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Administration Center
-            </h1>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Manage system access, roles, customer verification, and core configurations.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-white/10 dark:bg-slate-950/40">
-              {sections.map(({ key, label, icon: Icon }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setActiveSection(key as AdminSection)}
-                  className={`inline-flex h-9 items-center gap-2 rounded-lg px-3 text-[11px] font-bold uppercase tracking-wider transition-all ${
-                    activeSection === key
-                      ? "bg-[#069AFF] text-white shadow-sm shadow-[#069AFF]/30"
-                      : "text-slate-600 hover:bg-white hover:text-[#069AFF] dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-sky-200"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (activeSection === "reports") {
-                  void refreshReports();
-                  return;
-                }
-                void refreshData();
-              }}
-              disabled={activeSection === "reports" ? reports.loading : refreshing}
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              {(activeSection === "reports" ? reports.loading : refreshing) ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              )}
-              Sync
-            </button>
-          </div>
-        </div>
-      </header>
-
       <div className="mx-auto grid max-w-[1480px] gap-6 px-6 py-8 sm:px-8">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm dark:border-white/10 dark:bg-white/[0.045] lg:w-auto">
+            {sections.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveSection(key as AdminSection)}
+                className={`inline-flex h-10 items-center gap-2 rounded-lg px-4 text-[11px] font-bold uppercase tracking-wider transition-all ${
+                  activeSection === key
+                    ? "bg-[#069AFF] text-white shadow-sm shadow-[#069AFF]/30"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-[#069AFF] dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-sky-200"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (activeSection === "reports") {
+                void refreshReports();
+                return;
+              }
+              void refreshData();
+            }}
+            disabled={activeSection === "reports" ? reports.loading : refreshing}
+            className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+          >
+            {(activeSection === "reports" ? reports.loading : refreshing) ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            )}
+            Sync
+          </button>
+        </div>
+
         <section className="rounded-lg border border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_50%,#069AFF_140%)] p-6 text-white shadow-xl shadow-[#069AFF]/15 dark:border-[#069AFF]/25 dark:bg-[linear-gradient(135deg,#030712_0%,#06294b_55%,#069AFF_150%)]">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-center">
             <div>

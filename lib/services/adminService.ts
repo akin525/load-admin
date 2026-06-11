@@ -536,6 +536,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/email-logs
+    getEmailLogs: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/email-logs', { params });
+        return response.data;
+    },
+
     // GET /admin/fees
     getFees: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/fees', { params });
