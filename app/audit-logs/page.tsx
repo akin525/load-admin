@@ -23,6 +23,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 
 type AuditLogFilters = {
   adminUserId: string;
@@ -484,6 +486,7 @@ function LoadingAuditLogs() {
 export default function AuditLogsPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const { allowed: canOpenAuditLogs } = useRouteAccess("/audit-logs");
   const [filters, setFilters] = useState<AuditLogFilters>(() => getDefaultFilters());
   const [appliedFilters, setAppliedFilters] = useState<AuditLogFilters>(() => getDefaultFilters());
   const [auditLogs, setAuditLogs] = useState<AuditLogsState>({
@@ -505,6 +508,10 @@ export default function AuditLogsPage() {
       return;
     }
 
+    if (!canOpenAuditLogs) {
+      return;
+    }
+
     void fetchAuditLogs(appliedFilters).then((result) => {
       if (!cancelled) {
         setAuditLogs(result);
@@ -514,7 +521,7 @@ export default function AuditLogsPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedFilters, router]);
+  }, [appliedFilters, canOpenAuditLogs, router]);
 
   const refreshAuditLogs = async (nextFilters = appliedFilters) => {
     setAuditLogs((current) => ({ ...current, loading: true, error: "" }));
@@ -566,6 +573,15 @@ export default function AuditLogsPage() {
     localStorage.removeItem("token");
     router.replace("/auth/login");
   };
+
+  if (!canOpenAuditLogs) {
+    return (
+      <AccessDeniedState
+        title="Audit logs access denied"
+        description="Your current admin role does not include permission to review audit logs."
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

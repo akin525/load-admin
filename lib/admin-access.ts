@@ -1,0 +1,376 @@
+"use client";
+
+import { useMemo, useSyncExternalStore } from "react";
+
+export const ADMIN_SESSION_KEY = "admin_session";
+const ADMIN_SESSION_EVENT = "admin-session-changed";
+let cachedSessionRaw: string | null | undefined;
+let cachedSessionValue: AdminSession | null = null;
+
+export type AdminSession = {
+  id: string;
+  name: string;
+  email: string;
+  roleId: string;
+  roleName: string;
+  permissions: string[];
+};
+
+type AuthResponseLike = {
+  data?: {
+    admin?: unknown;
+    user?: unknown;
+    permissions?: unknown;
+    role?: unknown;
+  };
+  admin?: unknown;
+  user?: unknown;
+  permissions?: unknown;
+  role?: unknown;
+};
+
+type RouteKey =
+  | "/dashboard"
+  | "/admin"
+  | "/users"
+  | "/loans"
+  | "/reports"
+  | "/fees"
+  | "/wallet-transactions"
+  | "/audit-logs"
+  | "/email-logs"
+  | "/xpress-webhook-logs";
+
+export type AdminSectionKey = "admins" | "roles" | "kyc" | "tiers" | "support" | "content";
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const safeString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+
+const normalize = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[_./:-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const collectPermissionLabels = (value: unknown, collector: Set<string>) => {
+  if (!value) {
+    return;
+  }
+
+  if (typeof value === "string") {
+    const normalized = normalize(value);
+    if (normalized) {
+      collector.add(normalized);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectPermissionLabels(entry, collector));
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  const directKeys = ["permission", "permissions", "name", "title", "slug", "code", "key", "action", "resource", "module"];
+  directKeys.forEach((key) => {
+    if (key in value) {
+      collectPermissionLabels(value[key], collector);
+    }
+  });
+
+  const moduleName = safeString(value.module);
+  const actionName = safeString(value.action);
+  const resourceName = safeString(value.resource);
+
+  [[moduleName, actionName], [resourceName, actionName], [moduleName, resourceName]]
+    .map((pair) => pair.filter(Boolean).join(" "))
+    .forEach((entry) => {
+      const normalized = normalize(entry);
+      if (normalized) {
+        collector.add(normalized);
+      }
+    });
+};
+
+const getRoleName = (value: unknown) => {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  return safeString(value.name) || safeString(value.title) || safeString(value.role) || safeString(value.role_name);
+};
+
+const getRoleId = (value: unknown) => {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  return safeString(value._id) || safeString(value.id) || safeString(value.roleId) || safeString(value.role_id);
+};
+
+export const extractAdminSession = (response: AuthResponseLike): AdminSession | null => {
+  const adminRecord = response.data?.admin ?? response.admin;
+  const userRecord = response.data?.user ?? response.user;
+  const identityRecord = isRecord(userRecord) ? userRecord : adminRecord;
+
+  if (!isRecord(adminRecord) && !isRecord(identityRecord)) {
+    return null;
+  }
+
+  const adminSource = isRecord(adminRecord) ? adminRecord : {};
+  const identitySource = isRecord(identityRecord) ? identityRecord : adminSource;
+
+  const permissionSet = new Set<string>();
+  collectPermissionLabels(adminSource.permissions, permissionSet);
+  collectPermissionLabels(adminSource.role, permissionSet);
+  collectPermissionLabels(identitySource.permissions, permissionSet);
+  collectPermissionLabels(identitySource.role, permissionSet);
+  collectPermissionLabels(response.data?.permissions, permissionSet);
+  collectPermissionLabels(response.permissions, permissionSet);
+  collectPermissionLabels(response.data?.role, permissionSet);
+  collectPermissionLabels(response.role, permissionSet);
+
+  return {
+    id: safeString(adminSource._id) || safeString(adminSource.id) || safeString(adminSource.adminId) || safeString(identitySource._id) || safeString(identitySource.id),
+    name:
+      safeString(identitySource.name) ||
+      [safeString(identitySource.first_name), safeString(identitySource.last_name)].filter(Boolean).join(" ") ||
+      [safeString(identitySource.firstName), safeString(identitySource.lastName)].filter(Boolean).join(" ") ||
+      safeString(identitySource.email) ||
+      "Administrator",
+    email: safeString(identitySource.email) || safeString(adminSource.email),
+    roleId:
+      getRoleId(adminSource.role) ||
+      getRoleId(identitySource.role) ||
+      getRoleId(response.data?.role) ||
+      getRoleId(response.role) ||
+      safeString(adminSource.roleId) ||
+      safeString(adminSource.role_id) ||
+      safeString(identitySource.roleId) ||
+      safeString(identitySource.role_id),
+    roleName:
+      getRoleName(adminSource.role) ||
+      getRoleName(identitySource.role) ||
+      safeString(adminSource.roleName) ||
+      safeString(adminSource.role_name) ||
+      safeString(adminSource.role) ||
+      safeString(identitySource.roleName) ||
+      safeString(identitySource.role_name) ||
+      safeString(identitySource.role) ||
+      "Administrator",
+    permissions: Array.from(permissionSet),
+  };
+};
+
+export const withRolePermissions = (session: AdminSession, payload: unknown): AdminSession => {
+  const permissionSet = new Set<string>();
+  collectPermissionLabels(payload, permissionSet);
+  const payloadData = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+  const nextRoleId = payloadData ? safeString(payloadData.roleId) : "";
+  const nextRoleName = payloadData ? safeString(payloadData.roleName) : "";
+
+  return {
+    ...session,
+    roleId: nextRoleId || session.roleId,
+    roleName: nextRoleName || session.roleName,
+    permissions: permissionSet.size ? Array.from(permissionSet) : session.permissions,
+  };
+};
+
+const emitSessionChange = () => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(ADMIN_SESSION_EVENT));
+  }
+};
+
+export const persistAdminSession = (session: AdminSession | null) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!session) {
+    localStorage.removeItem(ADMIN_SESSION_KEY);
+    cachedSessionRaw = null;
+    cachedSessionValue = null;
+  } else {
+    const serialized = JSON.stringify(session);
+    localStorage.setItem(ADMIN_SESSION_KEY, serialized);
+    cachedSessionRaw = serialized;
+    cachedSessionValue = session;
+  }
+
+  emitSessionChange();
+};
+
+export const clearAdminSession = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.removeItem(ADMIN_SESSION_KEY);
+  cachedSessionRaw = null;
+  cachedSessionValue = null;
+  emitSessionChange();
+};
+
+export const getStoredAdminSession = (): AdminSession | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+
+  if (!raw) {
+    cachedSessionRaw = null;
+    cachedSessionValue = null;
+    return null;
+  }
+
+  if (raw === cachedSessionRaw) {
+    return cachedSessionValue;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as AdminSession;
+    cachedSessionRaw = raw;
+    cachedSessionValue = parsed && Array.isArray(parsed.permissions) ? parsed : null;
+    return cachedSessionValue;
+  } catch {
+    cachedSessionRaw = raw;
+    cachedSessionValue = null;
+    return null;
+  }
+};
+
+const subscribe = (callback: () => void) => {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  const onStorage = (event: StorageEvent) => {
+    if (!event.key || event.key === ADMIN_SESSION_KEY) {
+      callback();
+    }
+  };
+
+  const onCustom = () => callback();
+
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(ADMIN_SESSION_EVENT, onCustom);
+
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(ADMIN_SESSION_EVENT, onCustom);
+  };
+};
+
+const getSnapshot = () => getStoredAdminSession();
+
+export const useAdminSession = () => useSyncExternalStore(subscribe, getSnapshot, () => null);
+
+const scopeMatchers: Record<string, string[][]> = {
+  dashboard: [[]],
+  admin: [["admin"], ["role"], ["permission"], ["staff"]],
+  admins: [["admin"]],
+  roles: [["role"], ["permission"]],
+  kyc: [["kyc"]],
+  tiers: [["tier"], ["account", "tier"]],
+  support: [["complaint"], ["support"], ["livechat"], ["contact"]],
+  content: [["faq"], ["content"], ["contact"], ["complaint", "category"]],
+  users: [["user"], ["customer"]],
+  loans: [["loan"], ["app", "loan"], ["bankone"]],
+  reports: [["report"], ["financial"], ["revenue"], ["profit"], ["audit", "report"]],
+  fees: [["fee"]],
+  walletTransactions: [["wallet"], ["transaction"], ["ledger"]],
+  auditLogs: [["audit"], ["log"]],
+  emailLogs: [["email"], ["mail"], ["template"]],
+  webhookLogs: [["webhook"], ["xpress"]],
+};
+
+const routeScopeMap: Record<RouteKey, string> = {
+  "/dashboard": "dashboard",
+  "/admin": "admin",
+  "/users": "users",
+  "/loans": "loans",
+  "/reports": "reports",
+  "/fees": "fees",
+  "/wallet-transactions": "walletTransactions",
+  "/audit-logs": "auditLogs",
+  "/email-logs": "emailLogs",
+  "/xpress-webhook-logs": "webhookLogs",
+};
+
+const sectionScopeMap: Record<AdminSectionKey, string> = {
+  admins: "admins",
+  roles: "roles",
+  kyc: "kyc",
+  tiers: "tiers",
+  support: "support",
+  content: "content",
+};
+
+const hasMatcher = (session: AdminSession, matchers: string[][]) => {
+  const role = normalize(session.roleName);
+
+  if (/(super admin|superuser|owner|root)/.test(role)) {
+    return true;
+  }
+
+  if (session.permissions.some((permission) => permission === "*" || permission === "all" || permission === "full access")) {
+    return true;
+  }
+
+  return matchers.some((keywords) => {
+    if (!keywords.length) {
+      return true;
+    }
+
+    return session.permissions.some((permission) => keywords.every((keyword) => permission.includes(keyword)));
+  });
+};
+
+export const canAccessScope = (session: AdminSession | null, scope: string) => {
+  if (!session) {
+    return false;
+  }
+
+  const matchers = scopeMatchers[scope];
+
+  if (!matchers) {
+    return false;
+  }
+
+  return hasMatcher(session, matchers);
+};
+
+export const canAccessRoute = (session: AdminSession | null, route: RouteKey) =>
+  canAccessScope(session, routeScopeMap[route]);
+
+export const canAccessAdminSection = (session: AdminSession | null, section: AdminSectionKey) =>
+  canAccessScope(session, sectionScopeMap[section]);
+
+export const useRouteAccess = (route: RouteKey) => {
+  const session = useAdminSession();
+
+  return useMemo(
+    () => ({
+      session,
+      allowed: canAccessRoute(session, route),
+    }),
+    [session, route],
+  );
+};

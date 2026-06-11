@@ -25,6 +25,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { canAccessAdminSection, canAccessRoute, useAdminSession } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 
 type AdminSection = "admins" | "roles" | "users" | "kyc" | "loans" | "tiers" | "support" | "content" | "reports";
 type DataKey =
@@ -96,9 +98,10 @@ type FormField = {
   name: string;
   label: string;
   placeholder?: string;
-  type?: "email" | "tel" | "text" | "textarea";
+  type?: "email" | "tel" | "text" | "textarea" | "select";
   required?: boolean;
   helper?: string;
+  options?: Array<{ label: string; value: string; description?: string }>;
 };
 
 type FormAction = {
@@ -854,6 +857,7 @@ function ActionModal({ action, onClose }: { action: FormAction; onClose: () => v
   const [values, setValues] = useState<Record<string, string>>(action.initialValues ?? {});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const featuredFields = action.fields.slice(0, 2);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -870,78 +874,126 @@ function ActionModal({ action, onClose }: { action: FormAction; onClose: () => v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
-        <div className="flex items-start justify-between gap-5 border-b border-slate-100 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-              {action.eyebrow}
-            </p>
-            <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{action.title}</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">{action.description}</p>
+      <div className="w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="border-b border-[#069AFF]/15 bg-[linear-gradient(135deg,#f8fbff_0%,#edf6ff_60%,#ffffff_100%)] px-6 py-6 dark:border-white/10 dark:bg-[linear-gradient(135deg,#08111f_0%,#0b2039_60%,#07111f_100%)]">
+          <div className="flex items-start justify-between gap-5">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#069AFF] dark:text-sky-300">
+                {action.eyebrow}
+              </p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{action.title}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">{action.description}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white/90 text-slate-500 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
+              aria-label="Close form"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
-            aria-label="Close form"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {featuredFields.map((field) => {
+              const value = values[field.name] ?? "";
+              const selectedOption = field.options?.find((option) => option.value === value);
+              return (
+                <div key={field.name} className="rounded-2xl border border-[#069AFF]/10 bg-white/80 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{field.label}</p>
+                  <p className="mt-2 text-sm font-bold text-slate-950 dark:text-white">
+                    {selectedOption?.label || value || field.placeholder || "Not set"}
+                  </p>
+                  {(selectedOption?.description || field.helper) && (
+                    <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {selectedOption?.description || field.helper}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="grid gap-4 p-5">
+        <form onSubmit={handleSubmit} className="grid gap-5 p-6">
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
               {error}
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            {action.fields.map((field) => {
-              const fieldValue = values[field.name] ?? "";
-              const sharedClassName =
-                "mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-[#069AFF] dark:focus:ring-[#069AFF]/15";
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#069AFF]/10 text-[#069AFF] dark:bg-[#069AFF]/15 dark:text-sky-300">
+                <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-950 dark:text-white">Provisioning details</p>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Assign identity and access in one step.</p>
+              </div>
+            </div>
 
-              return (
-                <label key={field.name} className={field.type === "textarea" ? "sm:col-span-2" : ""}>
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{field.label}</span>
-                  {field.type === "textarea" ? (
-                    <textarea
-                      required={field.required}
-                      value={fieldValue}
-                      placeholder={field.placeholder}
-                      onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
-                      rows={4}
-                      className={`${sharedClassName} resize-none`}
-                    />
-                  ) : (
-                    <input
-                      required={field.required}
-                      type={field.type ?? "text"}
-                      value={fieldValue}
-                      placeholder={field.placeholder}
-                      onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
-                      className={sharedClassName}
-                    />
-                  )}
-                  {field.helper && <span className="mt-1 block text-xs font-medium text-slate-500 dark:text-slate-400">{field.helper}</span>}
-                </label>
-              );
-            })}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {action.fields.map((field) => {
+                const fieldValue = values[field.name] ?? "";
+                const sharedClassName =
+                  "mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-[#069AFF] dark:focus:ring-[#069AFF]/15";
+
+                return (
+                  <label key={field.name} className={field.type === "textarea" ? "sm:col-span-2" : ""}>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{field.label}</span>
+                    {field.type === "textarea" ? (
+                      <textarea
+                        required={field.required}
+                        value={fieldValue}
+                        placeholder={field.placeholder}
+                        onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                        rows={4}
+                        className={`${sharedClassName} resize-none`}
+                      />
+                    ) : field.type === "select" ? (
+                      <select
+                        required={field.required}
+                        value={fieldValue}
+                        onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                        className={sharedClassName}
+                      >
+                        <option value="">{field.placeholder || `Select ${field.label.toLowerCase()}`}</option>
+                        {field.options?.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        required={field.required}
+                        type={field.type ?? "text"}
+                        value={fieldValue}
+                        placeholder={field.placeholder}
+                        onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                        className={sharedClassName}
+                      />
+                    )}
+                    {field.helper && <span className="mt-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">{field.helper}</span>}
+                  </label>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="mt-2 flex flex-col-reverse gap-3 border-t border-slate-100 pt-4 dark:border-white/10 sm:flex-row sm:justify-end">
+          <div className="mt-1 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 dark:border-white/10 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={onClose}
-              className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+              className="h-11 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70 dark:bg-[#069AFF] dark:text-white dark:hover:bg-[#27a7ff]"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#069AFF] px-6 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70 dark:bg-[#069AFF] dark:text-white dark:hover:bg-[#27a7ff]"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
               {action.submitLabel}
@@ -2075,6 +2127,7 @@ function ManagementTable({
 
 export default function AdminCenterPage() {
   const router = useRouter();
+  const adminSession = useAdminSession();
   const [reportFilters, setReportFilters] = useState<ReportFilters>(() => getDefaultReportFilters());
   const [reports, setReports] = useState<ReportState>({
     data: {},
@@ -2092,6 +2145,11 @@ export default function AdminCenterPage() {
   const [formAction, setFormAction] = useState<FormAction | null>(null);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const canOpenAdminCenter = canAccessRoute(adminSession, "/admin");
+  const visibleSections = sections.filter((section) => canAccessAdminSection(adminSession, section.key as "admins" | "roles" | "kyc" | "tiers" | "support" | "content"));
+  const currentSection = visibleSections.some((section) => section.key === activeSection)
+    ? activeSection
+    : (visibleSections[0]?.key ?? "admins");
 
   useEffect(() => {
     let cancelled = false;
@@ -2099,6 +2157,10 @@ export default function AdminCenterPage() {
 
     if (!token) {
       router.replace("/auth/login");
+      return;
+    }
+
+    if (!canOpenAdminCenter) {
       return;
     }
 
@@ -2111,10 +2173,10 @@ export default function AdminCenterPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [canOpenAdminCenter, router]);
 
   useEffect(() => {
-    if (activeSection !== "reports" || reports.loaded || reports.loading) {
+    if (currentSection !== "reports" || reports.loaded || reports.loading) {
       return;
     }
 
@@ -2123,10 +2185,28 @@ export default function AdminCenterPage() {
       const result = await fetchReports(reportFilters);
       setReports(result);
     })();
-  }, [activeSection, reportFilters, reports.loaded, reports.loading]);
+  }, [currentSection, reportFilters, reports.loaded, reports.loading]);
 
   const admins = useMemo(() => extractRows(adminData?.admins), [adminData]);
   const roles = useMemo(() => extractRows(adminData?.roles), [adminData]);
+  const adminRoleOptions = useMemo(
+    () =>
+      roles
+        .map((role): { value: string; label: string; description?: string } | null => {
+          const value = String(getRecordValue(role, ["_id", "id", "roleId"]) ?? "").trim();
+          if (!value) {
+            return null;
+          }
+
+          return {
+            value,
+            label: String(getRecordValue(role, ["name", "title", "slug"]) ?? "Unnamed role"),
+            description: String(getRecordValue(role, ["description"]) ?? "").trim() || undefined,
+          };
+        })
+        .filter((option): option is NonNullable<typeof option> => option !== null),
+    [roles],
+  );
   const permissions = useMemo(() => extractRows(adminData?.permissions), [adminData]);
   const users = useMemo(() => extractRows(adminData?.users), [adminData]);
   const kycs = useMemo(() => extractRows(adminData?.kycs), [adminData]);
@@ -2168,14 +2248,27 @@ export default function AdminCenterPage() {
     setFormAction({
       eyebrow: "Administrator",
       title: "Create administrator",
-      description: "Create a staff account and send the generated password through the backend mailer.",
+      description: "Provision a new admin account, assign the correct role, and let the backend issue the access credentials.",
       submitLabel: "Create admin",
+      initialValues: {
+        role_id: adminRoleOptions[0]?.value ?? "",
+      },
       fields: [
         { name: "first_name", label: "First name", required: true, placeholder: "Amina" },
         { name: "last_name", label: "Last name", required: true, placeholder: "Okafor" },
         { name: "email", label: "Email address", type: "email", required: true, placeholder: "admin@eazycredit.com" },
         { name: "phone", label: "Phone number", type: "tel", required: true, placeholder: "08000000000" },
-        { name: "role_id", label: "Role ID", required: true, placeholder: "Paste role id" },
+        {
+          name: "role_id",
+          label: "Assigned role",
+          type: "select",
+          required: true,
+          placeholder: adminRoleOptions.length ? "Select a role" : "No roles available",
+          helper: adminRoleOptions.length
+            ? "The selected role determines workspace access and permissions."
+            : "Load roles first or create a role before provisioning an administrator.",
+          options: adminRoleOptions,
+        },
       ],
       onSubmit: (values) => submitAndRefresh(() => adminService.createAdmin(values)),
     });
@@ -2661,7 +2754,7 @@ export default function AdminCenterPage() {
                 type="button"
                 onClick={() => setActiveSection(key as AdminSection)}
                 className={`inline-flex h-10 items-center gap-2 rounded-lg px-4 text-[11px] font-bold uppercase tracking-wider transition-all ${
-                  activeSection === key
+                  currentSection === key
                     ? "bg-[#069AFF] text-white shadow-sm shadow-[#069AFF]/30"
                     : "text-slate-600 hover:bg-slate-50 hover:text-[#069AFF] dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-sky-200"
                 }`}
@@ -2675,16 +2768,16 @@ export default function AdminCenterPage() {
           <button
             type="button"
             onClick={() => {
-              if (activeSection === "reports") {
+              if (currentSection === "reports") {
                 void refreshReports();
                 return;
               }
               void refreshData();
             }}
-            disabled={activeSection === "reports" ? reports.loading : refreshing}
+            disabled={currentSection === "reports" ? reports.loading : refreshing}
             className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
           >
-            {(activeSection === "reports" ? reports.loading : refreshing) ? (
+            {(currentSection === "reports" ? reports.loading : refreshing) ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
               <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -2737,7 +2830,7 @@ export default function AdminCenterPage() {
         </section>
 
         <section className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
-          {sections.map((section) => {
+          {visibleSections.map((section) => {
             const Icon = section.icon;
             return (
               <button
@@ -2745,7 +2838,7 @@ export default function AdminCenterPage() {
                 type="button"
                 onClick={() => setActiveSection(section.key)}
                 className={`flex h-10 items-center gap-2 rounded-md px-4 text-sm font-bold transition ${
-                  activeSection === section.key
+                  currentSection === section.key
                     ? "bg-[#069AFF] text-white shadow-sm shadow-[#069AFF]/25 dark:bg-[#069AFF] dark:text-white"
                     : "text-slate-600 hover:bg-[#069AFF]/10 hover:text-[#069AFF] dark:text-slate-300 dark:hover:bg-[#069AFF]/10 dark:hover:text-sky-200"
                 }`}
@@ -2757,11 +2850,16 @@ export default function AdminCenterPage() {
           })}
         </section>
 
-        {!adminData ? (
+        {!canOpenAdminCenter ? (
+          <AccessDeniedState
+            title="Admin Center access denied"
+            description="Your current admin role does not include access to the administration workspace."
+          />
+        ) : !adminData ? (
           <div className="h-96 animate-pulse rounded-lg bg-slate-200 dark:bg-white/10" />
         ) : (
           <>
-            {activeSection === "admins" && (
+            {currentSection === "admins" && (
               <ManagementTable
                 title="Administrators"
                 rows={admins}
@@ -2805,7 +2903,7 @@ export default function AdminCenterPage() {
               </ManagementTable>
             )}
 
-            {activeSection === "roles" && (
+            {currentSection === "roles" && (
               <div className="grid gap-6">
                 <section className="overflow-hidden rounded-lg border border-[#069AFF]/20 bg-white shadow-sm dark:border-[#069AFF]/25 dark:bg-white/[0.045]">
                   <div className="grid gap-5 bg-[linear-gradient(135deg,#06172b_0%,#083d70_60%,#069AFF_150%)] p-5 text-white lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -2886,7 +2984,7 @@ export default function AdminCenterPage() {
               </div>
             )}
 
-            {activeSection === "users" && (
+            {currentSection === "users" && (
               <div className="grid gap-6">
                 <section className="overflow-hidden rounded-lg border border-[#069AFF]/20 bg-white shadow-sm dark:border-[#069AFF]/25 dark:bg-white/[0.045]">
                   <div className="grid gap-5 bg-[linear-gradient(135deg,#06172b_0%,#083d70_60%,#069AFF_150%)] p-5 text-white lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -2985,7 +3083,7 @@ export default function AdminCenterPage() {
               </div>
             )}
 
-            {activeSection === "tiers" && (
+            {currentSection === "tiers" && (
               <div className="grid gap-6">
                 <section className="overflow-hidden rounded-lg border border-[#069AFF]/20 bg-white shadow-sm dark:border-[#069AFF]/25 dark:bg-white/[0.045]">
                   <div className="grid gap-5 bg-[linear-gradient(135deg,#06172b_0%,#083d70_60%,#069AFF_150%)] p-5 text-white lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -3034,7 +3132,7 @@ export default function AdminCenterPage() {
               </div>
             )}
 
-            {activeSection === "support" && (
+            {currentSection === "support" && (
               <div className="grid gap-6">
                 <section className="grid gap-5 md:grid-cols-3">
                   <SummaryCard label="Complaints" value={formatValue(complaints.length)} icon={Send} />
@@ -3096,7 +3194,7 @@ export default function AdminCenterPage() {
               </div>
             )}
 
-            {activeSection === "content" && (
+            {currentSection === "content" && (
               <div className="grid gap-6">
                 <section className="grid gap-5 md:grid-cols-3">
                   <SummaryCard label="Complaint categories" value={formatValue(complaintCategories.length)} icon={BriefcaseBusiness} />
@@ -3152,7 +3250,7 @@ export default function AdminCenterPage() {
               </div>
             )}
 
-            {activeSection === "reports" && (
+            {currentSection === "reports" && (
               <div className="grid gap-6">
                 <section className="overflow-hidden rounded-lg border border-[#069AFF]/20 bg-white shadow-sm dark:border-[#069AFF]/25 dark:bg-white/[0.045]">
                   <div className="grid gap-5 bg-[linear-gradient(135deg,#06172b_0%,#083d70_60%,#069AFF_150%)] p-5 text-white lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -3248,7 +3346,7 @@ export default function AdminCenterPage() {
               </div>
             )}
 
-            {activeSection === "kyc" && (
+            {currentSection === "kyc" && (
               <ManagementTable
                 title="KYC reviews"
                 rows={kycs}
@@ -3308,7 +3406,7 @@ export default function AdminCenterPage() {
               </ManagementTable>
             )}
 
-            {activeSection === "loans" && (
+            {currentSection === "loans" && (
               <div className="grid gap-6">
                 <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                   <SummaryCard label="Loan records" value={formatValue(loans.length)} icon={CreditCard} />

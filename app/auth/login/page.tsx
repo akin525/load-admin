@@ -22,6 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { extractAdminSession, persistAdminSession, withRolePermissions } from "@/lib/admin-access";
 
 type TwoFactorChallenge = {
   challengeId: string;
@@ -79,11 +80,19 @@ export default function LoginPage() {
   const [twoFactorChallenge, setTwoFactorChallenge] = useState<TwoFactorChallenge | null>(null);
   const isDarkMode = resolvedTheme === "dark";
 
-  const persistTokenAndContinue = (response: {
+  const persistTokenAndContinue = async (response: {
     token?: string;
     data?: {
       token?: string;
+      admin?: unknown;
+      user?: unknown;
+      permissions?: unknown;
+      role?: unknown;
     };
+    admin?: unknown;
+    user?: unknown;
+    permissions?: unknown;
+    role?: unknown;
   }) => {
     const token = response.token ?? response.data?.token;
 
@@ -93,6 +102,21 @@ export default function LoginPage() {
     }
 
     localStorage.setItem("token", token);
+    const session = extractAdminSession(response);
+
+    if (session) {
+      if (session.roleId) {
+        try {
+          const permissionsResponse = await adminService.getRolePermissions(session.roleId);
+          persistAdminSession(withRolePermissions(session, permissionsResponse));
+        } catch {
+          persistAdminSession(session);
+        }
+      } else {
+        persistAdminSession(session);
+      }
+    }
+
     router.push("/dashboard");
   };
 
@@ -121,7 +145,7 @@ export default function LoginPage() {
         return;
       }
 
-      persistTokenAndContinue(response);
+      await persistTokenAndContinue(response);
     } catch (loginError) {
       setError(getErrorMessage(loginError));
     } finally {
@@ -151,7 +175,7 @@ export default function LoginPage() {
         return;
       }
 
-      persistTokenAndContinue(response);
+      await persistTokenAndContinue(response);
     } catch (verificationError) {
       setError(getErrorMessage(verificationError));
     } finally {

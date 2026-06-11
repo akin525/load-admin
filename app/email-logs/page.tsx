@@ -13,6 +13,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 
 type EmailLogFilters = {
   template: string;
@@ -300,6 +302,7 @@ function DetailModal({
 
 export default function EmailLogsPage() {
   const router = useRouter();
+  const { allowed: canOpenEmailLogs } = useRouteAccess("/email-logs");
   const [filters, setFilters] = useState<EmailLogFilters>(() => getDefaultFilters());
   const [logsState, setLogsState] = useState<EmailLogsState>({
     payload: null,
@@ -320,6 +323,10 @@ export default function EmailLogsPage() {
       return;
     }
 
+    if (!canOpenEmailLogs) {
+      return;
+    }
+
     void fetchEmailLogs(getDefaultFilters()).then((result) => {
       if (!cancelled) {
         setLogsState(result);
@@ -329,7 +336,7 @@ export default function EmailLogsPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [canOpenEmailLogs, router]);
 
   const refreshLogs = async (nextFilters = filters) => {
     setRefreshing(true);
@@ -353,6 +360,15 @@ export default function EmailLogsPage() {
       { label: "Welcome template", value: formatValue(welcome), icon: Send },
     ];
   }, [rows]);
+
+  if (!canOpenEmailLogs) {
+    return (
+      <AccessDeniedState
+        title="Email logs access denied"
+        description="Your current admin role does not include permission to inspect email logs."
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

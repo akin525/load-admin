@@ -24,6 +24,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 
 type FeeFilters = {
   type: string;
@@ -498,6 +500,7 @@ function formatFeeExpression(row: Record<string, unknown>) {
 export default function FeesPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const { allowed: canOpenFees } = useRouteAccess("/fees");
   const [filters, setFilters] = useState<FeeFilters>({ type: "", scope: "", userId: "" });
   const [appliedFilters, setAppliedFilters] = useState<FeeFilters>({ type: "", scope: "", userId: "" });
   const [fees, setFees] = useState<FeeState>({
@@ -526,6 +529,10 @@ export default function FeesPage() {
       return;
     }
 
+    if (!canOpenFees) {
+      return;
+    }
+
     void Promise.all([fetchFees(appliedFilters), fetchUsers()]).then(([feeResult, userResult]) => {
       if (!cancelled) {
         setFees(feeResult);
@@ -536,7 +543,7 @@ export default function FeesPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedFilters, router]);
+  }, [appliedFilters, canOpenFees, router]);
 
   const refreshData = async (nextFilters = appliedFilters) => {
     setRefreshing(true);
@@ -608,6 +615,15 @@ export default function FeesPage() {
     await refreshData();
     setModalPreset(null);
   };
+
+  if (!canOpenFees) {
+    return (
+      <AccessDeniedState
+        title="Fees access denied"
+        description="Your current admin role does not include permission to manage fee configuration."
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

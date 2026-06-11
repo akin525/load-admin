@@ -30,6 +30,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 
 type DetailState = {
   title: string;
@@ -1194,8 +1196,11 @@ function UserControlsModal({
   const [loadingAction, setLoadingAction] = useState("");
   const [walletValues, setWalletValues] = useState({
     amount: "",
-    description: "",
-    reference: "",
+    walletType: "wallet",
+    sourceLedger: "operations",
+    narration: "",
+    proofOfPayment: "",
+    paymentDate: "",
   });
 
   const runAction = async (actionKey: string, request: () => Promise<unknown>, fallbackMessage: string) => {
@@ -1217,8 +1222,11 @@ function UserControlsModal({
 
     const payload = Object.entries({
       amount: Number(walletValues.amount),
-      description: walletValues.description.trim(),
-      reference: walletValues.reference.trim(),
+      walletType: walletValues.walletType.trim(),
+      sourceLedger: walletValues.sourceLedger.trim(),
+      narration: walletValues.narration.trim(),
+      proofOfPayment: walletValues.proofOfPayment.trim(),
+      paymentDate: walletValues.paymentDate.trim(),
     }).reduce<Record<string, unknown>>((accumulator, [key, value]) => {
       if (value === "" || value === undefined || (typeof value === "number" && Number.isNaN(value))) {
         return accumulator;
@@ -1402,29 +1410,62 @@ function UserControlsModal({
                 </label>
 
                 <label>
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Description</span>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Wallet type</span>
+                  <input
+                    type="text"
+                    value={walletValues.walletType}
+                    onChange={(event) => setWalletValues((current) => ({ ...current, walletType: event.target.value }))}
+                    placeholder="wallet"
+                    className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  />
+                </label>
+
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Source ledger</span>
+                  <input
+                    type="text"
+                    value={walletValues.sourceLedger}
+                    onChange={(event) => setWalletValues((current) => ({ ...current, sourceLedger: event.target.value }))}
+                    placeholder="operations"
+                    className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  />
+                </label>
+
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Narration</span>
                   <textarea
                     rows={4}
-                    value={walletValues.description}
-                    onChange={(event) => setWalletValues((current) => ({ ...current, description: event.target.value }))}
-                    placeholder="Manual funding approved by operations"
+                    value={walletValues.narration}
+                    onChange={(event) => setWalletValues((current) => ({ ...current, narration: event.target.value }))}
+                    placeholder="Manual funding"
                     className="mt-2 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
                   />
                 </label>
 
                 <label>
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Reference</span>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Proof of payment URL</span>
                   <input
                     type="text"
-                    value={walletValues.reference}
-                    onChange={(event) => setWalletValues((current) => ({ ...current, reference: event.target.value }))}
-                    placeholder="OPS-2026-00014"
+                    value={walletValues.proofOfPayment}
+                    onChange={(event) => setWalletValues((current) => ({ ...current, proofOfPayment: event.target.value }))}
+                    placeholder="https://..."
+                    className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  />
+                </label>
+
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Payment date</span>
+                  <input
+                    type="text"
+                    value={walletValues.paymentDate}
+                    onChange={(event) => setWalletValues((current) => ({ ...current, paymentDate: event.target.value }))}
+                    placeholder="2026-06-11T10:30:00.000Z"
                     className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
                   />
                 </label>
 
                 <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 px-4 py-3 text-xs font-medium leading-6 text-slate-600 dark:border-[#069AFF]/25 dark:bg-[#069AFF]/10 dark:text-slate-300">
-                  Submit only the fields the backend expects. `amount` is required. `description` and `reference` are sent only when provided.
+                  Submit only the fields the backend expects. `amount` is required. Funding proof and payment timestamp are sent only when provided.
                 </div>
 
                 <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
@@ -2043,6 +2084,7 @@ function ManagementTable({
 export default function UsersPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const { allowed: canOpenUsers } = useRouteAccess("/users");
   const [usersState, setUsersState] = useState<UsersState>({
     payload: null,
     rows: [],
@@ -2066,6 +2108,10 @@ export default function UsersPage() {
       return;
     }
 
+    if (!canOpenUsers) {
+      return;
+    }
+
     void fetchUsers().then((result) => {
       if (!cancelled) {
         setUsersState(result);
@@ -2075,7 +2121,7 @@ export default function UsersPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [canOpenUsers, router]);
 
   const refreshUsers = async () => {
     setRefreshing(true);
@@ -2220,6 +2266,17 @@ export default function UsersPage() {
       status,
     });
   };
+
+  if (!canOpenUsers) {
+    return (
+      <main className="min-h-screen px-6 py-8 sm:px-8">
+        <AccessDeniedState
+          title="Customer workspace access denied"
+          description="Your current admin role does not include permission to manage customer records."
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

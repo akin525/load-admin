@@ -134,6 +134,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/roles/:id/permissions
+    getRolePermissions: async (id: string): Promise<unknown> => {
+        const response = await api.get(`/admin/roles/${id}/permissions`);
+        return response.data;
+    },
+
     // POST /admin/role
     createRole: async (roleData: AdminPayload): Promise<unknown> => {
         const response = await api.post('/admin/role', roleData);
@@ -320,9 +326,21 @@ export const adminService = {
         return response.data;
     },
 
+    // POST /admin/loans/:loanId/review
+    reviewLoan: async (loanId: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/loans/${loanId}/review`, payload ?? {});
+        return response.data;
+    },
+
     // POST /admin/loans/:loanId/reject
     rejectLoan: async (loanId: string, payload?: AdminPayload): Promise<unknown> => {
         const response = await api.post(`/admin/loans/${loanId}/reject`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/loans/:loanId/close
+    closeLoan: async (loanId: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/loans/${loanId}/close`, payload ?? {});
         return response.data;
     },
 
@@ -464,6 +482,12 @@ export const adminService = {
         return response.data;
     },
 
+    // POST /admin/app-loans/:id/review
+    reviewAppLoan: async (id: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/app-loans/${id}/review`, payload ?? {});
+        return response.data;
+    },
+
     // POST /admin/app-loans/:id/approve
     approveAppLoan: async (id: string): Promise<unknown> => {
         const response = await api.post(`/admin/app-loans/${id}/approve`, {});
@@ -485,6 +509,30 @@ export const adminService = {
     // POST /admin/app-loans/:id/top-up/reject
     rejectAppLoanTopUp: async (id: string, payload: AdminPayload): Promise<unknown> => {
         const response = await api.post(`/admin/app-loans/${id}/top-up/reject`, payload);
+        return response.data;
+    },
+
+    // POST /app-loans/:id/manual-repayment
+    submitManualRepayment: async (id: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/app-loans/${id}/manual-repayment`, payload);
+        return response.data;
+    },
+
+    // POST /admin/app-loans/:id/manual-repayment/approve
+    approveAppLoanManualRepayment: async (id: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/app-loans/${id}/manual-repayment/approve`, payload);
+        return response.data;
+    },
+
+    // POST /admin/app-loans/:id/manual-repayment/reject
+    rejectAppLoanManualRepayment: async (id: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/app-loans/${id}/manual-repayment/reject`, payload);
+        return response.data;
+    },
+
+    // POST /admin/app-loans/:id/close
+    closeAppLoan: async (id: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/app-loans/${id}/close`, payload ?? {});
         return response.data;
     },
 

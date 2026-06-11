@@ -26,6 +26,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 
 type WalletTransactionFilters = {
   search: string;
@@ -596,6 +598,7 @@ function LoadingWalletTransactions() {
 export default function WalletTransactionsPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const { allowed: canOpenWalletLedger } = useRouteAccess("/wallet-transactions");
   const [filters, setFilters] = useState<WalletTransactionFilters>(() => getDefaultFilters());
   const [appliedFilters, setAppliedFilters] = useState<WalletTransactionFilters>(() => getDefaultFilters());
   const [transactions, setTransactions] = useState<WalletTransactionsState>({
@@ -617,6 +620,10 @@ export default function WalletTransactionsPage() {
       return;
     }
 
+    if (!canOpenWalletLedger) {
+      return;
+    }
+
     void fetchWalletTransactions(appliedFilters).then((result) => {
       if (!cancelled) {
         setTransactions(result);
@@ -626,7 +633,7 @@ export default function WalletTransactionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedFilters, router]);
+  }, [appliedFilters, canOpenWalletLedger, router]);
 
   const refreshTransactions = async (nextFilters = appliedFilters) => {
     setTransactions((current) => ({ ...current, loading: true, error: "" }));
@@ -681,6 +688,15 @@ export default function WalletTransactionsPage() {
     localStorage.removeItem("token");
     router.replace("/auth/login");
   };
+
+  if (!canOpenWalletLedger) {
+    return (
+      <AccessDeniedState
+        title="Wallet ledger access denied"
+        description="Your current admin role does not include permission to inspect wallet transactions."
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

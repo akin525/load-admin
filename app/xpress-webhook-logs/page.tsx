@@ -24,6 +24,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 
 type XpressWebhookFilters = {
   event: string;
@@ -319,6 +321,7 @@ function DetailModal({
 export default function XpressWebhookLogsPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const { allowed: canOpenWebhookLogs } = useRouteAccess("/xpress-webhook-logs");
 
   const [filters, setFilters] = useState<XpressWebhookFilters>(() => getDefaultFilters());
   const [logsState, setLogsState] = useState<XpressWebhookLogsState>({
@@ -341,6 +344,10 @@ export default function XpressWebhookLogsPage() {
       return;
     }
 
+    if (!canOpenWebhookLogs) {
+      return;
+    }
+
     void fetchXpressWebhookLogs(getDefaultFilters()).then((result) => {
       if (!cancelled) {
         setLogsState(result);
@@ -350,7 +357,7 @@ export default function XpressWebhookLogsPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [canOpenWebhookLogs, router]);
 
   const refreshLogs = async (nextFilters = filters) => {
     setRefreshing(true);
@@ -379,6 +386,15 @@ export default function XpressWebhookLogsPage() {
     localStorage.removeItem("token");
     router.replace("/auth/login");
   };
+
+  if (!canOpenWebhookLogs) {
+    return (
+      <AccessDeniedState
+        title="Webhook logs access denied"
+        description="Your current admin role does not include permission to inspect Xpress webhook logs."
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

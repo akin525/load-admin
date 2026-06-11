@@ -25,6 +25,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
+import { canAccessRoute, clearAdminSession, useAdminSession } from "@/lib/admin-access";
 
 type NavItem = {
   href: string;
@@ -85,6 +86,9 @@ function SidebarContent({
                           onNavigate,
                           onClose,
                           mobile = false,
+                          navGroups,
+                          adminName,
+                          adminRole,
                         }: {
   pathname: string;
   activeLabel: string;
@@ -94,6 +98,9 @@ function SidebarContent({
   onNavigate?: () => void;
   onClose?: () => void;
   mobile?: boolean;
+  navGroups: NavGroup[];
+  adminName?: string;
+  adminRole?: string;
 }) {
   return (
       <div className="flex h-full flex-col">
@@ -166,7 +173,7 @@ function SidebarContent({
                   Role
                 </p>
                 <p className="mt-1 text-xs font-black text-slate-800 dark:text-white">
-                  Admin
+                  {adminRole || "Administrator"}
                 </p>
               </div>
             </div>
@@ -248,10 +255,10 @@ function SidebarContent({
 
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-black text-slate-950 dark:text-white">
-                  System Admin
+                  {adminName || "System Admin"}
                 </p>
                 <p className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Authenticated session
+                  {adminRole || "Authenticated session"}
                 </p>
               </div>
 
@@ -297,6 +304,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const adminSession = useAdminSession();
 
   const mounted = useSyncExternalStore(subscribe, () => true, () => false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -314,8 +322,19 @@ export function Sidebar() {
 
   const isDarkMode = mounted && resolvedTheme === "dark";
 
+  const visibleNavGroups = useMemo(
+    () =>
+      navGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => canAccessRoute(adminSession, item.href as never)),
+        }))
+        .filter((group) => group.items.length > 0),
+    [adminSession],
+  );
+
   const activeLabel = useMemo(() => {
-    for (const group of navGroups) {
+    for (const group of visibleNavGroups) {
       const activeItem = group.items.find((item) => {
         if (item.exact) return pathname === item.href;
         return pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -325,7 +344,7 @@ export function Sidebar() {
     }
 
     return "Workspace";
-  }, [pathname]);
+  }, [pathname, visibleNavGroups]);
 
   if (hiddenRoutes.includes(pathname)) {
     return null;
@@ -334,9 +353,9 @@ export function Sidebar() {
   const handleLogout = () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("token");
-      localStorage.removeItem("admin");
     }
 
+    clearAdminSession();
     router.replace("/auth/login");
   };
 
@@ -420,6 +439,9 @@ export function Sidebar() {
                 onNavigate={() => setMobileOpen(false)}
                 onClose={() => setMobileOpen(false)}
                 mobile
+                navGroups={visibleNavGroups}
+                adminName={adminSession?.name}
+                adminRole={adminSession?.roleName}
             />
           </aside>
         </div>
@@ -432,6 +454,9 @@ export function Sidebar() {
               isDarkMode={isDarkMode}
               onToggleTheme={toggleTheme}
               onLogout={handleLogout}
+              navGroups={visibleNavGroups}
+              adminName={adminSession?.name}
+              adminRole={adminSession?.roleName}
           />
         </aside>
       </>

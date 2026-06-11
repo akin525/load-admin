@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -27,6 +27,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 
 type DataKey = "loans" | "loanPackages" | "loanTypes" | "appLoans";
 
@@ -44,6 +46,14 @@ type DetailState = {
 type AppLoanDetailState = DetailState;
 type CoreLoanDetailState = DetailState;
 type BankoneSyncResultState = DetailState;
+type ToastTone = "success" | "error" | "warning" | "info";
+
+type ToastNotice = {
+  id: number;
+  tone: ToastTone;
+  title: string;
+  detail?: string;
+};
 
 type FormField = {
   name: string;
@@ -166,7 +176,30 @@ const formatDate = (value: unknown): string => {
   }).format(date);
 };
 
+const getInitials = (value: unknown) => {
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    return "NA";
+  }
+
+  const parts = text.split(/\s+/).filter(Boolean);
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || text.slice(0, 2).toUpperCase();
+};
+
 const getErrorMessage = (error: unknown) => {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const response = (error as { response?: { data?: unknown } }).response;
+    const payload = response?.data;
+
+    if (isRecord(payload) && typeof payload.message === "string") {
+      return payload.message;
+    }
+  }
+
   if (typeof error === "object" && error !== null && "message" in error) {
     const message = (error as { message?: unknown }).message;
 
@@ -176,6 +209,34 @@ const getErrorMessage = (error: unknown) => {
   }
 
   return "Request failed";
+};
+
+const getResponseMessage = (payload: unknown, fallback: string) => {
+  if (isRecord(payload) && typeof payload.message === "string" && payload.message.trim()) {
+    return payload.message;
+  }
+
+  return fallback;
+};
+
+const getErrorPayload = (error: unknown) => {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    return (error as { response?: { data?: unknown } }).response?.data;
+  }
+
+  return null;
+};
+
+const getResponseDetail = (payload: unknown) => {
+  if (!isRecord(payload)) {
+    return "";
+  }
+
+  const parts = [payload.code, payload.name, payload.className]
+    .filter((value): value is string | number => typeof value === "string" || typeof value === "number")
+    .map(String);
+
+  return parts.join(" • ");
 };
 
 const parseCsvList = (value: string) =>
@@ -258,6 +319,122 @@ function EmptyPanel({ label }: { label: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400">
       {label}
+    </div>
+  );
+}
+
+function LoanMetricTile({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.04]">
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="mt-1 text-sm font-bold text-slate-950 dark:text-white">{value}</p>
+    </div>
+  );
+}
+
+function LoanActionButton({
+  label,
+  icon: Icon,
+  onClick,
+  disabled,
+  tone = "neutral",
+  busy = false,
+}: {
+  label: string;
+  icon: typeof Eye;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "neutral" | "primary" | "success" | "danger";
+  busy?: boolean;
+}) {
+  const toneClass =
+    tone === "primary"
+      ? "border-[#069AFF]/30 bg-[#069AFF]/10 text-[#069AFF] hover:bg-[#069AFF] hover:text-white dark:text-sky-200"
+      : tone === "success"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+        : tone === "danger"
+          ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+          : "border-slate-200 bg-white text-slate-700 hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300";
+
+  return (
+    <button
+      type="button"
+      disabled={disabled || busy}
+      onClick={onClick}
+      className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${toneClass}`}
+    >
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Icon className="h-4 w-4" aria-hidden="true" />}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function ToastViewport({
+  toasts,
+  onDismiss,
+}: {
+  toasts: ToastNotice[];
+  onDismiss: (id: number) => void;
+}) {
+  if (!toasts.length) {
+    return null;
+  }
+
+  return (
+    <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-3 sm:right-6 sm:top-6">
+      {toasts.map((toast) => {
+        const toneClass =
+          toast.tone === "success"
+            ? "border-emerald-200 bg-white dark:border-emerald-400/30 dark:bg-slate-950"
+            : toast.tone === "error"
+              ? "border-red-200 bg-white dark:border-red-400/30 dark:bg-slate-950"
+              : toast.tone === "warning"
+                ? "border-amber-200 bg-white dark:border-amber-400/30 dark:bg-slate-950"
+                : "border-[#069AFF]/30 bg-white dark:border-[#069AFF]/40 dark:bg-slate-950";
+
+        const iconClass =
+          toast.tone === "success"
+            ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-200"
+            : toast.tone === "error"
+              ? "bg-red-50 text-red-600 dark:bg-red-400/10 dark:text-red-200"
+              : toast.tone === "warning"
+                ? "bg-amber-50 text-amber-600 dark:bg-amber-400/10 dark:text-amber-200"
+                : "bg-[#069AFF]/10 text-[#069AFF] dark:bg-[#069AFF]/15 dark:text-sky-200";
+
+        const Icon = toast.tone === "success" ? CheckCircle2 : AlertCircle;
+
+        return (
+          <div key={toast.id} className={`rounded-2xl border shadow-xl shadow-slate-950/10 ${toneClass}`}>
+            <div className="flex items-start gap-3 p-4">
+              <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
+                <Icon className="h-4 w-4" aria-hidden="true" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-950 dark:text-white">{toast.title}</p>
+                {toast.detail ? (
+                  <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{toast.detail}</p>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onDismiss(toast.id)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
+                aria-label="Dismiss notification"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -459,6 +636,14 @@ function AppLoanDetailsModal({ loan, onClose }: { loan: AppLoanDetailState; onCl
     { label: "Core loan ID", value: String(record.coreLoanId ?? "Not available") },
     { label: "Source provider", value: String(record.sourceProvider ?? "Not available") },
     { label: "Status", value: String(record.status ?? "Not available") },
+    { label: "Reviewed by", value: describeActor(record.reviewedByUser) },
+    { label: "Approved by", value: describeActor(record.approvedByUser) },
+    { label: "Rejected by", value: describeActor(record.rejectedByUser) },
+    { label: "Closed by", value: describeActor(record.closedByUser) },
+    { label: "Reviewed at", value: formatDate(record.reviewedAt) },
+    { label: "Approved at", value: formatDate(record.approvedAt) },
+    { label: "Rejected at", value: formatDate(record.rejectedAt) },
+    { label: "Closed at", value: formatDate(record.closedAt) },
   ];
 
   return (
@@ -796,6 +981,14 @@ const safeText = (value: unknown, fallback = "Not available") => {
   }
 
   return String(value);
+};
+
+const describeActor = (value: unknown) => {
+  if (!isRecord(value)) {
+    return safeText(value);
+  }
+
+  return safeText(getRecordValue(value, ["name", "fullName", "email", "phone", "userId", "_id"]));
 };
 
 const toRecordList = (value: unknown): Record<string, unknown>[] => {
@@ -1305,8 +1498,11 @@ function BankoneSyncResultModal({
 export default function LoansPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const { allowed: canOpenLoans } = useRouteAccess("/loans");
+  const toastIdRef = useRef(0);
   const [workspaceData, setWorkspaceData] = useState<LoansWorkspaceData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [toasts, setToasts] = useState<ToastNotice[]>([]);
   const [formAction, setFormAction] = useState<FormAction | null>(null);
   const [appLoanDetail, setAppLoanDetail] = useState<AppLoanDetailState | null>(null);
   const [coreLoanDetail, setCoreLoanDetail] = useState<CoreLoanDetailState | null>(null);
@@ -1323,6 +1519,10 @@ export default function LoansPage() {
       return;
     }
 
+    if (!canOpenLoans) {
+      return;
+    }
+
     void fetchLoansWorkspace().then((result) => {
       if (!cancelled) {
         setWorkspaceData(result);
@@ -1332,7 +1532,7 @@ export default function LoansPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [canOpenLoans, router]);
 
   const loans = useMemo(() => extractRows(workspaceData?.loans), [workspaceData]);
   const loanPackages = useMemo(() => extractRows(workspaceData?.loanPackages), [workspaceData]);
@@ -1351,10 +1551,39 @@ export default function LoansPage() {
     router.replace("/auth/login");
   };
 
+  const dismissToast = (id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  };
+
+  const showServerToast = (payload: unknown, fallback: string, tone: ToastTone) => {
+    toastIdRef.current += 1;
+    const id = toastIdRef.current;
+
+    setToasts((current) => [
+      {
+        id,
+        tone,
+        title: getResponseMessage(payload, fallback),
+        detail: getResponseDetail(payload) || undefined,
+      },
+      ...current,
+    ].slice(0, 4));
+
+    setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 4500);
+  };
+
   const submitAndRefresh = async (request: () => Promise<unknown>) => {
-    await request();
-    await refreshData();
-    setFormAction(null);
+    try {
+      const response = await request();
+      await refreshData();
+      setFormAction(null);
+      showServerToast(response, "Action completed successfully", "success");
+    } catch (error) {
+      showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Request failed", "error");
+      throw error;
+    }
   };
 
   const summaryCards = [
@@ -1364,28 +1593,16 @@ export default function LoansPage() {
     { label: "Loan packages", value: formatValue(loanPackages.length), icon: CheckCircle2 },
   ];
 
-  const reviewLoan = async (id: string, action: "approve" | "reject") => {
-    setBusyAction(`loan-${id}-${action}`);
-
-    try {
-      if (action === "approve") {
-        await adminService.approveLoan(id, { disburseToWallet: false });
-      } else {
-        await adminService.rejectLoan(id, { reason: "Rejected from loan workspace" });
-      }
-
-      await refreshData();
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
   const runLoanMaintenanceAction = async (id: string, action: string, request: () => Promise<unknown>) => {
     setBusyAction(`loan-${id}-${action}`);
 
     try {
-      await request();
+      const response = await request();
       await refreshData();
+      showServerToast(response, "Loan action completed successfully", "success");
+    } catch (error) {
+      showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Loan action failed", "error");
+      throw error;
     } finally {
       setBusyAction(null);
     }
@@ -1528,8 +1745,12 @@ export default function LoansPage() {
   const runAppLoanAction = async (id: string, action: string, request: () => Promise<unknown>) => {
     setBusyAction(`app-loan-${id}-${action}`);
     try {
-      await request();
+      const response = await request();
       await refreshData();
+      showServerToast(response, "Application loan action completed successfully", "success");
+    } catch (error) {
+      showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Application loan action failed", "error");
+      throw error;
     } finally {
       setBusyAction(null);
     }
@@ -1541,9 +1762,84 @@ export default function LoansPage() {
       title: "Reject application loan",
       description: "Provide the official rejection reason.",
       submitLabel: "Reject loan",
-      initialValues: { reason: "Insufficient score" },
+      initialValues: { reason: "Incomplete information" },
       fields: [{ name: "reason", label: "Reason", type: "textarea", required: true }],
       onSubmit: (values) => submitAndRefresh(() => adminService.rejectAppLoan(id, { reason: values.reason })),
+    });
+  };
+
+  const openReviewAppLoan = (id: string) => {
+    setFormAction({
+      eyebrow: "App loan",
+      title: "Review application loan",
+      description: "Record the review note before approval or rejection.",
+      submitLabel: "Submit review",
+      initialValues: { note: "Documents checked" },
+      fields: [{ name: "note", label: "Review note", type: "textarea", required: true }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.reviewAppLoan(id, { note: values.note })),
+    });
+  };
+
+  const openApproveManualRepayment = (id: string) => {
+    setFormAction({
+      eyebrow: "Manual repayment",
+      title: "Approve manual repayment",
+      description: "Confirm the manual repayment request after verifying the transfer evidence.",
+      submitLabel: "Approve repayment",
+      initialValues: {
+        requestId: "MRQ-XXXXXXXXXXXX",
+        reference: "TRF123456",
+        note: "Bank statement confirmed",
+      },
+      fields: [
+        { name: "requestId", label: "Request ID", required: true, placeholder: "MRQ-XXXXXXXXXXXX" },
+        { name: "reference", label: "Reference", required: true, placeholder: "TRF123456" },
+        { name: "note", label: "Approval note", type: "textarea", required: true, placeholder: "Bank statement confirmed" },
+      ],
+      onSubmit: (values) =>
+        submitAndRefresh(() =>
+          adminService.approveAppLoanManualRepayment(id, {
+            requestId: values.requestId,
+            reference: values.reference,
+            note: values.note,
+          }),
+        ),
+    });
+  };
+
+  const openRejectManualRepayment = (id: string) => {
+    setFormAction({
+      eyebrow: "Manual repayment",
+      title: "Reject manual repayment",
+      description: "Reject the manual repayment request when the payment cannot be verified.",
+      submitLabel: "Reject repayment",
+      initialValues: {
+        requestId: "MRQ-XXXXXXXXXXXX",
+        reason: "Payment not found",
+      },
+      fields: [
+        { name: "requestId", label: "Request ID", required: true, placeholder: "MRQ-XXXXXXXXXXXX" },
+        { name: "reason", label: "Reason", type: "textarea", required: true, placeholder: "Payment not found" },
+      ],
+      onSubmit: (values) =>
+        submitAndRefresh(() =>
+          adminService.rejectAppLoanManualRepayment(id, {
+            requestId: values.requestId,
+            reason: values.reason,
+          }),
+        ),
+    });
+  };
+
+  const openCloseAppLoan = (id: string) => {
+    setFormAction({
+      eyebrow: "App loan",
+      title: "Close application loan",
+      description: "Close this loan only after it is fully settled.",
+      submitLabel: "Close loan",
+      initialValues: { reason: "Fully settled" },
+      fields: [{ name: "reason", label: "Closure reason", type: "textarea", required: true }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.closeAppLoan(id, { reason: values.reason })),
     });
   };
 
@@ -1591,24 +1887,78 @@ export default function LoansPage() {
       ],
       onSubmit: (values) =>
         (async () => {
-          const response = await adminService.syncLoanBankoneStatus(id, {
-            institutionCode: values.institutionCode,
+          try {
+            const response = await adminService.syncLoanBankoneStatus(id, {
+              institutionCode: values.institutionCode,
           });
 
           await refreshData();
           setFormAction(null);
+          showServerToast(response, "BankOne loan status synced successfully", "success");
           setBankoneSyncResult({
             title: "BankOne loan status synced successfully",
             loading: false,
             data: response,
             error: "",
           });
-        })(),
+        } catch (error) {
+          showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "BankOne sync failed", "error");
+          throw error;
+        }
+      })(),
     });
   };
 
+  const openReviewCoreLoan = (id: string) => {
+    setFormAction({
+      eyebrow: "Core loan",
+      title: "Review core loan",
+      description: "Record the review note before attempting approval.",
+      submitLabel: "Submit review",
+      initialValues: { note: "Documents checked" },
+      fields: [{ name: "note", label: "Review note", type: "textarea", required: true }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.reviewLoan(id, { note: values.note })),
+    });
+  };
+
+  const openRejectCoreLoan = (id: string) => {
+    setFormAction({
+      eyebrow: "Core loan",
+      title: "Reject core loan",
+      description: "Provide the official rejection reason for this legacy loan record.",
+      submitLabel: "Reject loan",
+      initialValues: { reason: "Incomplete information" },
+      fields: [{ name: "reason", label: "Reason", type: "textarea", required: true }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.rejectLoan(id, { reason: values.reason })),
+    });
+  };
+
+  const openCloseCoreLoan = (id: string) => {
+    setFormAction({
+      eyebrow: "Core loan",
+      title: "Close core loan",
+      description: "Close this legacy loan only after confirming it is fully settled.",
+      submitLabel: "Close loan",
+      initialValues: { reason: "Fully settled" },
+      fields: [{ name: "reason", label: "Closure reason", type: "textarea", required: true }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.closeLoan(id, { reason: values.reason })),
+    });
+  };
+
+  if (!canOpenLoans) {
+    return (
+      <main className="min-h-screen px-6 py-8 sm:px-8">
+        <AccessDeniedState
+          title="Loans workspace access denied"
+          description="Your current admin role does not include permission to work with loans and underwriting records."
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">
+      <ToastViewport toasts={toasts} onDismiss={dismissToast} />
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#07111f]/80">
         <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between sm:px-8">
           <div>
@@ -1736,71 +2086,201 @@ export default function LoansPage() {
             <ManagementTable title="App Loans" rows={appLoans} columns={["Applicant", "Loan", "Exposure", "Status", "Action"]}>
               {(row, index) => {
                 const id = getId(row);
+                const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();
+                const applicantName = String(getRecordValue(row, ["customerName", "userName", "userId"]) ?? `Application ${index + 1}`);
+                const loanTitle = String(getRecordValue(row, ["loanTypeName"]) ?? "Application loan");
+                const purposeText = String(getRecordValue(row, ["purposeText", "purposeId"]) ?? "Purpose not stated");
+                const durationLabel = String(getRecordValue(row, ["durationLabel"]) ?? "No duration");
+                const installments = formatValue(getRecordValue(row, ["installmentCount"]) ?? 0);
+                const outstandingAmount = Number(getRecordValue(row, ["outstandingAmount"]) ?? NaN);
+                const totalPayable = Number(getRecordValue(row, ["totalPayable"]) ?? NaN);
+                const paidAmount = Number(getRecordValue(row, ["paidAmount"]) ?? NaN);
+                const isClosed = ["closed"].includes(status);
+                const isRejected = ["rejected"].includes(status);
+                const isApproved = ["approved", "active"].includes(status);
+                const isReviewed = Boolean(getRecordValue(row, ["reviewedAt", "reviewedBy", "reviewedByUser"]));
+                const progressRatio =
+                  Number.isFinite(totalPayable) && totalPayable > 0 && Number.isFinite(paidAmount)
+                    ? Math.min(100, Math.max(0, Math.round((paidAmount / totalPayable) * 100)))
+                    : 0;
+                const canClose =
+                  !isClosed &&
+                  !isRejected &&
+                  ((Number.isFinite(outstandingAmount) && outstandingAmount <= 0) ||
+                    status === "fully_repaid" ||
+                    status === "settled" ||
+                    (Number.isFinite(totalPayable) && Number.isFinite(paidAmount) && paidAmount >= totalPayable));
+                const nextStep = !isReviewed
+                  ? "Review required"
+                  : isApproved
+                    ? "Loan approved"
+                    : isRejected
+                      ? "Rejected record"
+                      : canClose
+                        ? "Eligible for closure"
+                        : "Awaiting decision";
                 return (
                   <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
                     <td className="px-5 py-4">
-                      <p className="font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["customerName", "userName", "userId"]) ?? `Application ${index + 1}`)}</p>
-                      <p className="mt-1 break-all text-xs font-medium text-slate-500 dark:text-slate-400">{id || "No loan id"}</p>
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#069AFF]/12 text-sm font-black text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
+                          {getInitials(applicantName)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold leading-6 text-slate-950 dark:text-white">{applicantName}</p>
+                          <p className="mt-1 break-all text-xs font-medium text-slate-500 dark:text-slate-400">{id || "No loan id"}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-5 py-4">
-                      <p className="font-semibold text-slate-950 dark:text-white">{String(getRecordValue(row, ["loanTypeName", "purposeText"]) ?? "Application loan")}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{String(getRecordValue(row, ["durationLabel"]) ?? "No duration")}</p>
+                      <p className="font-semibold text-slate-950 dark:text-white">{loanTitle}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                          {purposeText}
+                        </span>
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                          {durationLabel}
+                        </span>
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                          {installments} installment{installments === "1" ? "" : "s"}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-5 py-4">
-                      <p className="font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["amount"]))}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Outstanding: {formatCurrency(getRecordValue(row, ["outstandingAmount"]))}</p>
+                      <div className="grid min-w-[210px] gap-2 sm:grid-cols-2">
+                        <LoanMetricTile label="Requested" value={formatCurrency(getRecordValue(row, ["amount"]))} />
+                        <LoanMetricTile label="Outstanding" value={formatCurrency(getRecordValue(row, ["outstandingAmount"]))} />
+                        <LoanMetricTile label="Paid" value={formatCurrency(getRecordValue(row, ["paidAmount"]))} />
+                        <LoanMetricTile label="Payable" value={formatCurrency(getRecordValue(row, ["totalPayable"]))} />
+                      </div>
                     </td>
-                    <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "pending"} /></td>
                     <td className="px-5 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={!id}
-                          onClick={() => openAppLoanDetail(id)}
-                          className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                        >
-                          View
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!id || busyAction === `app-loan-${id}-score`}
-                          onClick={() => runAppLoanAction(id, "score", () => adminService.scoreAppLoan(id, { crb_provider: "crc" }))}
-                          className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
-                        >
-                          Score
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!id || busyAction === `app-loan-${id}-approve`}
-                          onClick={() => runAppLoanAction(id, "approve", () => adminService.approveAppLoan(id))}
-                          className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!id}
-                          onClick={() => openRejectAppLoan(id)}
-                          className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
-                        >
-                          Reject
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!id}
-                          onClick={() => openApproveTopUp(id)}
-                          className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                        >
-                          Top-up approve
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!id}
-                          onClick={() => openRejectTopUp(id)}
-                          className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-red-200 hover:text-red-600 disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                        >
-                          Top-up reject
-                        </button>
+                      <div className="min-w-[180px] rounded-2xl border border-slate-200 bg-slate-50/80 p-3 dark:border-white/10 dark:bg-white/[0.035]">
+                        <div className="flex items-center justify-between gap-2">
+                          <StatusBadge status={getRecordValue(row, ["status"]) ?? "pending"} />
+                          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{progressRatio}% paid</span>
+                        </div>
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
+                          <div className="h-full rounded-full bg-[#069AFF]" style={{ width: `${progressRatio}%` }} />
+                        </div>
+                        <div className="mt-3 space-y-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                          <p>{isReviewed ? "Review completed" : "Pending review"}</p>
+                          <p>{nextStep}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="min-w-[580px] rounded-2xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.035]">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.04]">
+                          <div>
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Operations desk</p>
+                            <p className="mt-1 text-sm font-bold text-slate-950 dark:text-white">{nextStep}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="inline-flex items-center rounded-full border border-[#069AFF]/20 bg-[#069AFF]/8 px-2.5 py-1 text-[11px] font-bold text-[#069AFF] dark:text-sky-200">
+                              {durationLabel}
+                            </span>
+                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                              {formatCurrency(getRecordValue(row, ["amount"]))}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="grid gap-3 xl:grid-cols-[1.2fr_0.9fr_0.9fr]">
+                          <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.04]">
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Primary workflow</p>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                              <LoanActionButton
+                                label="View details"
+                                icon={Eye}
+                                disabled={!id}
+                                onClick={() => openAppLoanDetail(id)}
+                              />
+                              <LoanActionButton
+                                label="Review"
+                                icon={FileText}
+                                disabled={!id}
+                                onClick={() => openReviewAppLoan(id)}
+                              />
+                              <LoanActionButton
+                                label="Score"
+                                icon={BarChart3}
+                                tone="primary"
+                                busy={busyAction === `app-loan-${id}-score`}
+                                disabled={!id}
+                                onClick={() => runAppLoanAction(id, "score", () => adminService.scoreAppLoan(id, { crb_provider: "crc" }))}
+                              />
+                            </div>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                              <LoanActionButton
+                                label="Approve"
+                                icon={CheckCircle2}
+                                tone="success"
+                                busy={busyAction === `app-loan-${id}-approve`}
+                                disabled={!id || !isReviewed || isApproved || isRejected || isClosed}
+                                onClick={() => runAppLoanAction(id, "approve", () => adminService.approveAppLoan(id))}
+                              />
+                              <LoanActionButton
+                                label="Reject"
+                                icon={X}
+                                tone="danger"
+                                disabled={!id}
+                                onClick={() => openRejectAppLoan(id)}
+                              />
+                            </div>
+                            <p className="mt-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                              {isReviewed ? "Review recorded. Approval can proceed when status allows." : "Review is required before approval."}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.04]">
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Manual repayment</p>
+                            <div className="mt-3 grid gap-2">
+                              <LoanActionButton
+                                label="Approve repayment"
+                                icon={CheckCircle2}
+                                tone="success"
+                                disabled={!id}
+                                onClick={() => openApproveManualRepayment(id)}
+                              />
+                              <LoanActionButton
+                                label="Reject repayment"
+                                icon={X}
+                                tone="danger"
+                                disabled={!id}
+                                onClick={() => openRejectManualRepayment(id)}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.04]">
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Ancillary actions</p>
+                            <div className="mt-3 grid gap-2">
+                              <LoanActionButton
+                                label="Top-up approve"
+                                icon={CheckCircle2}
+                                tone="primary"
+                                disabled={!id}
+                                onClick={() => openApproveTopUp(id)}
+                              />
+                              <LoanActionButton
+                                label="Top-up reject"
+                                icon={X}
+                                tone="danger"
+                                disabled={!id}
+                                onClick={() => openRejectTopUp(id)}
+                              />
+                              <LoanActionButton
+                                label="Close loan"
+                                icon={ShieldCheck}
+                                disabled={!id || !canClose}
+                                onClick={() => openCloseAppLoan(id)}
+                              />
+                            </div>
+                            <p className="mt-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                              {canClose ? "This loan is eligible for closure." : "Closure unlocks only after full settlement."}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -1812,7 +2292,15 @@ export default function LoansPage() {
               {(row, index) => {
                 const id = getId(row);
                 const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();
-                const canReview = !["approved", "active", "rejected"].includes(status);
+                const canReview = !["approved", "active", "rejected", "closed"].includes(status);
+                const reviewed = Boolean(getRecordValue(row, ["reviewedAt", "reviewedBy", "reviewedByUser"]));
+                const outstandingAmount = Number(getRecordValue(row, ["outstandingAmount"]) ?? NaN);
+                const isClosed = status === "closed";
+                const canClose =
+                  !isClosed &&
+                  ((Number.isFinite(outstandingAmount) && outstandingAmount <= 0) ||
+                    status === "fully_repaid" ||
+                    status === "settled");
                 const trackingRef = String(getRecordValue(row, ["bankoneLoanTrackingRef"]) ?? "");
                 const accountNumber = String(getRecordValue(row, ["bankoneLoanAccountNumber"]) ?? "");
                 return (
@@ -1841,16 +2329,24 @@ export default function LoansPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={!id || !canReview || busyAction === `loan-${id}-approve`}
-                          onClick={() => void reviewLoan(id, "approve")}
+                          disabled={!id || !canReview}
+                          onClick={() => openReviewCoreLoan(id)}
+                          className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                        >
+                          Review
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!id || !reviewed || status === "approved" || status === "active" || status === "rejected" || status === "closed" || busyAction === `loan-${id}-approve`}
+                          onClick={() => void runLoanMaintenanceAction(id, "approve", () => adminService.approveLoan(id, { disburseToWallet: false }))}
                           className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
                         >
                           Approve
                         </button>
                         <button
                           type="button"
-                          disabled={!id || !canReview || busyAction === `loan-${id}-reject`}
-                          onClick={() => void reviewLoan(id, "reject")}
+                          disabled={!id || !canReview}
+                          onClick={() => openRejectCoreLoan(id)}
                           className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
                         >
                           Reject
@@ -1870,6 +2366,14 @@ export default function LoansPage() {
                           className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                         >
                           Sync BankOne
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!id || !canClose}
+                          onClick={() => openCloseCoreLoan(id)}
+                          className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                        >
+                          Close
                         </button>
                       </div>
                     </td>

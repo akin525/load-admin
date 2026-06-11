@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
 import { exportReportsToExcel, exportReportsToPdf } from "@/lib/reports/export";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 
 type ReportKey = "financial" | "loanPerformance" | "profitLoss" | "revenue";
 
@@ -446,6 +448,7 @@ function LoadingReports() {
 export default function ReportsPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const { allowed: canOpenReports } = useRouteAccess("/reports");
   const [reportFilters, setReportFilters] = useState<ReportFilters>(() => getDefaultReportFilters());
   const [appliedFilters, setAppliedFilters] = useState<ReportFilters>(() => getDefaultReportFilters());
   const [reports, setReports] = useState<ReportState>({
@@ -467,6 +470,10 @@ export default function ReportsPage() {
       return;
     }
 
+    if (!canOpenReports) {
+      return;
+    }
+
     void fetchReports(appliedFilters).then((result) => {
       if (!cancelled) {
         setReports(result);
@@ -476,7 +483,7 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedFilters, router]);
+  }, [appliedFilters, canOpenReports, router]);
 
   const refreshReports = async (filters = appliedFilters) => {
     setReports((current) => ({ ...current, loading: true }));
@@ -510,6 +517,15 @@ export default function ReportsPage() {
       setExporting(null);
     }
   };
+
+  if (!canOpenReports) {
+    return (
+      <AccessDeniedState
+        title="Reports access denied"
+        description="Your current admin role does not include permission to view management reports."
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

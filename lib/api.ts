@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearAdminSession } from './admin-access';
 
 const api = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://api.eazycredit.com.ng',
@@ -50,6 +51,7 @@ const forceLogout = () => {
     }
 
     localStorage.removeItem('token');
+    clearAdminSession();
     delete api.defaults.headers.common.Authorization;
 
     if (window.location.pathname !== '/auth/login') {
