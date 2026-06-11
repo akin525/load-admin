@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
   BarChart3,
   ChevronRight,
   CreditCard,
@@ -44,7 +45,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
       { href: "/loans", label: "Loans", icon: CreditCard },
-      { href: "/users", label: "Users", icon: Users },
+      { href: "/users", label: "Customers", icon: Users },
     ],
   },
   {
@@ -52,6 +53,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/fees", label: "Fees", icon: Landmark },
       { href: "/wallet-transactions", label: "Wallet Ledger", icon: WalletCards },
+      { href: "/xpress-webhook-logs", label: "Webhook Logs", icon: Activity },
       { href: "/reports", label: "Reports", icon: BarChart3 },
     ],
   },
@@ -70,6 +72,8 @@ const hiddenRoutes = ["/", "/auth/login"];
 const cn = (...classes: Array<string | false | null | undefined>) => {
   return classes.filter(Boolean).join(" ");
 };
+
+const subscribe = () => () => {};
 
 function SidebarContent({
                           pathname,
@@ -293,16 +297,8 @@ export function Sidebar() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
 
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribe, () => true, () => false);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     if (!mobileOpen) return;

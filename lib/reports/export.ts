@@ -1,59 +1,23 @@
-export type ReportKey = "financial" | "loanPerformance" | "profitLoss" | "revenue";
+"use client";
 
-export type ReportFilters = {
+type ReportFilters = {
   fromDate: string;
   toDate: string;
 };
 
-type ReportMetric = {
-  label: string;
-  value: string;
+type ReportCollection = Partial<Record<"financial" | "loanPerformance" | "profitLoss" | "revenue", unknown>>;
+
+type RecordRow = Record<string, unknown>;
+
+const REPORT_TITLES: Record<keyof ReportCollection, string> = {
+  financial: "Financial Report",
+  loanPerformance: "Loan Performance Report",
+  profitLoss: "Profit and Loss Report",
+  revenue: "Revenue Report",
 };
 
-type ReportSection = {
-  key: ReportKey;
-  title: string;
-  subtitle: string;
-  payload: unknown;
-};
-
-const REPORT_META: Record<ReportKey, { title: string; subtitle: string; sheetName: string }> = {
-  financial: {
-    title: "Financial Report",
-    subtitle: "Balance, movement, and operating figures",
-    sheetName: "Financial",
-  },
-  loanPerformance: {
-    title: "Loan Performance Report",
-    subtitle: "Portfolio quality, repayments, and exposure",
-    sheetName: "Loan Performance",
-  },
-  profitLoss: {
-    title: "Profit and Loss Report",
-    subtitle: "Income, expenses, and operating result",
-    sheetName: "Profit and Loss",
-  },
-  revenue: {
-    title: "Revenue Report",
-    subtitle: "Collections, fees, and earnings summary",
-    sheetName: "Revenue",
-  },
-};
-
-const BRAND = {
-  blue: "069AFF",
-  blueDark: "083D70",
-  slate: "1E293B",
-  line: "D9E2EC",
-  soft: "EEF7FF",
-  white: "FFFFFF",
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+const isRecord = (value: unknown): value is RecordRow =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-
-const isNumericLike = (value: unknown) =>
-  typeof value === "number" || (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value)));
 
 const unwrapPayload = (payload: unknown): unknown => {
   if (isRecord(payload) && "data" in payload) {
@@ -63,7 +27,7 @@ const unwrapPayload = (payload: unknown): unknown => {
   return payload;
 };
 
-const extractRows = (payload: unknown): Record<string, unknown>[] => {
+const extractRows = (payload: unknown): RecordRow[] => {
   const value = unwrapPayload(payload);
 
   if (Array.isArray(value)) {
@@ -78,8 +42,8 @@ const extractRows = (payload: unknown): Record<string, unknown>[] => {
     return value.data.filter(isRecord);
   }
 
-  const list = Object.values(value).find(Array.isArray);
-  return Array.isArray(list) ? list.filter(isRecord) : [];
+  const firstArray = Object.values(value).find(Array.isArray);
+  return Array.isArray(firstArray) ? firstArray.filter(isRecord) : [];
 };
 
 const formatLabel = (key: string) =>
@@ -88,61 +52,37 @@ const formatLabel = (key: string) =>
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-const formatValue = (value: unknown): string => {
-  if (typeof value === "number") {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
+const formatDateLabel = (filters: ReportFilters) => {
+  if (filters.fromDate && filters.toDate) {
+    return `${filters.fromDate} to ${filters.toDate}`;
   }
 
-  if (typeof value === "string" && value.trim()) {
-    const numeric = Number(value);
-
-    if (!Number.isNaN(numeric) && value.trim().length <= 16) {
-      return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(numeric);
-    }
-
-    return value;
+  if (filters.fromDate) {
+    return `From ${filters.fromDate}`;
   }
 
-  return "0";
+  if (filters.toDate) {
+    return `Up to ${filters.toDate}`;
+  }
+
+  return "All available dates";
 };
 
-const formatCurrency = (value: unknown): string => {
-  const numeric = typeof value === "number" ? value : Number(value);
-
-  if (Number.isNaN(numeric)) {
-    return formatValue(value);
-  }
-
-  return new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    maximumFractionDigits: 0,
-  }).format(numeric);
-};
-
-const formatDate = (value: unknown): string => {
-  if (typeof value !== "string" && typeof value !== "number") {
-    return "Not available";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-};
-
-const formatFieldValue = (key: string, value: unknown): string => {
+const formatCellValue = (value: unknown): string => {
   if (value === null || value === undefined || value === "") {
-    return "Not available";
+    return "-";
+  }
+
+  if (typeof value === "number") {
+    return new Intl.NumberFormat("en-NG", { maximumFractionDigits: 2 }).format(value);
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (typeof value === "string") {
+    return value;
   }
 
   if (Array.isArray(value)) {
@@ -150,498 +90,313 @@ const formatFieldValue = (key: string, value: unknown): string => {
   }
 
   if (isRecord(value)) {
-    return `${Object.keys(value).length} field${Object.keys(value).length === 1 ? "" : "s"}`;
-  }
-
-  if (/(date|at)$/i.test(key) || /date/i.test(key)) {
-    return formatDate(value);
-  }
-
-  if (isNumericLike(value)) {
-    return /(amount|revenue|profit|loss|income|expense|interest|balance|payable|paid|outstanding|disbursed|collection|fee|earning)/i.test(key)
-      ? formatCurrency(value)
-      : formatValue(value);
+    return JSON.stringify(value);
   }
 
   return String(value);
 };
 
-const extractReportMetrics = (payload: unknown): ReportMetric[] => {
-  const data = unwrapPayload(payload);
-  if (!isRecord(data)) {
+const collectSummaryPairs = (payload: unknown): Array<[string, string]> => {
+  const value = unwrapPayload(payload);
+
+  if (!isRecord(value)) {
     return [];
   }
 
-  const metrics: ReportMetric[] = [];
+  return Object.entries(value)
+    .filter(([, entry]) => !Array.isArray(entry) && !isRecord(entry))
+    .slice(0, 8)
+    .map(([key, entry]) => [formatLabel(key), formatCellValue(entry)]);
+};
 
-  Object.entries(data).forEach(([key, value]) => {
-    if (metrics.length >= 6) {
-      return;
-    }
+const getColumns = (rows: RecordRow[]): string[] => {
+  const seen = new Set<string>();
 
-    if (isNumericLike(value)) {
-      metrics.push({ label: formatLabel(key), value: formatFieldValue(key, value) });
-      return;
-    }
-
-    if (isRecord(value)) {
-      Object.entries(value).forEach(([childKey, childValue]) => {
-        if (metrics.length >= 6 || !isNumericLike(childValue)) {
-          return;
-        }
-
-        metrics.push({
-          label: `${formatLabel(key)} ${formatLabel(childKey)}`,
-          value: formatFieldValue(childKey, childValue),
-        });
-      });
-    }
+  rows.forEach((row) => {
+    Object.keys(row).forEach((key) => {
+      if (!seen.has(key)) {
+        seen.add(key);
+      }
+    });
   });
 
-  return metrics;
+  return Array.from(seen);
 };
 
-const extractReportDetails = (payload: unknown) => {
-  const data = unwrapPayload(payload);
-  if (!isRecord(data)) {
-    return [] as Array<{ label: string; value: string }>;
-  }
+const buildTableBody = (rows: RecordRow[], columns: string[]) =>
+  rows.map((row) => columns.map((column) => formatCellValue(row[column])));
 
-  const details: Array<{ label: string; value: string }> = [];
-
-  Object.entries(data).forEach(([key, value]) => {
-    if (details.length >= 10) {
-      return;
-    }
-
-    if (Array.isArray(value) || isRecord(value) || isNumericLike(value)) {
-      return;
-    }
-
-    details.push({ label: formatLabel(key), value: formatFieldValue(key, value) });
-  });
-
-  return details;
+const triggerDownload = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 };
 
-const getReportColumns = (rows: Record<string, unknown>[]) => {
-  const firstRow = rows[0];
-  if (!firstRow) {
-    return [] as string[];
-  }
+const sanitizeBase64 = (dataUrl: string) => dataUrl.replace(/^data:image\/png;base64,/, "");
 
-  return Object.keys(firstRow).filter((key) => !isRecord(firstRow[key]) && !Array.isArray(firstRow[key])).slice(0, 6);
-};
-
-const getReportLead = (payload: unknown) => {
-  const metrics = extractReportMetrics(payload);
-  if (metrics.length) {
-    return metrics[0];
-  }
-
-  return {
-    label: "Records",
-    value: formatValue(extractRows(payload).length),
-  };
-};
-
-const getSections = (reports: Partial<Record<ReportKey, unknown>>): ReportSection[] =>
-  (Object.keys(REPORT_META) as ReportKey[]).map((key) => ({
-    key,
-    title: REPORT_META[key].title,
-    subtitle: REPORT_META[key].subtitle,
-    payload: reports[key],
-  }));
-
-let cachedLogoPromise: Promise<string> | null = null;
-
-const loadLogoDataUrl = async () => {
-  if (cachedLogoPromise) {
-    return cachedLogoPromise;
-  }
-
-  cachedLogoPromise = (async () => {
+const loadLogoDataUrl = async (): Promise<string | null> => {
+  try {
     const response = await fetch("/eazy-logo.svg");
+
     if (!response.ok) {
-      throw new Error("Unable to load report logo.");
+      return null;
     }
 
-    const svg = await response.text();
-    const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-    const objectUrl = URL.createObjectURL(blob);
+    const svgText = await response.text();
+    const blob = new Blob([svgText], { type: "image/svg+xml" });
+    const blobUrl = URL.createObjectURL(blob);
 
     try {
       const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const element = new window.Image();
-        element.onload = () => resolve(element);
-        element.onerror = () => reject(new Error("Unable to render report logo."));
-        element.src = objectUrl;
+        const nextImage = new Image();
+        nextImage.onload = () => resolve(nextImage);
+        nextImage.onerror = () => reject(new Error("Unable to load report logo."));
+        nextImage.src = blobUrl;
       });
 
       const canvas = document.createElement("canvas");
-      canvas.width = image.width || 280;
-      canvas.height = image.height || 58;
+      canvas.width = Math.max(image.width, 240);
+      canvas.height = Math.max(image.height, 56);
+
       const context = canvas.getContext("2d");
 
       if (!context) {
-        throw new Error("Unable to create report logo canvas.");
+        return null;
       }
 
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       return canvas.toDataURL("image/png");
     } finally {
-      URL.revokeObjectURL(objectUrl);
+      URL.revokeObjectURL(blobUrl);
     }
-  })();
-
-  return cachedLogoPromise;
+  } catch {
+    return null;
+  }
 };
 
-const triggerDownload = (blob: Blob, fileName: string) => {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-};
+export async function exportReportsToPdf(reports: ReportCollection, filters: ReportFilters) {
+  const [{ default: JsPdf }, autoTableModule] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  const autoTable = autoTableModule.default;
+  const doc = new JsPdf({ orientation: "portrait", unit: "pt", format: "a4" });
+  const logoDataUrl = await loadLogoDataUrl();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 40;
+  let cursorY = 56;
 
-const buildFileName = (prefix: string, filters: ReportFilters, extension: string) => {
-  const dateRange = [filters.fromDate || "start", filters.toDate || "end"].join("_to_");
-  return `${prefix}_${dateRange}.${extension}`;
-};
+  if (logoDataUrl) {
+    doc.addImage(logoDataUrl, "PNG", margin, 32, 140, 34, undefined, "FAST");
+  } else {
+    doc.setFontSize(24);
+    doc.setTextColor(6, 154, 255);
+    doc.text("eazycredit", margin, 56);
+  }
 
-export const getReportHighlights = (reports: Partial<Record<ReportKey, unknown>>) => ({
-  financial: getReportLead(reports.financial),
-  loanPerformance: getReportLead(reports.loanPerformance),
-  profitLoss: getReportLead(reports.profitLoss),
-  revenue: getReportLead(reports.revenue),
-});
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(22);
+  doc.text("Management Report Pack", margin, cursorY + 36);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(71, 85, 105);
+  doc.text(formatDateLabel(filters), margin, cursorY + 58);
 
-export const exportReportsToExcel = async (reports: Partial<Record<ReportKey, unknown>>, filters: ReportFilters) => {
-  const [ExcelJS, logoDataUrl] = await Promise.all([
-    import("exceljs"),
-    loadLogoDataUrl(),
-  ]);
+  cursorY += 96;
 
-  const workbook = new ExcelJS.Workbook();
+  (Object.keys(REPORT_TITLES) as Array<keyof ReportCollection>).forEach((key, index) => {
+    const payload = reports[key];
+    const rows = extractRows(payload);
+    const summaryPairs = collectSummaryPairs(payload);
+
+    if (index > 0) {
+      doc.addPage();
+      cursorY = 56;
+    }
+
+    doc.setDrawColor(6, 154, 255);
+    doc.setFillColor(4, 22, 40);
+    doc.roundedRect(margin, cursorY, pageWidth - margin * 2, 52, 12, 12, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(255, 255, 255);
+    doc.text(REPORT_TITLES[key], margin + 18, cursorY + 32);
+
+    let sectionY = cursorY + 74;
+
+    if (summaryPairs.length > 0) {
+      autoTable(doc, {
+        startY: sectionY,
+        head: [["Metric", "Value"]],
+        body: summaryPairs,
+        theme: "grid",
+        styles: {
+          fontSize: 10,
+          cellPadding: 8,
+          textColor: [15, 23, 42],
+        },
+        headStyles: {
+          fillColor: [6, 154, 255],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+        },
+        margin: { left: margin, right: margin },
+      });
+
+      sectionY = ((doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? sectionY) + 18;
+    }
+
+    if (rows.length > 0) {
+      const columns = getColumns(rows);
+      autoTable(doc, {
+        startY: sectionY,
+        head: [columns.map(formatLabel)],
+        body: buildTableBody(rows, columns),
+        theme: "striped",
+        styles: {
+          fontSize: 9,
+          cellPadding: 6,
+          overflow: "linebreak",
+          textColor: [15, 23, 42],
+        },
+        headStyles: {
+          fillColor: [15, 23, 42],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+        },
+        alternateRowStyles: {
+          fillColor: [241, 245, 249],
+        },
+        margin: { left: margin, right: margin },
+      });
+    } else {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.setTextColor(100, 116, 139);
+      doc.text("No tabular records available for this report.", margin, sectionY + 8);
+    }
+  });
+
+  doc.save(`eazycredit-reports-${Date.now()}.pdf`);
+}
+
+export async function exportReportsToExcel(reports: ReportCollection, filters: ReportFilters) {
+  const ExcelJsModule = await import("exceljs");
+  const ExcelJs = ExcelJsModule.default ?? ExcelJsModule;
+  const workbook = new ExcelJs.Workbook();
+  const logoDataUrl = await loadLogoDataUrl();
+
   workbook.creator = "EazyCredit Admin";
   workbook.created = new Date();
   workbook.modified = new Date();
-  workbook.subject = "Management Reports";
-  workbook.title = "EazyCredit Management Report Pack";
 
-  const logoId = workbook.addImage({
-    base64: logoDataUrl,
-    extension: "png",
-  });
-
-  const overview = workbook.addWorksheet("Overview", {
-    views: [{ state: "frozen", ySplit: 7 }],
-  });
-
-  overview.mergeCells("C2:F2");
-  overview.getCell("C2").value = "EazyCredit Management Report Pack";
-  overview.getCell("C2").font = { size: 20, bold: true, color: { argb: BRAND.slate } };
-  overview.getCell("C3").value = `Reporting period: ${filters.fromDate || "N/A"} to ${filters.toDate || "N/A"}`;
-  overview.getCell("C3").font = { size: 11, color: { argb: "64748B" } };
-  overview.addImage(logoId, {
-    tl: { col: 0.35, row: 1.1 },
-    ext: { width: 180, height: 37 },
-  });
-
-  overview.getCell("A6").value = "Report";
-  overview.getCell("B6").value = "Primary Highlight";
-  overview.getCell("C6").value = "Value";
-  overview.getRow(6).font = { bold: true, color: { argb: BRAND.white } };
-  ["A6", "B6", "C6"].forEach((cell) => {
-    overview.getCell(cell).fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: BRAND.blue },
-    };
-    overview.getCell(cell).border = {
-      top: { style: "thin", color: { argb: BRAND.line } },
-      left: { style: "thin", color: { argb: BRAND.line } },
-      bottom: { style: "thin", color: { argb: BRAND.line } },
-      right: { style: "thin", color: { argb: BRAND.line } },
-    };
-  });
-
-  const highlights = getReportHighlights(reports);
-  const overviewRows = [
-    ["Financial Report", highlights.financial.label, highlights.financial.value],
-    ["Loan Performance Report", highlights.loanPerformance.label, highlights.loanPerformance.value],
-    ["Profit and Loss Report", highlights.profitLoss.label, highlights.profitLoss.value],
-    ["Revenue Report", highlights.revenue.label, highlights.revenue.value],
-  ];
-
-  overviewRows.forEach((row) => {
-    const added = overview.addRow(row);
-    added.eachCell((cell) => {
-      cell.border = {
-        top: { style: "thin", color: { argb: BRAND.line } },
-        left: { style: "thin", color: { argb: BRAND.line } },
-        bottom: { style: "thin", color: { argb: BRAND.line } },
-        right: { style: "thin", color: { argb: BRAND.line } },
-      };
-      cell.alignment = { vertical: "middle", horizontal: "left" };
-    });
-  });
-
+  const overview = workbook.addWorksheet("Overview");
   overview.columns = [
-    { key: "report", width: 28 },
-    { key: "metric", width: 30 },
-    { key: "value", width: 22 },
-    { key: "spacerOne", width: 4 },
-    { key: "spacerTwo", width: 4 },
-    { key: "spacerThree", width: 4 },
+    { header: "Report", key: "report", width: 28 },
+    { header: "Rows", key: "rows", width: 12 },
+    { header: "Date Range", key: "dateRange", width: 28 },
   ];
 
-  getSections(reports).forEach((section) => {
-    const sheet = workbook.addWorksheet(REPORT_META[section.key].sheetName);
-    const metrics = extractReportMetrics(section.payload);
-    const details = extractReportDetails(section.payload);
-    const rows = extractRows(section.payload);
-    const columns = getReportColumns(rows);
+  overview.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  overview.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF069AFF" } };
 
-    sheet.addImage(logoId, {
-      tl: { col: 0.35, row: 0.6 },
-      ext: { width: 150, height: 31 },
+  if (logoDataUrl) {
+    const imageId = workbook.addImage({
+      base64: sanitizeBase64(logoDataUrl),
+      extension: "png",
     });
 
-    sheet.mergeCells("C2:G2");
-    sheet.getCell("C2").value = section.title;
-    sheet.getCell("C2").font = { size: 18, bold: true, color: { argb: BRAND.slate } };
-    sheet.getCell("C3").value = section.subtitle;
-    sheet.getCell("C3").font = { size: 11, color: { argb: "64748B" } };
-    sheet.getCell("C4").value = `Period: ${filters.fromDate || "N/A"} to ${filters.toDate || "N/A"}`;
-    sheet.getCell("C4").font = { size: 10, color: { argb: "64748B" } };
+    overview.addImage(imageId, {
+      tl: { col: 0, row: 0 },
+      ext: { width: 170, height: 40 },
+    });
+  }
 
-    let cursor = 6;
+  overview.mergeCells("A3:C3");
+  overview.getCell("A3").value = "Management Report Pack";
+  overview.getCell("A3").font = { size: 16, bold: true };
+  overview.mergeCells("A4:C4");
+  overview.getCell("A4").value = formatDateLabel(filters);
+  overview.getCell("A4").font = { color: { argb: "FF475569" } };
 
-    if (metrics.length) {
-      sheet.getCell(`A${cursor}`).value = "Key Metrics";
-      sheet.getCell(`A${cursor}`).font = { bold: true, color: { argb: BRAND.blueDark } };
-      cursor += 1;
+  (Object.keys(REPORT_TITLES) as Array<keyof ReportCollection>).forEach((key) => {
+    const rows = extractRows(reports[key]);
+    overview.addRow({
+      report: REPORT_TITLES[key],
+      rows: rows.length,
+      dateRange: formatDateLabel(filters),
+    });
+  });
 
-      metrics.forEach((metric) => {
-        sheet.getCell(`A${cursor}`).value = metric.label;
-        sheet.getCell(`B${cursor}`).value = metric.value;
-        sheet.getCell(`A${cursor}`).fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: BRAND.soft },
-        };
-        sheet.getCell(`A${cursor}`).font = { bold: true, color: { argb: BRAND.slate } };
-        cursor += 1;
+  for (const key of Object.keys(REPORT_TITLES) as Array<keyof ReportCollection>) {
+    const sheet = workbook.addWorksheet(REPORT_TITLES[key].replace(" Report", ""));
+    const payload = reports[key];
+    const rows = extractRows(payload);
+    const summaryPairs = collectSummaryPairs(payload);
+
+    sheet.mergeCells("A1:F1");
+    sheet.getCell("A1").value = REPORT_TITLES[key];
+    sheet.getCell("A1").font = { size: 15, bold: true };
+
+    sheet.mergeCells("A2:F2");
+    sheet.getCell("A2").value = formatDateLabel(filters);
+    sheet.getCell("A2").font = { color: { argb: "FF475569" } };
+
+    let rowPointer = 4;
+
+    if (summaryPairs.length > 0) {
+      sheet.getCell(`A${rowPointer}`).value = "Summary";
+      sheet.getCell(`A${rowPointer}`).font = { bold: true };
+      rowPointer += 1;
+
+      sheet.columns = [
+        { key: "metric", width: 28 },
+        { key: "value", width: 24 },
+      ];
+
+      summaryPairs.forEach(([metric, value]) => {
+        sheet.addRow({ metric, value });
+        rowPointer += 1;
       });
 
-      cursor += 1;
+      rowPointer += 1;
     }
 
-    if (details.length) {
-      sheet.getCell(`A${cursor}`).value = "Context";
-      sheet.getCell(`A${cursor}`).font = { bold: true, color: { argb: BRAND.blueDark } };
-      cursor += 1;
+    if (rows.length > 0) {
+      const columns = getColumns(rows);
+      const headerRowIndex = rowPointer;
 
-      details.forEach((detail) => {
-        sheet.getCell(`A${cursor}`).value = detail.label;
-        sheet.getCell(`B${cursor}`).value = detail.value;
-        cursor += 1;
-      });
-
-      cursor += 1;
-    }
-
-    if (rows.length && columns.length) {
-      sheet.getCell(`A${cursor}`).value = "Data Table";
-      sheet.getCell(`A${cursor}`).font = { bold: true, color: { argb: BRAND.blueDark } };
-      cursor += 1;
-
-      const headerRow = sheet.addRow(columns.map((column) => formatLabel(column)));
-      headerRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: BRAND.white } };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: BRAND.blue },
-        };
-        cell.border = {
-          top: { style: "thin", color: { argb: BRAND.line } },
-          left: { style: "thin", color: { argb: BRAND.line } },
-          bottom: { style: "thin", color: { argb: BRAND.line } },
-          right: { style: "thin", color: { argb: BRAND.line } },
-        };
-      });
+      sheet.spliceRows(headerRowIndex, 0, columns.map(formatLabel));
+      const headerRow = sheet.getRow(headerRowIndex);
+      headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
 
       rows.forEach((row) => {
-        const added = sheet.addRow(columns.map((column) => formatFieldValue(column, row[column])));
-        added.eachCell((cell) => {
-          cell.alignment = { vertical: "top", wrapText: true };
-          cell.border = {
-            top: { style: "thin", color: { argb: BRAND.line } },
-            left: { style: "thin", color: { argb: BRAND.line } },
-            bottom: { style: "thin", color: { argb: BRAND.line } },
-            right: { style: "thin", color: { argb: BRAND.line } },
-          };
-        });
+        sheet.addRow(columns.map((column) => formatCellValue(row[column])));
       });
-    }
 
-    sheet.columns = [
-      { width: 28 },
-      { width: 30 },
-      { width: 24 },
-      { width: 24 },
-      { width: 24 },
-      { width: 24 },
-    ];
-  });
+      columns.forEach((column, index) => {
+        const maxLength = Math.max(
+          formatLabel(column).length,
+          ...rows.map((row) => formatCellValue(row[column]).length),
+        );
+
+        sheet.getColumn(index + 1).width = Math.min(Math.max(maxLength + 2, 16), 36);
+      });
+    } else {
+      sheet.getCell(`A${rowPointer}`).value = "No tabular records available for this report.";
+      sheet.getCell(`A${rowPointer}`).font = { italic: true, color: { argb: "FF64748B" } };
+    }
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
   triggerDownload(
     new Blob([buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }),
-    buildFileName("eazycredit-report-pack", filters, "xlsx"),
+    `eazycredit-reports-${Date.now()}.xlsx`,
   );
-};
-
-export const exportReportsToPdf = async (reports: Partial<Record<ReportKey, unknown>>, filters: ReportFilters) => {
-  const [{ jsPDF }, autoTableModule, logoDataUrl] = await Promise.all([
-    import("jspdf"),
-    import("jspdf-autotable"),
-    loadLogoDataUrl(),
-  ]);
-
-  const autoTable = autoTableModule.default;
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "pt",
-    format: "a4",
-  });
-
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 40;
-
-  const drawPageHeader = (title: string, subtitle: string, periodText: string) => {
-    doc.setFillColor("#F8FBFF");
-    doc.roundedRect(margin, margin, pageWidth - margin * 2, 88, 16, 16, "F");
-    doc.addImage(logoDataUrl, "PNG", margin + 18, margin + 22, 122, 25);
-    doc.setTextColor(`#${BRAND.slate}`);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.text(title, margin + 18, margin + 62);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
-    doc.setTextColor("#64748B");
-    doc.text(subtitle, margin + 18, margin + 79);
-    doc.text(periodText, pageWidth - margin - 180, margin + 62);
-  };
-
-  drawPageHeader(
-    "EazyCredit Report Pack",
-    "Management reporting export",
-    `Period: ${filters.fromDate || "N/A"} to ${filters.toDate || "N/A"}`,
-  );
-
-  const summaryRows = [
-    ["Financial Report", ...Object.values(getReportLead(reports.financial))],
-    ["Loan Performance Report", ...Object.values(getReportLead(reports.loanPerformance))],
-    ["Profit and Loss Report", ...Object.values(getReportLead(reports.profitLoss))],
-    ["Revenue Report", ...Object.values(getReportLead(reports.revenue))],
-  ];
-
-  autoTable(doc, {
-    startY: 156,
-    head: [["Report", "Primary Highlight", "Value"]],
-    body: summaryRows,
-    theme: "grid",
-    headStyles: { fillColor: `#${BRAND.blue}`, textColor: "#FFFFFF", fontStyle: "bold" },
-    bodyStyles: { textColor: `#${BRAND.slate}` },
-    alternateRowStyles: { fillColor: "#F8FBFF" },
-    styles: { fontSize: 9.5, cellPadding: 7, lineColor: `#${BRAND.line}` },
-    margin: { left: margin, right: margin },
-  });
-
-  getSections(reports).forEach((section, index) => {
-    doc.addPage();
-    drawPageHeader(
-      section.title,
-      section.subtitle,
-      `Period: ${filters.fromDate || "N/A"} to ${filters.toDate || "N/A"}`,
-    );
-
-    const metrics = extractReportMetrics(section.payload);
-    const details = extractReportDetails(section.payload);
-    const rows = extractRows(section.payload);
-    const columns = getReportColumns(rows);
-
-    let y = 150;
-
-    if (metrics.length) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(`#${BRAND.blueDark}`);
-      doc.text("Key Metrics", margin, y);
-      y += 18;
-
-      metrics.forEach((metric, metricIndex) => {
-        const cardWidth = (pageWidth - margin * 2 - 12) / 2;
-        const cardX = metricIndex % 2 === 0 ? margin : margin + cardWidth + 12;
-        const cardY = y + Math.floor(metricIndex / 2) * 54;
-        doc.setFillColor("#F8FBFF");
-        doc.roundedRect(cardX, cardY, cardWidth, 44, 12, 12, "F");
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.setTextColor("#64748B");
-        doc.text(metric.label, cardX + 12, cardY + 16);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(13);
-        doc.setTextColor(`#${BRAND.slate}`);
-        doc.text(metric.value, cardX + 12, cardY + 33);
-      });
-
-      y += Math.ceil(metrics.length / 2) * 54 + 8;
-    }
-
-    if (details.length) {
-      autoTable(doc, {
-        startY: y,
-        head: [["Context", "Value"]],
-        body: details.map((detail) => [detail.label, detail.value]),
-        theme: "grid",
-        headStyles: { fillColor: `#${BRAND.blue}`, textColor: "#FFFFFF", fontStyle: "bold" },
-        bodyStyles: { textColor: `#${BRAND.slate}` },
-        alternateRowStyles: { fillColor: "#F8FBFF" },
-        styles: { fontSize: 9, cellPadding: 6, lineColor: `#${BRAND.line}` },
-        margin: { left: margin, right: margin },
-      });
-
-      y = ((doc as typeof doc & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 14;
-    }
-
-    if (rows.length && columns.length) {
-      autoTable(doc, {
-        startY: y,
-        head: [columns.map((column) => formatLabel(column))],
-        body: rows.map((row) => columns.map((column) => formatFieldValue(column, row[column]))),
-        theme: "grid",
-        headStyles: { fillColor: `#${BRAND.blue}`, textColor: "#FFFFFF", fontStyle: "bold" },
-        bodyStyles: { textColor: `#${BRAND.slate}` },
-        alternateRowStyles: { fillColor: "#F8FBFF" },
-        styles: { fontSize: 8.5, cellPadding: 5.5, lineColor: `#${BRAND.line}` },
-        margin: { left: margin, right: margin },
-      });
-    }
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor("#94A3B8");
-    doc.text(`Section ${index + 1} of 4`, pageWidth - margin - 60, pageHeight - 24);
-  });
-
-  doc.save(buildFileName("eazycredit-report-pack", filters, "pdf"));
-};
+}

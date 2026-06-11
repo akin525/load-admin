@@ -23,6 +23,14 @@ import {
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
 
+type TwoFactorChallenge = {
+  challengeId: string;
+  channel?: string;
+  email?: string;
+  code?: string;
+  expiresAt?: string;
+};
+
 const getErrorMessage = (error: unknown) => {
   if (typeof error === "object" && error !== null && "response" in error) {
     const response = (error as { response?: { data?: { message?: string } } }).response;
@@ -64,10 +72,29 @@ export default function LoginPage() {
   const { resolvedTheme, setTheme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [twoFactorChallenge, setTwoFactorChallenge] = useState<TwoFactorChallenge | null>(null);
   const isDarkMode = resolvedTheme === "dark";
+
+  const persistTokenAndContinue = (response: {
+    token?: string;
+    data?: {
+      token?: string;
+    };
+  }) => {
+    const token = response.token ?? response.data?.token;
+
+    if (!token) {
+      setError("Authentication completed but no access token was returned.");
+      return;
+    }
+
+    localStorage.setItem("token", token);
+    router.push("/dashboard");
+  };
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -77,22 +104,65 @@ export default function LoginPage() {
     try {
       const response = await adminService.login({ email, password });
 
-      if (response.success) {
-        const token = response.token ?? response.data?.token;
-
-        if (token) {
-          localStorage.setItem("token", token);
-        }
-
-        router.push("/dashboard");
-      } else {
+      if (!response.success) {
         setError(response.message || "Invalid credentials provided.");
+        return;
       }
+
+      if (response.requiresTwoFactor && response.data?.challengeId) {
+        setTwoFactorChallenge({
+          challengeId: response.data.challengeId,
+          channel: response.data.channel,
+          email: response.data.email,
+          code: response.data.code,
+          expiresAt: response.data.expiresAt,
+        });
+        setVerificationCode("");
+        return;
+      }
+
+      persistTokenAndContinue(response);
     } catch (loginError) {
       setError(getErrorMessage(loginError));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleVerifyTwoFactor = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!twoFactorChallenge) {
+      setError("Two-factor challenge is missing. Start login again.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await adminService.verifyAdminTwoFactor({
+        challengeId: twoFactorChallenge.challengeId,
+        code: verificationCode,
+      });
+
+      if (!response.success) {
+        setError(response.message || "Verification failed.");
+        return;
+      }
+
+      persistTokenAndContinue(response);
+    } catch (verificationError) {
+      setError(getErrorMessage(verificationError));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartOver = () => {
+    setTwoFactorChallenge(null);
+    setVerificationCode("");
+    setError("");
   };
 
   return (
@@ -147,14 +217,16 @@ export default function LoginPage() {
               <div className="mb-6 flex items-start justify-between gap-4 border-b border-slate-100 pb-5 dark:border-white/10">
                 <div>
                   <h2 className="text-lg font-bold tracking-tight text-slate-950 dark:text-white">
-                    Administrator login
+                    {twoFactorChallenge ? "Verify administrator access" : "Administrator login"}
                   </h2>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Enter your assigned credentials to continue.
+                    {twoFactorChallenge
+                      ? "Enter the verification code for this sign-in challenge."
+                      : "Enter your assigned credentials to continue."}
                   </p>
                 </div>
                 <div className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600 dark:bg-white/10 dark:text-slate-300">
-                  Staff only
+                  {twoFactorChallenge ? "2FA required" : "Staff only"}
                 </div>
               </div>
 
@@ -168,87 +240,166 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <form onSubmit={handleLogin} className="space-y-5">
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="email">
-                    Email address
-                  </label>
-                  <div className="relative">
-                    <Mail
-                      className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
-                      aria-hidden="true"
-                    />
-                    <input
-                      id="email"
-                      type="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      className="h-12 w-full rounded-lg border border-slate-200 bg-white pl-11 pr-4 text-sm font-medium text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-sky-400 dark:focus:ring-sky-400/20"
-                      placeholder="admin@eazycredit.com"
-                      required
-                    />
+              {twoFactorChallenge ? (
+                <form onSubmit={handleVerifyTwoFactor} className="space-y-5">
+                  <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 dark:border-sky-400/20 dark:bg-sky-400/10">
+                    <div className="flex items-start gap-3">
+                      <ShieldCheck className="mt-0.5 h-5 w-5 text-sky-700 dark:text-sky-200" aria-hidden="true" />
+                      <div className="space-y-1 text-sm">
+                        <p className="font-semibold text-sky-800 dark:text-sky-100">
+                          Verification challenge sent via {twoFactorChallenge.channel || "secure channel"}.
+                        </p>
+                        {twoFactorChallenge.email && (
+                          <p className="text-sky-700 dark:text-sky-200">Recipient: {twoFactorChallenge.email}</p>
+                        )}
+                        {twoFactorChallenge.expiresAt && (
+                          <p className="text-sky-700 dark:text-sky-200">
+                            Expires: {new Date(twoFactorChallenge.expiresAt).toLocaleString()}
+                          </p>
+                        )}
+                        {twoFactorChallenge.code && (
+                          <p className="font-medium text-sky-800 dark:text-sky-100">
+                            Verification code: {twoFactorChallenge.code}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="password">
-                      Password
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="verificationCode">
+                      Verification code
                     </label>
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Protected account</span>
-                  </div>
-                  <div className="relative">
-                    <Lock
-                      className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
-                      aria-hidden="true"
-                    />
-                    <input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      className="h-12 w-full rounded-lg border border-slate-200 bg-white pl-11 pr-12 text-sm font-medium text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-sky-400 dark:focus:ring-sky-400/20"
-                      placeholder="Enter your password"
-                      required
-                    />
-                    <button
-                      type="button"
-                      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
-                      onClick={() => setShowPassword((current) => !current)}
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4" aria-hidden="true" />
-                      ) : (
-                        <Eye className="h-4 w-4" aria-hidden="true" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="group flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#0089ff] px-4 text-sm font-bold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-600 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-70 dark:shadow-sky-950/40 dark:focus:ring-sky-400/20"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-                      Signing in
-                    </>
-                  ) : (
-                    <>
-                      Continue
-                      <ArrowRight
-                        className="h-4 w-4 transition group-hover:translate-x-0.5"
+                    <div className="relative">
+                      <ShieldCheck
+                        className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
                         aria-hidden="true"
                       />
-                    </>
-                  )}
-                </button>
-              </form>
+                      <input
+                        id="verificationCode"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        value={verificationCode}
+                        onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                        className="h-12 w-full rounded-lg border border-slate-200 bg-white pl-11 pr-4 text-sm font-medium tracking-[0.3em] text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-sky-400 dark:focus:ring-sky-400/20"
+                        placeholder="123456"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      type="submit"
+                      disabled={loading || verificationCode.length < 6}
+                      className="group flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-[#0089ff] px-4 text-sm font-bold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-600 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-70 dark:shadow-sky-950/40 dark:focus:ring-sky-400/20"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                          Verifying
+                        </>
+                      ) : (
+                        <>
+                          Verify access
+                          <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden="true" />
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStartOver}
+                      disabled={loading}
+                      className="flex h-12 items-center justify-center rounded-lg border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/5 dark:focus:ring-white/10"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleLogin} className="space-y-5">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="email">
+                      Email address
+                    </label>
+                    <div className="relative">
+                      <Mail
+                        className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+                        aria-hidden="true"
+                      />
+                      <input
+                        id="email"
+                        type="email"
+                        autoComplete="email"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        className="h-12 w-full rounded-lg border border-slate-200 bg-white pl-11 pr-4 text-sm font-medium text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-sky-400 dark:focus:ring-sky-400/20"
+                        placeholder="admin@eazycredit.com"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="password">
+                        Password
+                      </label>
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Protected account</span>
+                    </div>
+                    <div className="relative">
+                      <Lock
+                        className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+                        aria-hidden="true"
+                      />
+                      <input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        className="h-12 w-full rounded-lg border border-slate-200 bg-white pl-11 pr-12 text-sm font-medium text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-sky-400 dark:focus:ring-sky-400/20"
+                        placeholder="Enter your password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+                        onClick={() => setShowPassword((current) => !current)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" aria-hidden="true" />
+                        ) : (
+                          <Eye className="h-4 w-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="group flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#0089ff] px-4 text-sm font-bold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-600 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-70 dark:shadow-sky-950/40 dark:focus:ring-sky-400/20"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                        Signing in
+                      </>
+                    ) : (
+                      <>
+                        Continue
+                        <ArrowRight
+                          className="h-4 w-4 transition group-hover:translate-x-0.5"
+                          aria-hidden="true"
+                        />
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
 
               <p className="mt-5 text-xs leading-5 text-slate-500 dark:text-slate-400">
                 Access is monitored and limited to approved EazyCredit administrators.

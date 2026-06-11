@@ -7,13 +7,24 @@ type LoginCredentials = {
 
 type LoginResponse = {
     success: boolean;
+    requiresTwoFactor?: boolean;
     token?: string;
     message?: string;
     data?: {
         token?: string;
         user?: unknown;
         admin?: unknown;
+        challengeId?: string;
+        channel?: string;
+        email?: string;
+        code?: string;
+        expiresAt?: string;
     };
+};
+
+type VerifyTwoFactorPayload = {
+    challengeId: string;
+    code: string;
 };
 
 type AdminPayload = Record<string, unknown>;
@@ -24,6 +35,12 @@ export const adminService = {
     // POST /admin-login
     login: async (credentials: LoginCredentials): Promise<LoginResponse> => {
         const response = await api.post('/admin-login', credentials);
+        return response.data;
+    },
+
+    // POST /admin-login/verify-2fa
+    verifyAdminTwoFactor: async (payload: VerifyTwoFactorPayload): Promise<LoginResponse> => {
+        const response = await api.post('/admin-login/verify-2fa', payload);
         return response.data;
     },
 
@@ -204,6 +221,42 @@ export const adminService = {
     // GET /admin/users/:userId/transactions
     getUserTransactions: async (userId: string, params?: QueryParams): Promise<unknown> => {
         const response = await api.get(`/admin/users/${userId}/transactions`, { params });
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/reset-password
+    resetUserPassword: async (userId: string): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/reset-password`, {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/lock
+    lockUser: async (userId: string): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/lock`, {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/unlock
+    unlockUser: async (userId: string): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/unlock`, {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/disable
+    disableUser: async (userId: string): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/disable`, {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/enable
+    enableUser: async (userId: string): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/enable`, {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/fund-wallet
+    fundUserWallet: async (userId: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/fund-wallet`, payload);
         return response.data;
     },
 
@@ -474,6 +527,12 @@ export const adminService = {
     // GET /admin/wallet-transactions
     getWalletTransactions: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/wallet-transactions', { params });
+        return response.data;
+    },
+
+    // GET /admin/xpress-webhook-logs
+    getXpressWebhookLogs: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/xpress-webhook-logs', { params });
         return response.data;
     },
 

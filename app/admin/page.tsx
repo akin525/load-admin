@@ -2641,7 +2641,7 @@ export default function AdminCenterPage() {
   const summaryCards = [
     { label: "Admins", value: formatValue(admins.length), icon: ShieldCheck },
     { label: "Roles", value: formatValue(roles.length), icon: UserCog },
-    { label: "Users", value: formatValue(users.length), icon: Users },
+    { label: "Customers", value: formatValue(users.length), icon: Users },
     { label: "KYC reviews", value: formatValue(kycs.length), icon: FileCheck2 },
     { label: "Loans", value: formatValue(loans.length), icon: CreditCard },
     { label: "App loans", value: formatValue(appLoans.length), icon: CreditCard },
@@ -2922,7 +2922,7 @@ export default function AdminCenterPage() {
                   <div className="grid gap-4 border-t border-slate-100 p-5 dark:border-white/10 md:grid-cols-3">
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
                       <p className="text-2xl font-bold text-slate-950 dark:text-white">{formatValue(users.length)}</p>
-                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Loaded users</p>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Loaded customers</p>
                     </div>
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
                       <p className="text-2xl font-bold text-slate-950 dark:text-white">

@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import Swal from "sweetalert2";
 import {
   Activity,
   AlertTriangle,
@@ -53,6 +54,12 @@ type UserDashboardState = DetailState & {
 
 type UserTransactionsState = DetailState & {
   loaded: boolean;
+};
+
+type UserControlsTarget = {
+  userId: string;
+  userName: string;
+  status: string;
 };
 
 type UsersState = {
@@ -220,6 +227,15 @@ const formatFieldValue = (key: string, value: unknown): string => {
 };
 
 const getErrorMessage = (error: unknown) => {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const response = (error as { response?: { data?: unknown } }).response;
+    const payload = response?.data;
+
+    if (isRecord(payload) && typeof payload.message === "string") {
+      return payload.message;
+    }
+  }
+
   if (typeof error === "object" && error !== null && "message" in error) {
     const message = (error as { message?: unknown }).message;
 
@@ -229,6 +245,87 @@ const getErrorMessage = (error: unknown) => {
   }
 
   return "Request failed";
+};
+
+const getResponseMessage = (payload: unknown, fallback: string) => {
+  if (isRecord(payload) && typeof payload.message === "string" && payload.message.trim()) {
+    return payload.message;
+  }
+
+  return fallback;
+};
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+const buildAlertHtml = (payload: unknown) => {
+  const source = unwrapPayload(payload);
+
+  if (source === null || source === undefined) {
+    return "";
+  }
+
+  const serialized = typeof source === "string" ? source : JSON.stringify(source, null, 2);
+
+  if (!serialized || serialized === "{}" || serialized === "[]") {
+    return "";
+  }
+
+  const preview = serialized.length > 2200 ? `${serialized.slice(0, 2200)}\n...` : serialized;
+
+  return `
+    <div style="text-align:left;margin-top:8px;">
+      <div style="margin-bottom:8px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;">
+        Server response
+      </div>
+      <div style="max-height:320px;overflow:auto;border:1px solid #cbd5e1;border-radius:14px;background:#0f172a;padding:14px;">
+        <pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.55;color:#e2e8f0;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">${escapeHtml(preview)}</pre>
+      </div>
+    </div>
+  `;
+};
+
+const showServerResponseAlert = async (
+  payload: unknown,
+  fallbackTitle: string,
+  icon: "success" | "error" = "success",
+) => {
+  const title = getResponseMessage(payload, fallbackTitle);
+  const html = buildAlertHtml(payload);
+
+  await Swal.fire({
+    icon,
+    title,
+    html: html || undefined,
+    text: html ? undefined : title,
+    confirmButtonColor: "#069AFF",
+    width: 760,
+  });
+};
+
+const showServerErrorAlert = async (error: unknown, fallbackTitle: string) => {
+  const payload =
+    typeof error === "object" && error !== null && "response" in error
+      ? (error as { response?: { data?: unknown } }).response?.data
+      : null;
+
+  if (payload) {
+    await showServerResponseAlert(payload, fallbackTitle, "error");
+    return;
+  }
+
+  await Swal.fire({
+    icon: "error",
+    title: fallbackTitle,
+    text: getErrorMessage(error),
+    confirmButtonColor: "#069AFF",
+    width: 640,
+  });
 };
 
 const getCollectionRows = (payload: unknown, key: string) => {
@@ -1085,6 +1182,277 @@ function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => 
   );
 }
 
+function UserControlsModal({
+  target,
+  onClose,
+  onRefresh,
+}: {
+  target: UserControlsTarget;
+  onClose: () => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const [loadingAction, setLoadingAction] = useState("");
+  const [walletValues, setWalletValues] = useState({
+    amount: "",
+    description: "",
+    reference: "",
+  });
+
+  const runAction = async (actionKey: string, request: () => Promise<unknown>, fallbackMessage: string) => {
+    setLoadingAction(actionKey);
+
+    try {
+      const response = await request();
+      await onRefresh();
+      await showServerResponseAlert(response, fallbackMessage);
+    } catch (error) {
+      await showServerErrorAlert(error, "User control request failed");
+    } finally {
+      setLoadingAction("");
+    }
+  };
+
+  const submitFundWallet = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const payload = Object.entries({
+      amount: Number(walletValues.amount),
+      description: walletValues.description.trim(),
+      reference: walletValues.reference.trim(),
+    }).reduce<Record<string, unknown>>((accumulator, [key, value]) => {
+      if (value === "" || value === undefined || (typeof value === "number" && Number.isNaN(value))) {
+        return accumulator;
+      }
+
+      accumulator[key] = value;
+      return accumulator;
+    }, {});
+
+    await runAction(
+      "fund-wallet",
+      () => adminService.fundUserWallet(target.userId, payload),
+      `Wallet funded for ${target.userName}`,
+    );
+  };
+
+  const actionCards = [
+    {
+      key: "reset-password",
+      eyebrow: "Security",
+      title: "Reset password",
+      description: "Invalidate the current password and trigger the backend password reset flow for this customer.",
+      actionLabel: "Reset password",
+      icon: KeyRound,
+      tone: "border-amber-200 bg-amber-50/80 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100",
+      onClick: () =>
+        runAction(
+          "reset-password",
+          () => adminService.resetUserPassword(target.userId),
+          `Password reset completed for ${target.userName}`,
+        ),
+    },
+    {
+      key: "lock-user",
+      eyebrow: "Security",
+      title: "Lock account",
+      description: "Block access immediately when fraud review, compromise, or manual intervention is required.",
+      actionLabel: "Lock user",
+      icon: Fingerprint,
+      tone: "border-red-200 bg-red-50/80 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200",
+      onClick: () =>
+        runAction(
+          "lock-user",
+          () => adminService.lockUser(target.userId),
+          `${target.userName} has been locked`,
+        ),
+    },
+    {
+      key: "unlock-user",
+      eyebrow: "Security",
+      title: "Unlock account",
+      description: "Restore access after internal review confirms the customer should be able to sign in again.",
+      actionLabel: "Unlock user",
+      icon: BadgeCheck,
+      tone: "border-emerald-200 bg-emerald-50/80 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200",
+      onClick: () =>
+        runAction(
+          "unlock-user",
+          () => adminService.unlockUser(target.userId),
+          `${target.userName} has been unlocked`,
+        ),
+    },
+    {
+      key: "disable-user",
+      eyebrow: "Access",
+      title: "Disable profile",
+      description: "Turn off the customer profile at application level without removing the record from operations.",
+      actionLabel: "Disable user",
+      icon: AlertTriangle,
+      tone: "border-red-200 bg-red-50/80 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200",
+      onClick: () =>
+        runAction(
+          "disable-user",
+          () => adminService.disableUser(target.userId),
+          `${target.userName} has been disabled`,
+        ),
+    },
+    {
+      key: "enable-user",
+      eyebrow: "Access",
+      title: "Enable profile",
+      description: "Reinstate this customer profile for normal application use after support or compliance review.",
+      actionLabel: "Enable user",
+      icon: CheckCircle2,
+      tone: "border-emerald-200 bg-emerald-50/80 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200",
+      onClick: () =>
+        runAction(
+          "enable-user",
+          () => adminService.enableUser(target.userId),
+          `${target.userName} has been enabled`,
+        ),
+    },
+  ] as const;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_58%,#069AFF_145%)] px-5 py-5 text-white">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">User controls</p>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight">{target.userName}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Perform security, access, and balance interventions for this customer without leaving the specialist workspace.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="inline-flex rounded-md border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold tracking-[0.14em] text-sky-100">
+                {target.userId}
+              </span>
+              <span className="inline-flex rounded-md border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold tracking-[0.14em] text-sky-100">
+                {target.status}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+            aria-label="Close user controls"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="max-h-[80vh] overflow-y-auto p-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]">
+            <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+              <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                <h3 className="font-bold text-slate-950 dark:text-white">Security and access actions</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Use the relevant control for the customer’s current situation. These actions post directly to the new user control endpoints.
+                </p>
+              </div>
+              <div className="grid gap-4 p-4 md:grid-cols-2">
+                {actionCards.map((item) => {
+                  const Icon = item.icon;
+                  const busy = loadingAction === item.key;
+
+                  return (
+                    <div key={item.key} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                      <div className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl border ${item.tone}`}>
+                        <Icon className="h-5 w-5" aria-hidden="true" />
+                      </div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.eyebrow}</p>
+                      <h4 className="mt-2 text-base font-bold text-slate-950 dark:text-white">{item.title}</h4>
+                      <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{item.description}</p>
+                      <button
+                        type="button"
+                        onClick={() => void item.onClick()}
+                        disabled={Boolean(loadingAction)}
+                        className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                      >
+                        {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Icon className="h-4 w-4" aria-hidden="true" />}
+                        {item.actionLabel}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+              <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                <h3 className="font-bold text-slate-950 dark:text-white">Wallet intervention</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Credit this customer’s wallet directly when support or financial operations require a manual balance adjustment.
+                </p>
+              </div>
+              <form onSubmit={(event) => void submitFundWallet(event)} className="grid gap-4 p-5">
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Amount</span>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={walletValues.amount}
+                    onChange={(event) => setWalletValues((current) => ({ ...current, amount: event.target.value }))}
+                    placeholder="10000"
+                    className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  />
+                </label>
+
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Description</span>
+                  <textarea
+                    rows={4}
+                    value={walletValues.description}
+                    onChange={(event) => setWalletValues((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="Manual funding approved by operations"
+                    className="mt-2 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  />
+                </label>
+
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Reference</span>
+                  <input
+                    type="text"
+                    value={walletValues.reference}
+                    onChange={(event) => setWalletValues((current) => ({ ...current, reference: event.target.value }))}
+                    placeholder="OPS-2026-00014"
+                    className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  />
+                </label>
+
+                <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 px-4 py-3 text-xs font-medium leading-6 text-slate-600 dark:border-[#069AFF]/25 dark:bg-[#069AFF]/10 dark:text-slate-300">
+                  Submit only the fields the backend expects. `amount` is required. `description` and `reference` are sent only when provided.
+                </div>
+
+                <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={Boolean(loadingAction)}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {loadingAction === "fund-wallet" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <WalletCards className="h-4 w-4" aria-hidden="true" />}
+                    Fund wallet
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActionModal({ action, onClose }: { action: FormAction; onClose: () => void }) {
   const [values, setValues] = useState<Record<string, string>>(action.initialValues ?? {});
   const [submitting, setSubmitting] = useState(false);
@@ -1099,6 +1467,7 @@ function ActionModal({ action, onClose }: { action: FormAction; onClose: () => v
       await action.onSubmit(values);
     } catch (submitError) {
       setError(getErrorMessage(submitError));
+      await showServerErrorAlert(submitError, "User action failed");
       setSubmitting(false);
     }
   };
@@ -1684,6 +2053,7 @@ export default function UsersPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [detail, setDetail] = useState<DetailState | null>(null);
   const [userDashboard, setUserDashboard] = useState<UserDashboardState | null>(null);
+  const [userControls, setUserControls] = useState<UserControlsTarget | null>(null);
   const [formAction, setFormAction] = useState<FormAction | null>(null);
   const isDarkMode = resolvedTheme === "dark";
 
@@ -1744,10 +2114,11 @@ export default function UsersPage() {
     router.replace("/auth/login");
   };
 
-  const submitAndRefresh = async (request: () => Promise<unknown>) => {
-    await request();
+  const submitAndRefresh = async (request: () => Promise<unknown>, fallbackMessage: string) => {
+    const response = await request();
     await refreshUsers();
     setFormAction(null);
+    await showServerResponseAlert(response, fallbackMessage);
   };
 
   const openDetail = (title: string, request: () => Promise<unknown>) => {
@@ -1790,7 +2161,7 @@ export default function UsersPage() {
         { name: "phone", label: "Phone", type: "tel", required: true, placeholder: "+2348012345678" },
         { name: "bankone_customerid", label: "BankOne customer ID", placeholder: "000131" },
       ],
-      onSubmit: (values) => submitAndRefresh(() => adminService.createUser(values)),
+      onSubmit: (values) => submitAndRefresh(() => adminService.createUser(values), "Customer profile created"),
     });
   };
 
@@ -1804,7 +2175,7 @@ export default function UsersPage() {
         { name: "title", label: "Title", required: true, placeholder: "Account update" },
         { name: "content", label: "Message", type: "textarea", required: true, placeholder: "Your account has been updated successfully." },
       ],
-      onSubmit: (values) => submitAndRefresh(() => adminService.broadcastToUser(userId, values)),
+      onSubmit: (values) => submitAndRefresh(() => adminService.broadcastToUser(userId, values), `Broadcast delivered to ${userName}`),
     });
   };
 
@@ -1842,16 +2213,24 @@ export default function UsersPage() {
       );
   };
 
+  const openUserControls = (userId: string, userName: string, status: string) => {
+    setUserControls({
+      userId,
+      userName,
+      status,
+    });
+  };
+
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#07111f]/80">
         <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between sm:px-8">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-              User Directory
+              Customer Directory
             </h1>
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Detailed management of system users, profiles, and activities.
+              Detailed management of customer profiles, accounts, and activities.
             </p>
           </div>
 
@@ -1944,6 +2323,7 @@ export default function UsersPage() {
                 const name = getPersonName(row);
                 const email = String(getRecordValue(row, ["email"]) ?? "Not available");
                 const phone = String(getRecordValue(row, ["phone", "phone_number"]) ?? "Not available");
+                const status = String(getRecordValue(row, ["status"]) ?? "active");
 
                 return (
                   <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
@@ -1993,6 +2373,15 @@ export default function UsersPage() {
                           <Send className="h-4 w-4" aria-hidden="true" />
                           Broadcast
                         </button>
+                        <button
+                          type="button"
+                          disabled={!id}
+                          onClick={() => openUserControls(id, name, status)}
+                          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                        >
+                          <KeyRound className="h-4 w-4" aria-hidden="true" />
+                          Controls
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -2005,6 +2394,7 @@ export default function UsersPage() {
 
       {detail && <DetailModal detail={detail} onClose={() => setDetail(null)} />}
       {userDashboard && <UserDashboardModal key={userDashboard.userId} dashboard={userDashboard} onClose={() => setUserDashboard(null)} />}
+      {userControls && <UserControlsModal target={userControls} onClose={() => setUserControls(null)} onRefresh={refreshUsers} />}
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
     </main>
   );
