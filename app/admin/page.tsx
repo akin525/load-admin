@@ -3482,7 +3482,7 @@ export default function AdminCenterPage() {
                             <button
                               type="button"
                               disabled={!id || busyAction === `app-loan-${id}-score`}
-                              onClick={() => runAppLoanAction(id, "score", () => adminService.scoreAppLoan(id, { crb_provider: "crc" }))}
+                              onClick={() => runAppLoanAction(id, "score", () => adminService.scoreAppLoan(id))}
                               className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
                             >
                               Score

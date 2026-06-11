@@ -46,6 +46,7 @@ type DetailState = {
 type AppLoanDetailState = DetailState;
 type CoreLoanDetailState = DetailState;
 type BankoneSyncResultState = DetailState;
+type CreditScoreResultState = DetailState;
 type ToastTone = "success" | "error" | "warning" | "info";
 
 type ToastNotice = {
@@ -1090,6 +1091,217 @@ function SectionCard({
       </section>
   );
 }
+
+function CreditScoreResultModal({
+  result,
+  onClose,
+}: {
+  result: CreditScoreResultState;
+  onClose: () => void;
+}) {
+  const payload = unwrapPayload(result.data);
+  const record = isRecord(payload) ? payload : {};
+  const scoreRecord = isRecord(record.record) ? record.record : {};
+  const loanRecord = isRecord(record.loan) ? record.loan : {};
+  const providerResponse = isRecord(scoreRecord.providerResponse) ? scoreRecord.providerResponse : {};
+  const providerData = isRecord(providerResponse.data) ? providerResponse.data : {};
+  const bureauProfile = isRecord(providerData.score) ? providerData.score : {};
+  const billingInfo = isRecord(providerResponse.billing_info) ? providerResponse.billing_info : {};
+  const verification = isRecord(providerResponse.verification) ? providerResponse.verification : {};
+  const linkedUser = isRecord(loanRecord.user) ? loanRecord.user : {};
+
+  const resolvedScore =
+    record.score ??
+    scoreRecord.score ??
+    loanRecord.premblyScore ??
+    getRecordValue(bureauProfile, ["creditScore", "score", "totalScore"]);
+
+  const summaryCards: Array<{
+    label: string;
+    value: string;
+    tone?: "default" | "success" | "warning" | "danger";
+  }> = [
+    { label: "Credit score", value: safeText(resolvedScore, "Not returned"), tone: resolvedScore ? "success" : "warning" as const },
+    { label: "CRB provider", value: safeText(scoreRecord.crbProvider), tone: "default" as const },
+    { label: "Verification", value: safeText(providerResponse.verification_status ?? verification.status), tone: String(providerResponse.verification_status ?? verification.status).toLowerCase() === "verified" ? "success" as const : "warning" as const },
+    { label: "Charge", value: safeText(billingInfo.amount ? `${billingInfo.amount} ${safeText(billingInfo.currency, "")}`.trim() : null, "Not billed"), tone: "default" as const },
+  ];
+
+  const bureauDetails = [
+    { label: "Customer name", value: safeText(scoreRecord.customerName ?? providerData.name) },
+    { label: "BVN", value: safeText(scoreRecord.bvn ?? providerData.bvn) },
+    { label: "Date of birth", value: safeText(scoreRecord.dob ?? providerData.dateOfBirth) },
+    { label: "Mode", value: safeText(scoreRecord.mode) },
+    { label: "Provider", value: safeText(scoreRecord.provider) },
+    { label: "Record status", value: safeText(scoreRecord.status) },
+    { label: "Message", value: safeText(providerResponse.message ?? providerResponse.detail) },
+    { label: "Reference ID", value: safeText(providerResponse.reference_id) },
+  ];
+
+  const scoreMetrics = [
+    { label: "Delinquent facilities", value: safeText(bureauProfile.totalNoOfDelinquentFacilities, "0") },
+    { label: "Total loans", value: safeText(bureauProfile.totalNoOfLoans, "0") },
+    { label: "Active loans", value: safeText(bureauProfile.totalNoOfActiveLoans, "0") },
+    { label: "Closed loans", value: safeText(bureauProfile.totalNoOfClosedLoans, "0") },
+    { label: "Total borrowed", value: safeText(bureauProfile.totalBorrowed) },
+    { label: "Outstanding", value: safeText(bureauProfile.totalOutstanding) },
+    { label: "Overdue", value: safeText(bureauProfile.totalOverdue) },
+    { label: "Last reported", value: safeText(bureauProfile.lastReportedDate) },
+  ];
+
+  const verificationDetails = [
+    { label: "Verification status", value: safeText(verification.status) },
+    { label: "Verification reference", value: safeText(verification.reference) },
+    { label: "Verification ID", value: safeText(verification.verification_id) },
+    { label: "Response code", value: safeText(providerResponse.response_code) },
+    { label: "Transaction ID", value: safeText(providerResponse.transaction_id) },
+    { label: "Searched date", value: safeText(providerData.searchedDate ? formatDate(providerData.searchedDate) : null) },
+  ];
+
+  const loanDetails = [
+    { label: "App loan ID", value: safeText(loanRecord._id ?? scoreRecord.appLoanId) },
+    { label: "Loan type", value: safeText(loanRecord.loanTypeName) },
+    { label: "Purpose", value: safeText(loanRecord.purposeText) },
+    { label: "Requested amount", value: formatCurrency(loanRecord.amount) },
+    { label: "Total payable", value: formatCurrency(loanRecord.totalPayable) },
+    { label: "Outstanding", value: formatCurrency(loanRecord.outstandingAmount) },
+    { label: "Loan status", value: safeText(loanRecord.status) },
+    { label: "Due date", value: formatDate(loanRecord.dueDate) },
+    { label: "Customer email", value: safeText(loanRecord.userEmail ?? linkedUser.email) },
+    { label: "Customer phone", value: safeText(loanRecord.userPhone ?? linkedUser.phone) },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-7xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="relative overflow-hidden border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_50%,#069AFF_140%)] px-6 py-6 text-white">
+          <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
+          <div className="absolute -bottom-24 left-1/2 h-56 w-56 rounded-full bg-[#069AFF]/30 blur-3xl" />
+
+          <div className="relative flex items-start justify-between gap-5">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-sky-100">
+                <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
+                Credit score result
+              </div>
+              <h2 className="mt-4 text-2xl font-black tracking-tight md:text-3xl">
+                {safeText(scoreRecord.customerName ?? providerData.name, "Credit bureau assessment")}
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
+                {safeText(record.message ?? providerResponse.message, "Credit score response returned from the bureau provider.")}
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                  App Loan: {safeText(loanRecord._id ?? scoreRecord.appLoanId)}
+                </span>
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                  Bureau: {safeText(scoreRecord.crbProvider)}
+                </span>
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                  Provider: {safeText(scoreRecord.provider)}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+              aria-label="Close credit score result"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-[78vh] overflow-y-auto bg-slate-50 p-5 dark:bg-[#07111f]">
+          {result.loading && (
+            <div className="flex min-h-72 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              Loading credit score
+            </div>
+          )}
+
+          {result.error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              {result.error}
+            </div>
+          )}
+
+          {!result.loading && !result.error && (
+            <div className="grid gap-5">
+              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {summaryCards.map((item) => (
+                  <MiniInfoCard key={item.label} label={item.label} value={item.value} tone={item.tone} />
+                ))}
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
+                <SectionCard
+                  title="Bureau profile"
+                  description="Primary customer identity and provider response context returned for this credit lookup."
+                >
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {bureauDetails.map((item) => (
+                      <MiniInfoCard key={item.label} label={item.label} value={item.value} />
+                    ))}
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  title="Verification and billing"
+                  description="Verification reference, provider transaction identifiers, and bureau billing information."
+                >
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {verificationDetails.map((item) => (
+                      <MiniInfoCard key={item.label} label={item.label} value={item.value} />
+                    ))}
+                    <MiniInfoCard label="Billing note" value={safeText(billingInfo.note)} />
+                    <MiniInfoCard label="Was charged" value={safeText(billingInfo.was_charged)} tone={billingInfo.was_charged ? "success" : "warning"} />
+                  </div>
+                </SectionCard>
+              </section>
+
+              <SectionCard
+                title="Credit bureau score breakdown"
+                description="Detailed bureau scoring indicators returned under the provider score payload."
+              >
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {scoreMetrics.map((item) => (
+                    <MiniInfoCard key={item.label} label={item.label} value={item.value} />
+                  ))}
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title="Linked application loan"
+                description="Operational context for the application loan tied to this bureau score request."
+              >
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  {loanDetails.map((item) => (
+                    <MiniInfoCard key={item.label} label={item.label} value={item.value} />
+                  ))}
+                </div>
+              </SectionCard>
+
+              <details className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                <summary className="cursor-pointer list-none px-5 py-4 text-sm font-bold text-slate-950 dark:text-white">
+                  View raw credit score payload
+                </summary>
+                <div className="border-t border-slate-100 px-5 py-4 dark:border-white/10">
+                  <pre className="max-h-[420px] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">
+                    {JSON.stringify(record, null, 2)}
+                  </pre>
+                </div>
+              </details>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BankoneSyncResultModal({
                                   result,
                                   onClose,
@@ -1507,6 +1719,7 @@ export default function LoansPage() {
   const [appLoanDetail, setAppLoanDetail] = useState<AppLoanDetailState | null>(null);
   const [coreLoanDetail, setCoreLoanDetail] = useState<CoreLoanDetailState | null>(null);
   const [bankoneSyncResult, setBankoneSyncResult] = useState<BankoneSyncResultState | null>(null);
+  const [creditScoreResult, setCreditScoreResult] = useState<CreditScoreResultState | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const isDarkMode = resolvedTheme === "dark";
 
@@ -1747,7 +1960,16 @@ export default function LoansPage() {
     try {
       const response = await request();
       await refreshData();
-      showServerToast(response, "Application loan action completed successfully", "success");
+      if (action === "score") {
+        setCreditScoreResult({
+          title: "Loan score fetched successfully",
+          loading: false,
+          data: response,
+          error: "",
+        });
+      } else {
+        showServerToast(response, "Application loan action completed successfully", "success");
+      }
     } catch (error) {
       showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Application loan action failed", "error");
       throw error;
@@ -1888,7 +2110,7 @@ export default function LoansPage() {
       onSubmit: (values) =>
         (async () => {
           try {
-            const response = await adminService.syncLoanBankoneStatus(id, {
+          const response = await adminService.syncLoanBankoneStatus(id, {
               institutionCode: values.institutionCode,
           });
 
@@ -2207,7 +2429,7 @@ export default function LoansPage() {
                                 tone="primary"
                                 busy={busyAction === `app-loan-${id}-score`}
                                 disabled={!id}
-                                onClick={() => runAppLoanAction(id, "score", () => adminService.scoreAppLoan(id, { crb_provider: "crc" }))}
+                                onClick={() => runAppLoanAction(id, "score", () => adminService.scoreAppLoan(id))}
                               />
                             </div>
                             <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -2388,6 +2610,7 @@ export default function LoansPage() {
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
       {appLoanDetail && <AppLoanDetailsModal loan={appLoanDetail} onClose={() => setAppLoanDetail(null)} />}
       {coreLoanDetail && <CoreLoanDetailsModal loan={coreLoanDetail} onClose={() => setCoreLoanDetail(null)} />}
+      {creditScoreResult && <CreditScoreResultModal result={creditScoreResult} onClose={() => setCreditScoreResult(null)} />}
       {bankoneSyncResult && <BankoneSyncResultModal result={bankoneSyncResult} onClose={() => setBankoneSyncResult(null)} />}
     </main>
   );

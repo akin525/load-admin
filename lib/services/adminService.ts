@@ -477,8 +477,8 @@ export const adminService = {
     },
 
     // POST /admin/app-loans/:id/score
-    scoreAppLoan: async (id: string, payload: AdminPayload): Promise<unknown> => {
-        const response = await api.post(`/admin/app-loans/${id}/score`, payload);
+    scoreAppLoan: async (id: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/app-loans/${id}/score`, payload ?? {});
         return response.data;
     },
 
