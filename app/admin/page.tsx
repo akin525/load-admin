@@ -93,6 +93,12 @@ type UserTransactionsState = DetailState & {
 
 type AppLoanDetailState = DetailState;
 type BankoneSyncResultState = DetailState;
+type OtpChallenge = {
+  challengeId: string;
+  channel?: string;
+  email?: string;
+  expiresAt?: string;
+};
 
 type FormField = {
   name: string;
@@ -384,6 +390,23 @@ const getErrorMessage = (error: unknown) => {
   }
 
   return "Request failed";
+};
+
+const getOtpChallenge = (payload: unknown): OtpChallenge | null => {
+  if (!isRecord(payload) || payload.requiresOtp !== true || !isRecord(payload.data)) {
+    return null;
+  }
+
+  if (typeof payload.data.challengeId !== "string" || !payload.data.challengeId.trim()) {
+    return null;
+  }
+
+  return {
+    challengeId: payload.data.challengeId,
+    channel: typeof payload.data.channel === "string" ? payload.data.channel : undefined,
+    email: typeof payload.data.email === "string" ? payload.data.email : undefined,
+    expiresAt: typeof payload.data.expiresAt === "string" ? payload.data.expiresAt : undefined,
+  };
 };
 
 const getId = (row: Record<string, unknown>) => String(getRecordValue(row, ["_id", "id", "userId", "loanId"]) ?? "");
@@ -2591,7 +2614,43 @@ export default function AdminCenterPage() {
 
     try {
       if (action === "approve") {
-        await adminService.approveLoan(id, { disburseToWallet: false });
+        const response = await adminService.approveLoan(id, { disburseToWallet: false });
+        const challenge = getOtpChallenge(response);
+
+        if (challenge) {
+          setFormAction({
+            eyebrow: "Core loan approval",
+            title: "Confirm core loan approval",
+            description: [
+              "Legacy core approval now requires OTP confirmation.",
+              challenge.channel ? `Channel: ${challenge.channel}.` : "",
+              challenge.email ? `Recipient: ${challenge.email}.` : "",
+              challenge.expiresAt ? `Expires ${formatDate(challenge.expiresAt)}.` : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+            submitLabel: "Confirm approval",
+            initialValues: { otpCode: "" },
+            fields: [
+              {
+                name: "otpCode",
+                label: "OTP code",
+                required: true,
+                placeholder: "482193",
+                helper: `Challenge ID: ${challenge.challengeId}`,
+              },
+            ],
+            onSubmit: (values) =>
+              submitAndRefresh(() =>
+                adminService.approveLoan(id, {
+                  disburseToWallet: false,
+                  otpChallengeId: challenge.challengeId,
+                  otpCode: values.otpCode.trim(),
+                }),
+              ),
+          });
+          return;
+        }
       } else {
         await adminService.rejectLoan(id, { reason: "Rejected from admin center" });
       }
@@ -2709,7 +2768,46 @@ export default function AdminCenterPage() {
   const runAppLoanAction = async (id: string, action: string, request: () => Promise<unknown>) => {
     setBusyAction(`app-loan-${id}-${action}`);
     try {
-      await request();
+      const response = await request();
+
+      if (action === "approve") {
+        const challenge = getOtpChallenge(response);
+
+        if (challenge) {
+          setFormAction({
+            eyebrow: "App loan approval",
+            title: "Confirm application loan approval",
+            description: [
+              "Approval now requires OTP confirmation.",
+              challenge.channel ? `Channel: ${challenge.channel}.` : "",
+              challenge.email ? `Recipient: ${challenge.email}.` : "",
+              challenge.expiresAt ? `Expires ${formatDate(challenge.expiresAt)}.` : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+            submitLabel: "Confirm approval",
+            initialValues: { otpCode: "" },
+            fields: [
+              {
+                name: "otpCode",
+                label: "OTP code",
+                required: true,
+                placeholder: "482193",
+                helper: `Challenge ID: ${challenge.challengeId}`,
+              },
+            ],
+            onSubmit: (values) =>
+              submitAndRefresh(() =>
+                adminService.approveAppLoan(id, {
+                  otpChallengeId: challenge.challengeId,
+                  otpCode: values.otpCode.trim(),
+                }),
+              ),
+          });
+          return;
+        }
+      }
+
       await refreshData();
     } finally {
       setBusyAction(null);

@@ -8,6 +8,7 @@ type LoginCredentials = {
 type LoginResponse = {
     success: boolean;
     requiresTwoFactor?: boolean;
+    requiresOtp?: boolean;
     token?: string;
     message?: string;
     data?: {
@@ -17,7 +18,6 @@ type LoginResponse = {
         challengeId?: string;
         channel?: string;
         email?: string;
-        code?: string;
         expiresAt?: string;
     };
 };
@@ -261,7 +261,7 @@ export const adminService = {
     },
 
     // POST /admin/users/:userId/fund-wallet
-    fundUserWallet: async (userId: string, payload: AdminPayload): Promise<unknown> => {
+    fundUserWallet: async (userId: string, payload: AdminPayload): Promise<LoginResponse> => {
         const response = await api.post(`/admin/users/${userId}/fund-wallet`, payload);
         return response.data;
     },
@@ -321,7 +321,7 @@ export const adminService = {
     },
 
     // POST /admin/loans/:loanId/approve
-    approveLoan: async (loanId: string, payload?: AdminPayload): Promise<unknown> => {
+    approveLoan: async (loanId: string, payload?: AdminPayload): Promise<LoginResponse> => {
         const response = await api.post(`/admin/loans/${loanId}/approve`, payload ?? {});
         return response.data;
     },
@@ -489,8 +489,8 @@ export const adminService = {
     },
 
     // POST /admin/app-loans/:id/approve
-    approveAppLoan: async (id: string): Promise<unknown> => {
-        const response = await api.post(`/admin/app-loans/${id}/approve`, {});
+    approveAppLoan: async (id: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/app-loans/${id}/approve`, payload ?? {});
         return response.data;
     },
 

@@ -28,7 +28,6 @@ type TwoFactorChallenge = {
   challengeId: string;
   channel?: string;
   email?: string;
-  code?: string;
   expiresAt?: string;
 };
 
@@ -138,7 +137,6 @@ export default function LoginPage() {
           challengeId: response.data.challengeId,
           channel: response.data.channel,
           email: response.data.email,
-          code: response.data.code,
           expiresAt: response.data.expiresAt,
         });
         setVerificationCode("");
@@ -281,11 +279,9 @@ export default function LoginPage() {
                             Expires: {new Date(twoFactorChallenge.expiresAt).toLocaleString()}
                           </p>
                         )}
-                        {twoFactorChallenge.code && (
-                          <p className="font-medium text-sky-800 dark:text-sky-100">
-                            Verification code: {twoFactorChallenge.code}
-                          </p>
-                        )}
+                        <p className="text-sky-700 dark:text-sky-200">
+                          The OTP was sent to the destination above. Enter the code from your email to continue.
+                        </p>
                       </div>
                     </div>
                   </div>

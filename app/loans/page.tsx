@@ -48,6 +48,12 @@ type CoreLoanDetailState = DetailState;
 type BankoneSyncResultState = DetailState;
 type CreditScoreResultState = DetailState;
 type ToastTone = "success" | "error" | "warning" | "info";
+type OtpChallenge = {
+  challengeId: string;
+  channel?: string;
+  email?: string;
+  expiresAt?: string;
+};
 
 type ToastNotice = {
   id: number;
@@ -226,6 +232,23 @@ const getErrorPayload = (error: unknown) => {
   }
 
   return null;
+};
+
+const getOtpChallenge = (payload: unknown): OtpChallenge | null => {
+  if (!isRecord(payload) || payload.requiresOtp !== true || !isRecord(payload.data)) {
+    return null;
+  }
+
+  if (typeof payload.data.challengeId !== "string" || !payload.data.challengeId.trim()) {
+    return null;
+  }
+
+  return {
+    challengeId: payload.data.challengeId,
+    channel: typeof payload.data.channel === "string" ? payload.data.channel : undefined,
+    email: typeof payload.data.email === "string" ? payload.data.email : undefined,
+    expiresAt: typeof payload.data.expiresAt === "string" ? payload.data.expiresAt : undefined,
+  };
 };
 
 const getResponseDetail = (payload: unknown) => {
@@ -1990,6 +2013,79 @@ export default function LoansPage() {
     });
   };
 
+  const openApprovalOtpPrompt = ({
+    eyebrow,
+    title,
+    submitLabel,
+    description,
+    challenge,
+    onConfirm,
+  }: {
+    eyebrow: string;
+    title: string;
+    submitLabel: string;
+    description: string;
+    challenge: OtpChallenge;
+    onConfirm: (otpCode: string) => Promise<unknown>;
+  }) => {
+    const deliveryLine = [challenge.channel ? `OTP channel: ${challenge.channel}` : "", challenge.email ? `Recipient: ${challenge.email}` : ""]
+      .filter(Boolean)
+      .join(" • ");
+    const expiryLine = challenge.expiresAt ? `Expires ${formatDate(challenge.expiresAt)}` : "";
+
+    setFormAction({
+      eyebrow,
+      title,
+      description: [description, deliveryLine, expiryLine].filter(Boolean).join(" "),
+      submitLabel,
+      initialValues: { otpCode: "" },
+      fields: [
+        {
+          name: "otpCode",
+          label: "OTP code",
+          required: true,
+          placeholder: "482193",
+          helper: `Challenge ID: ${challenge.challengeId}`,
+        },
+      ],
+      onSubmit: (values) => submitAndRefresh(() => onConfirm(values.otpCode.trim())),
+    });
+  };
+
+  const startAppLoanApproval = async (id: string) => {
+    setBusyAction(`app-loan-${id}-approve`);
+
+    try {
+      const response = await adminService.approveAppLoan(id);
+      const challenge = getOtpChallenge(response);
+
+      if (challenge) {
+        openApprovalOtpPrompt({
+          eyebrow: "App loan approval",
+          title: "Confirm application loan approval",
+          submitLabel: "Confirm approval",
+          description: "Approval now requires an OTP confirmation from the assigned admin email.",
+          challenge,
+          onConfirm: (otpCode) =>
+            adminService.approveAppLoan(id, {
+              otpChallengeId: challenge.challengeId,
+              otpCode,
+            }),
+        });
+        showServerToast(response, "OTP verification required to approve this loan", "warning");
+        return;
+      }
+
+      await refreshData();
+      showServerToast(response, "Application loan approved successfully", "success");
+    } catch (error) {
+      showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Application loan approval failed", "error");
+      throw error;
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const openReviewAppLoan = (id: string) => {
     setFormAction({
       eyebrow: "App loan",
@@ -2141,6 +2237,41 @@ export default function LoansPage() {
       fields: [{ name: "note", label: "Review note", type: "textarea", required: true }],
       onSubmit: (values) => submitAndRefresh(() => adminService.reviewLoan(id, { note: values.note })),
     });
+  };
+
+  const startCoreLoanApproval = async (id: string) => {
+    setBusyAction(`loan-${id}-approve`);
+
+    try {
+      const response = await adminService.approveLoan(id, { disburseToWallet: false });
+      const challenge = getOtpChallenge(response);
+
+      if (challenge) {
+        openApprovalOtpPrompt({
+          eyebrow: "Core loan approval",
+          title: "Confirm core loan approval",
+          submitLabel: "Confirm approval",
+          description: "Legacy core loan approval now requires an OTP confirmation from the assigned admin email.",
+          challenge,
+          onConfirm: (otpCode) =>
+            adminService.approveLoan(id, {
+              disburseToWallet: false,
+              otpChallengeId: challenge.challengeId,
+              otpCode,
+            }),
+        });
+        showServerToast(response, "OTP verification required to approve this loan", "warning");
+        return;
+      }
+
+      await refreshData();
+      showServerToast(response, "Loan approved successfully", "success");
+    } catch (error) {
+      showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Loan approval failed", "error");
+      throw error;
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   const openRejectCoreLoan = (id: string) => {
@@ -2321,6 +2452,7 @@ export default function LoansPage() {
                 const isRejected = ["rejected"].includes(status);
                 const isApproved = ["approved", "active"].includes(status);
                 const isReviewed = Boolean(getRecordValue(row, ["reviewedAt", "reviewedBy", "reviewedByUser"]));
+                const canReview = !isReviewed && !isApproved && !isRejected && !isClosed;
                 const progressRatio =
                   Number.isFinite(totalPayable) && totalPayable > 0 && Number.isFinite(paidAmount)
                     ? Math.min(100, Math.max(0, Math.round((paidAmount / totalPayable) * 100)))
@@ -2420,7 +2552,7 @@ export default function LoansPage() {
                               <LoanActionButton
                                 label="Review"
                                 icon={FileText}
-                                disabled={!id}
+                                disabled={!id || !canReview}
                                 onClick={() => openReviewAppLoan(id)}
                               />
                               <LoanActionButton
@@ -2439,7 +2571,7 @@ export default function LoansPage() {
                                 tone="success"
                                 busy={busyAction === `app-loan-${id}-approve`}
                                 disabled={!id || !isReviewed || isApproved || isRejected || isClosed}
-                                onClick={() => runAppLoanAction(id, "approve", () => adminService.approveAppLoan(id))}
+                                onClick={() => void startAppLoanApproval(id)}
                               />
                               <LoanActionButton
                                 label="Reject"
@@ -2514,7 +2646,8 @@ export default function LoansPage() {
               {(row, index) => {
                 const id = getId(row);
                 const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();
-                const canReview = !["approved", "active", "rejected", "closed"].includes(status);
+                const isReviewed = Boolean(getRecordValue(row, ["reviewedAt", "reviewedBy", "reviewedByUser"]));
+                const canReview = !isReviewed && !["approved", "active", "rejected", "closed"].includes(status);
                 const reviewed = Boolean(getRecordValue(row, ["reviewedAt", "reviewedBy", "reviewedByUser"]));
                 const outstandingAmount = Number(getRecordValue(row, ["outstandingAmount"]) ?? NaN);
                 const isClosed = status === "closed";
@@ -2560,7 +2693,7 @@ export default function LoansPage() {
                         <button
                           type="button"
                           disabled={!id || !reviewed || status === "approved" || status === "active" || status === "rejected" || status === "closed" || busyAction === `loan-${id}-approve`}
-                          onClick={() => void runLoanMaintenanceAction(id, "approve", () => adminService.approveLoan(id, { disburseToWallet: false }))}
+                          onClick={() => void startCoreLoanApproval(id)}
                           className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
                         >
                           Approve

@@ -64,6 +64,13 @@ type UserControlsTarget = {
   status: string;
 };
 
+type OtpChallenge = {
+  challengeId: string;
+  channel?: string;
+  email?: string;
+  expiresAt?: string;
+};
+
 type UsersState = {
   payload: unknown;
   rows: Record<string, unknown>[];
@@ -328,6 +335,23 @@ const showServerErrorAlert = async (error: unknown, fallbackTitle: string) => {
     confirmButtonColor: "#069AFF",
     width: 640,
   });
+};
+
+const getOtpChallenge = (payload: unknown): OtpChallenge | null => {
+  if (!isRecord(payload) || payload.requiresOtp !== true || !isRecord(payload.data)) {
+    return null;
+  }
+
+  if (typeof payload.data.challengeId !== "string" || !payload.data.challengeId.trim()) {
+    return null;
+  }
+
+  return {
+    challengeId: payload.data.challengeId,
+    channel: typeof payload.data.channel === "string" ? payload.data.channel : undefined,
+    email: typeof payload.data.email === "string" ? payload.data.email : undefined,
+    expiresAt: typeof payload.data.expiresAt === "string" ? payload.data.expiresAt : undefined,
+  };
 };
 
 const getCollectionRows = (payload: unknown, key: string) => {
@@ -1202,6 +1226,8 @@ function UserControlsModal({
     proofOfPayment: "",
     paymentDate: "",
   });
+  const [fundWalletChallenge, setFundWalletChallenge] = useState<OtpChallenge | null>(null);
+  const [fundWalletOtpCode, setFundWalletOtpCode] = useState("");
 
   const runAction = async (actionKey: string, request: () => Promise<unknown>, fallbackMessage: string) => {
     setLoadingAction(actionKey);
@@ -1220,7 +1246,9 @@ function UserControlsModal({
   const submitFundWallet = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const payload = Object.entries({
+    setLoadingAction("fund-wallet");
+
+    const basePayload = Object.entries({
       amount: Number(walletValues.amount),
       walletType: walletValues.walletType.trim(),
       sourceLedger: walletValues.sourceLedger.trim(),
@@ -1236,11 +1264,41 @@ function UserControlsModal({
       return accumulator;
     }, {});
 
-    await runAction(
-      "fund-wallet",
-      () => adminService.fundUserWallet(target.userId, payload),
-      `Wallet funded for ${target.userName}`,
-    );
+    const payload = fundWalletChallenge
+      ? {
+          ...basePayload,
+          otpChallengeId: fundWalletChallenge.challengeId,
+          otpCode: fundWalletOtpCode.trim(),
+        }
+      : basePayload;
+
+    try {
+      const response = await adminService.fundUserWallet(target.userId, payload);
+      const challenge = getOtpChallenge(response);
+
+      if (challenge) {
+        setFundWalletChallenge(challenge);
+        await showServerResponseAlert(response, "OTP verification required to fund wallet");
+        return;
+      }
+
+      await onRefresh();
+      setFundWalletChallenge(null);
+      setFundWalletOtpCode("");
+      setWalletValues({
+        amount: "",
+        walletType: "wallet",
+        sourceLedger: "operations",
+        narration: "",
+        proofOfPayment: "",
+        paymentDate: "",
+      });
+      await showServerResponseAlert(response, `Wallet funded for ${target.userName}`);
+    } catch (error) {
+      await showServerErrorAlert(error, "Wallet funding request failed");
+    } finally {
+      setLoadingAction("");
+    }
   };
 
   const actionCards = [
@@ -1468,6 +1526,36 @@ function UserControlsModal({
                   Submit only the fields the backend expects. `amount` is required. Funding proof and payment timestamp are sent only when provided.
                 </div>
 
+                {fundWalletChallenge && (
+                  <div className="grid gap-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-400/20 dark:bg-amber-400/10">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-100">OTP confirmation required</p>
+                      <p className="mt-2 text-sm font-medium leading-6 text-amber-800 dark:text-amber-100">
+                        Confirm this wallet funding with the OTP sent via {fundWalletChallenge.channel ?? "email"}.
+                      </p>
+                      <div className="mt-2 space-y-1 text-xs font-semibold text-amber-700 dark:text-amber-200">
+                        {fundWalletChallenge.email ? <p>Recipient: {fundWalletChallenge.email}</p> : null}
+                        {fundWalletChallenge.expiresAt ? <p>Expires: {formatDate(fundWalletChallenge.expiresAt)}</p> : null}
+                        <p>Challenge ID: {fundWalletChallenge.challengeId}</p>
+                      </div>
+                    </div>
+
+                    <label>
+                      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">OTP code</span>
+                      <input
+                        required
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        value={fundWalletOtpCode}
+                        onChange={(event) => setFundWalletOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder="482193"
+                        className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold tracking-[0.2em] text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                      />
+                    </label>
+                  </div>
+                )}
+
                 <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
                   <button
                     type="button"
@@ -1478,11 +1566,11 @@ function UserControlsModal({
                   </button>
                   <button
                     type="submit"
-                    disabled={Boolean(loadingAction)}
+                    disabled={Boolean(loadingAction) || Boolean(fundWalletChallenge && fundWalletOtpCode.trim().length < 6)}
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {loadingAction === "fund-wallet" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <WalletCards className="h-4 w-4" aria-hidden="true" />}
-                    Fund wallet
+                    {fundWalletChallenge ? "Confirm funding" : "Fund wallet"}
                   </button>
                 </div>
               </form>
