@@ -22,6 +22,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Sun,
@@ -67,6 +68,7 @@ const navGroups: NavGroup[] = [
     title: "Control Center",
     items: [
       { href: "/admin", label: "Admin Center", icon: ShieldCheck },
+      { href: "/system-settings", label: "System Settings", icon: Settings2 },
       { href: "/email-logs", label: "Email Logs", icon: FileText },
       { href: "/audit-logs", label: "Audit Logs", icon: FileText },
       { href: "/reconciliation", label: "Reconciliation", icon: FileSearch, badge: "New" },

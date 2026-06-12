@@ -36,6 +36,7 @@ type RouteKey =
   | "/loans"
   | "/reports"
   | "/fees"
+  | "/system-settings"
   | "/wallet-transactions"
   | "/audit-logs"
   | "/email-logs"
@@ -350,6 +351,19 @@ const scopeMatchers: Record<string, string[][]> = {
   ],
   reports: [["report"], ["financial"], ["revenue"], ["profit"], ["audit", "report"]],
   fees: [["fee"]],
+  systemSettings: [
+    ["system", "setting"],
+    ["view", "setting"],
+    ["create", "setting"],
+    ["update", "setting"],
+    ["delete", "setting"],
+    ["bankone", "setting"],
+    ["payment", "setting"],
+    ["security", "setting"],
+    ["email", "setting"],
+    ["loan", "setting"],
+    ["general", "setting"],
+  ],
   walletTransactions: [["wallet", "transaction"], ["wallet"], ["transaction"], ["ledger"]],
   auditLogs: [["audit", "log"], ["audit"], ["log"]],
   emailLogs: [["email", "log"], ["mail", "log"], ["email"], ["mail"], ["template"]],
@@ -363,6 +377,7 @@ const routeScopeMap: Record<RouteKey, string> = {
   "/loans": "loans",
   "/reports": "reports",
   "/fees": "fees",
+  "/system-settings": "systemSettings",
   "/wallet-transactions": "walletTransactions",
   "/audit-logs": "auditLogs",
   "/email-logs": "emailLogs",

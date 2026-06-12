@@ -629,5 +629,47 @@ export const adminService = {
     setUserFee: async (userId: string, payload: AdminPayload): Promise<unknown> => {
         const response = await api.post(`/admin/users/${userId}/fees`, payload);
         return response.data;
+    },
+
+    // GET /admin/system-settings
+    getSystemSettings: async (): Promise<unknown> => {
+        const response = await api.get('/admin/system-settings');
+        return response.data;
+    },
+
+    // GET /admin/system-settings/:name
+    getSystemSettingByName: async (name: string): Promise<unknown> => {
+        const response = await api.get(`/admin/system-settings/${encodeURIComponent(name)}`);
+        return response.data;
+    },
+
+    // POST /admin/system-settings
+    createSystemSetting: async (payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/system-settings', payload);
+        return response.data;
+    },
+
+    // POST /admin/system-settings/upsert
+    upsertSystemSetting: async (payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/system-settings/upsert', payload);
+        return response.data;
+    },
+
+    // PATCH /admin/system-settings/:name
+    updateSystemSetting: async (name: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.patch(`/admin/system-settings/${encodeURIComponent(name)}`, payload);
+        return response.data;
+    },
+
+    // POST /admin/system-settings/bulk-upsert
+    bulkUpsertSystemSettings: async (payload: { settings: AdminPayload[] }): Promise<unknown> => {
+        const response = await api.post('/admin/system-settings/bulk-upsert', payload);
+        return response.data;
+    },
+
+    // DELETE /admin/system-settings/:name
+    deleteSystemSetting: async (name: string): Promise<unknown> => {
+        const response = await api.delete(`/admin/system-settings/${encodeURIComponent(name)}`);
+        return response.data;
     }
 };
