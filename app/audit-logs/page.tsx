@@ -25,6 +25,7 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
+import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type AuditLogFilters = {
   adminUserId: string;
@@ -530,6 +531,11 @@ export default function AuditLogsPage() {
   };
 
   const rows = auditLogs.rows;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const totals = useMemo(() => {
     const successCount = rows.filter((row) => {
@@ -787,6 +793,7 @@ export default function AuditLogsPage() {
                   {auditLogs.error}
                 </div>
               ) : rows.length ? (
+                <>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200 dark:divide-white/10">
                     <thead className="bg-slate-50 dark:bg-white/[0.035]">
@@ -799,7 +806,7 @@ export default function AuditLogsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                      {rows.map((row, index) => {
+                      {paginatedRows.map((row, index) => {
                         const actor = getAuditActor(row);
                         const method = getAuditMethod(row);
                         const path = getAuditPath(row);
@@ -858,6 +865,17 @@ export default function AuditLogsPage() {
                     </tbody>
                   </table>
                 </div>
+                <TablePagination
+                  totalItems={rows.length}
+                  currentPage={safeCurrentPage}
+                  pageSize={pageSize}
+                  onPageChange={setCurrentPage}
+                  onPageSizeChange={(next) => {
+                    setPageSize(next);
+                    setCurrentPage(1);
+                  }}
+                />
+                </>
               ) : (
                 <div className="m-5 rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400">
                   No audit records matched the selected filter set.

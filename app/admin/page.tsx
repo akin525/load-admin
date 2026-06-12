@@ -27,6 +27,7 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { canAccessAdminSection, canAccessRoute, useAdminSession } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
+import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type AdminSection = "admins" | "roles" | "users" | "kyc" | "loans" | "tiers" | "support" | "content" | "reports";
 type DataKey =
@@ -746,6 +747,11 @@ function ReportPanel({
   const details = extractReportDetails(payload);
   const rows = extractRows(payload);
   const columns = getReportColumns(rows);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(8);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30">
@@ -800,7 +806,7 @@ function ReportPanel({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                  {rows.slice(0, 8).map((row, index) => (
+                  {paginatedRows.map((row, index) => (
                     <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
                       {columns.map((column) => (
                         <td key={`${column}-${index}`} className="px-4 py-3 font-medium">
@@ -812,6 +818,17 @@ function ReportPanel({
                 </tbody>
               </table>
             </div>
+            <TablePagination
+              totalItems={rows.length}
+              currentPage={safeCurrentPage}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(next) => {
+                setPageSize(next);
+                setCurrentPage(1);
+              }}
+              label="rows"
+            />
           </div>
         )}
 
@@ -2136,6 +2153,12 @@ function ManagementTable({
   action?: ReactNode;
   children: (row: Record<string, unknown>, index: number) => ReactNode;
 }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
+
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30">
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-white/10">
@@ -2152,10 +2175,20 @@ function ManagementTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-            {rows.map((row, index) => children(row, index))}
+            {paginatedRows.map((row, index) => children(row, index))}
           </tbody>
         </table>
       </div>
+      <TablePagination
+        totalItems={rows.length}
+        currentPage={safeCurrentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(next) => {
+          setPageSize(next);
+          setCurrentPage(1);
+        }}
+      />
       {!rows.length && (
         <div className="px-5 py-10 text-sm font-medium text-slate-500 dark:text-slate-400">
           No records returned.

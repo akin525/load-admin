@@ -15,6 +15,7 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
+import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type EmailLogFilters = {
   template: string;
@@ -347,6 +348,11 @@ export default function EmailLogsPage() {
   };
 
   const rows = logsState.rows;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const summaryCards = useMemo(() => {
     const sent = rows.filter((row) => ["sent", "success", "delivered"].includes(String(getRecordValue(row, ["status"]) ?? "").toLowerCase())).length;
@@ -501,7 +507,7 @@ export default function EmailLogsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {rows.map((row, index) => {
+                    {paginatedRows.map((row, index) => {
                       const template = String(getRecordValue(row, ["template", "templateName"]) ?? "Not available");
                       const recipient = String(getRecordValue(row, ["email", "recipient", "to"]) ?? "Not available");
                       const subject = String(getRecordValue(row, ["subject", "title"]) ?? "Not available");
@@ -551,6 +557,16 @@ export default function EmailLogsPage() {
                   </tbody>
                 </table>
               </div>
+              <TablePagination
+                totalItems={rows.length}
+                currentPage={safeCurrentPage}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(next) => {
+                  setPageSize(next);
+                  setCurrentPage(1);
+                }}
+              />
             </section>
           </>
         )}

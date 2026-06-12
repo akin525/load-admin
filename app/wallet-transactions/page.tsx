@@ -28,6 +28,7 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
+import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type WalletTransactionFilters = {
   search: string;
@@ -642,6 +643,11 @@ export default function WalletTransactionsPage() {
   };
 
   const rows = transactions.rows;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const totals = useMemo(() => {
     const successCount = rows.filter((row) => String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "success").length;
@@ -910,7 +916,7 @@ export default function WalletTransactionsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {rows.map((row, index) => {
+                    {paginatedRows.map((row, index) => {
                       const direction = getDirection(row);
                       const directionTone = getDirectionTone(direction);
                       const DirectionIcon = directionTone.icon;
@@ -978,6 +984,16 @@ export default function WalletTransactionsPage() {
                   </tbody>
                 </table>
               </div>
+              <TablePagination
+                totalItems={rows.length}
+                currentPage={safeCurrentPage}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(next) => {
+                  setPageSize(next);
+                  setCurrentPage(1);
+                }}
+              />
               {!rows.length && (
                 <div className="px-5 py-10 text-sm font-medium text-slate-500 dark:text-slate-400">
                   No wallet transactions returned for the current filter set.

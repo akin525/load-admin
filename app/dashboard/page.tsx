@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type DashboardKey =
   | "stats"
@@ -536,6 +537,12 @@ function BillHistoryTable({
   onReverse: (id: string) => void;
   reversingId: string | null;
 }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
+
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-white/10">
@@ -559,7 +566,7 @@ function BillHistoryTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-            {rows.map((row, index) => {
+            {paginatedRows.map((row, index) => {
               const id = String(getRecordValue(row, ["_id", "id"]) ?? "");
               const name = getRecordValue(row, ["customerName", "name", "fullName", "userName", "recipient", "email"]) ?? `Bill ${index + 1}`;
               const reference = getRecordValue(row, ["reference", "requestId", "transactionId", "billId"]) ?? "No reference";
@@ -611,6 +618,16 @@ function BillHistoryTable({
           </tbody>
         </table>
       </div>
+      <TablePagination
+        totalItems={rows.length}
+        currentPage={safeCurrentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(next) => {
+          setPageSize(next);
+          setCurrentPage(1);
+        }}
+      />
 
       {!rows.length && (
         <div className="px-5 py-10 text-sm font-medium text-slate-500 dark:text-slate-400">
@@ -628,6 +645,12 @@ function DepositsTable({
   rows: Record<string, unknown>[];
   onView: (row: Record<string, unknown>) => void;
 }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
+
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-white/10">
@@ -651,7 +674,7 @@ function DepositsTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-            {rows.map((row, index) => {
+            {paginatedRows.map((row, index) => {
               const name = getRecordValue(row, ["customerName", "name", "accountName", "userName", "email"]) ?? `Deposit ${index + 1}`;
               const reference = getRecordValue(row, ["reference", "sessionId", "transactionId", "_id", "id"]) ?? "No reference";
               const amount = getRecordValue(row, ["amount", "creditAmount", "totalAmount"]);
@@ -681,6 +704,16 @@ function DepositsTable({
           </tbody>
         </table>
       </div>
+      <TablePagination
+        totalItems={rows.length}
+        currentPage={safeCurrentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(next) => {
+          setPageSize(next);
+          setCurrentPage(1);
+        }}
+      />
 
       {!rows.length && (
         <div className="px-5 py-10 text-sm font-medium text-slate-500 dark:text-slate-400">

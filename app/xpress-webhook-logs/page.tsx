@@ -26,6 +26,7 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
+import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type XpressWebhookFilters = {
   event: string;
@@ -368,6 +369,11 @@ export default function XpressWebhookLogsPage() {
   };
 
   const rows = logsState.rows;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const summaryCards = useMemo(() => {
     const failed = rows.filter((row) => String(getRecordValue(row, ["processingStatus", "status"]) ?? "").toLowerCase() === "failed").length;
@@ -546,7 +552,7 @@ export default function XpressWebhookLogsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {rows.map((row, index) => {
+                    {paginatedRows.map((row, index) => {
                       const event = String(getRecordValue(row, ["event"]) ?? "Not available");
                       const reference = String(getRecordValue(row, ["reference"]) ?? "Not available");
                       const requestId = String(getRecordValue(row, ["requestId"]) ?? "Not available");
@@ -595,6 +601,16 @@ export default function XpressWebhookLogsPage() {
                   </tbody>
                 </table>
               </div>
+              <TablePagination
+                totalItems={rows.length}
+                currentPage={safeCurrentPage}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(next) => {
+                  setPageSize(next);
+                  setCurrentPage(1);
+                }}
+              />
             </section>
           </>
         )}

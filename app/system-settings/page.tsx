@@ -20,6 +20,7 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
+import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type SettingsState = {
   payload: unknown;
@@ -406,6 +407,11 @@ function BulkUpsertModal({
   const [rows, setRows] = useState<BulkSettingRow[]>(defaultBulkRows());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const updateRow = (id: number, field: keyof Omit<BulkSettingRow, "id">, value: string) => {
     setRows((current) => current.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
@@ -492,7 +498,7 @@ function BulkUpsertModal({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                {rows.map((row) => (
+                {paginatedRows.map((row) => (
                   <tr key={row.id}>
                     <td className="px-4 py-3">
                       <input
@@ -533,6 +539,17 @@ function BulkUpsertModal({
               </tbody>
             </table>
           </div>
+          <TablePagination
+            totalItems={rows.length}
+            currentPage={safeCurrentPage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setCurrentPage(1);
+            }}
+            label="bulk rows"
+          />
 
           <div className="flex items-center justify-between gap-3">
             <button
@@ -588,6 +605,8 @@ export default function SystemSettingsPage() {
   const [lookupError, setLookupError] = useState("");
   const [modalConfig, setModalConfig] = useState<SettingModalConfig | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     let cancelled = false;
@@ -645,6 +664,21 @@ export default function SystemSettingsPage() {
     const categories = settingsState.groups.map((group) => group.category.toLowerCase());
     return ["all", ...Array.from(new Set(categories))];
   }, [settingsState.groups]);
+
+  const flattenedVisibleRows = useMemo(
+    () =>
+      visibleGroups.flatMap((group) =>
+        group.rows.map((row) => ({
+          category: group.category,
+          row,
+        })),
+      ),
+    [visibleGroups],
+  );
+
+  const totalPages = Math.max(1, Math.ceil(flattenedVisibleRows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedVisibleRowsSafe = paginateItems(flattenedVisibleRows, safeCurrentPage, pageSize);
 
   const openCreateModal = () => {
     setModalConfig({
@@ -949,20 +983,17 @@ export default function SystemSettingsPage() {
             </section>
 
             <div className="grid gap-6">
-              {visibleGroups.map((group) => (
-                <section
-                  key={group.category}
-                  className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30"
-                >
+              {visibleGroups.length ? (
+                <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30">
                   <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
                     <div>
-                      <h2 className="text-lg font-bold text-slate-950 dark:text-white">{normalizeCategoryLabel(group.category)}</h2>
+                      <h2 className="text-lg font-bold text-slate-950 dark:text-white">System settings registry</h2>
                       <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                        {group.rows.length} setting{group.rows.length === 1 ? "" : "s"} in this category.
+                        {flattenedVisibleRows.length} setting{flattenedVisibleRows.length === 1 ? "" : "s"} in the active category scope.
                       </p>
                     </div>
                     <span className="rounded-md bg-[#069AFF]/10 px-2.5 py-1 text-xs font-bold text-[#069AFF] dark:text-sky-200">
-                      {group.rows.length} records
+                      {flattenedVisibleRows.length} records
                     </span>
                   </div>
 
@@ -970,23 +1001,25 @@ export default function SystemSettingsPage() {
                     <table className="min-w-full text-left text-sm">
                       <thead className="bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
                         <tr>
-                          {["Name", "Value", "Description", "Action"].map((column) => (
+                          {["Category", "Name", "Value", "Description", "Action"].map((column) => (
                             <th key={column} className="px-5 py-3 font-bold">{column}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                        {group.rows.map((row, index) => {
+                        {paginatedVisibleRowsSafe.map(({ category, row }, index) => {
                           const name = getSettingName(row);
-                          const key = String(getRecordValue(row, ["_id", "id", "name"]) ?? `${group.category}-${index}`);
+                          const key = String(getRecordValue(row, ["_id", "id", "name"]) ?? `${category}-${index}`);
 
                           return (
                             <tr key={`${key}-${index}`} className="text-slate-700 dark:text-slate-300">
                               <td className="px-5 py-4">
+                                <span className="inline-flex rounded-md border border-[#069AFF]/20 bg-[#069AFF]/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#069AFF] dark:text-sky-200">
+                                  {normalizeCategoryLabel(category)}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4">
                                 <p className="font-bold text-slate-950 dark:text-white">{name}</p>
-                                <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-                                  {normalizeCategoryLabel(deriveCategory(name))}
-                                </p>
                               </td>
                               <td className="px-5 py-4">
                                 <div className="max-w-[18rem] break-words rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-semibold text-slate-800 dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-100">
@@ -1021,20 +1054,22 @@ export default function SystemSettingsPage() {
                             </tr>
                           );
                         })}
-                        {!group.rows.length && (
-                          <tr>
-                            <td colSpan={4} className="px-5 py-10 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                              No settings returned for this category.
-                            </td>
-                          </tr>
-                        )}
                       </tbody>
                     </table>
                   </div>
+                  <TablePagination
+                    totalItems={flattenedVisibleRows.length}
+                    currentPage={safeCurrentPage}
+                    pageSize={pageSize}
+                    onPageChange={setCurrentPage}
+                    onPageSizeChange={(next) => {
+                      setPageSize(next);
+                      setCurrentPage(1);
+                    }}
+                    label="settings"
+                  />
                 </section>
-              ))}
-
-              {!visibleGroups.length && (
+              ) : (
                 <section className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
                   <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
                     No system settings matched the current category filter.
