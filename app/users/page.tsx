@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import Swal from "sweetalert2";
 import {
   Activity,
   AlertTriangle,
@@ -25,6 +24,7 @@ import {
   Send,
   ShieldCheck, Smartphone,
   Sun, UserRound,
+  Upload,
   Users,
   WalletCards,
   X,
@@ -69,6 +69,13 @@ type OtpChallenge = {
   channel?: string;
   email?: string;
   expiresAt?: string;
+};
+type ToastTone = "success" | "error" | "warning" | "info";
+type ToastNotice = {
+  id: number;
+  tone: ToastTone;
+  title: string;
+  detail?: string;
 };
 
 type UsersState = {
@@ -264,77 +271,24 @@ const getResponseMessage = (payload: unknown, fallback: string) => {
   return fallback;
 };
 
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+const getErrorPayload = (error: unknown) => {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    return (error as { response?: { data?: unknown } }).response?.data;
+  }
 
-const buildAlertHtml = (payload: unknown) => {
-  const source = unwrapPayload(payload);
+  return null;
+};
 
-  if (source === null || source === undefined) {
+const getResponseDetail = (payload: unknown) => {
+  if (!isRecord(payload)) {
     return "";
   }
 
-  const serialized = typeof source === "string" ? source : JSON.stringify(source, null, 2);
+  const parts = [payload.code, payload.name, payload.className]
+    .filter((value): value is string | number => typeof value === "string" || typeof value === "number")
+    .map(String);
 
-  if (!serialized || serialized === "{}" || serialized === "[]") {
-    return "";
-  }
-
-  const preview = serialized.length > 2200 ? `${serialized.slice(0, 2200)}\n...` : serialized;
-
-  return `
-    <div style="text-align:left;margin-top:8px;">
-      <div style="margin-bottom:8px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;">
-        Server response
-      </div>
-      <div style="max-height:320px;overflow:auto;border:1px solid #cbd5e1;border-radius:14px;background:#0f172a;padding:14px;">
-        <pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.55;color:#e2e8f0;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">${escapeHtml(preview)}</pre>
-      </div>
-    </div>
-  `;
-};
-
-const showServerResponseAlert = async (
-  payload: unknown,
-  fallbackTitle: string,
-  icon: "success" | "error" = "success",
-) => {
-  const title = getResponseMessage(payload, fallbackTitle);
-  const html = buildAlertHtml(payload);
-
-  await Swal.fire({
-    icon,
-    title,
-    html: html || undefined,
-    text: html ? undefined : title,
-    confirmButtonColor: "#069AFF",
-    width: 760,
-  });
-};
-
-const showServerErrorAlert = async (error: unknown, fallbackTitle: string) => {
-  const payload =
-    typeof error === "object" && error !== null && "response" in error
-      ? (error as { response?: { data?: unknown } }).response?.data
-      : null;
-
-  if (payload) {
-    await showServerResponseAlert(payload, fallbackTitle, "error");
-    return;
-  }
-
-  await Swal.fire({
-    icon: "error",
-    title: fallbackTitle,
-    text: getErrorMessage(error),
-    confirmButtonColor: "#069AFF",
-    width: 640,
-  });
+  return parts.join(" • ");
 };
 
 const getOtpChallenge = (payload: unknown): OtpChallenge | null => {
@@ -352,6 +306,15 @@ const getOtpChallenge = (payload: unknown): OtpChallenge | null => {
     email: typeof payload.data.email === "string" ? payload.data.email : undefined,
     expiresAt: typeof payload.data.expiresAt === "string" ? payload.data.expiresAt : undefined,
   };
+};
+
+const toIsoDateTime = (value: string) => {
+  if (!value.trim()) {
+    return "";
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
 };
 
 const getCollectionRows = (payload: unknown, key: string) => {
@@ -480,6 +443,68 @@ function DetailGrid({
         {!items.length && <EmptyPanel label="No snapshot data returned." />}
       </div>
     </section>
+  );
+}
+
+function ToastViewport({
+  toasts,
+  onDismiss,
+}: {
+  toasts: ToastNotice[];
+  onDismiss: (id: number) => void;
+}) {
+  if (!toasts.length) {
+    return null;
+  }
+
+  return (
+    <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-3 sm:right-6 sm:top-6">
+      {toasts.map((toast) => {
+        const toneClass =
+          toast.tone === "success"
+            ? "border-emerald-200 bg-white dark:border-emerald-400/30 dark:bg-slate-950"
+            : toast.tone === "error"
+              ? "border-red-200 bg-white dark:border-red-400/30 dark:bg-slate-950"
+              : toast.tone === "warning"
+                ? "border-amber-200 bg-white dark:border-amber-400/30 dark:bg-slate-950"
+                : "border-[#069AFF]/30 bg-white dark:border-[#069AFF]/40 dark:bg-slate-950";
+
+        const iconClass =
+          toast.tone === "success"
+            ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-200"
+            : toast.tone === "error"
+              ? "bg-red-50 text-red-600 dark:bg-red-400/10 dark:text-red-200"
+              : toast.tone === "warning"
+                ? "bg-amber-50 text-amber-600 dark:bg-amber-400/10 dark:text-amber-200"
+                : "bg-[#069AFF]/10 text-[#069AFF] dark:bg-[#069AFF]/15 dark:text-sky-200";
+
+        const Icon = toast.tone === "success" ? CheckCircle2 : AlertTriangle;
+
+        return (
+          <div key={toast.id} className={`rounded-2xl border shadow-xl shadow-slate-950/10 ${toneClass}`}>
+            <div className="flex items-start gap-3 p-4">
+              <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
+                <Icon className="h-4 w-4" aria-hidden="true" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-950 dark:text-white">{toast.title}</p>
+                {toast.detail ? <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{toast.detail}</p> : null}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onDismiss(toast.id)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
+                aria-label="Dismiss notification"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1212,10 +1237,12 @@ function UserControlsModal({
   target,
   onClose,
   onRefresh,
+  showToast,
 }: {
   target: UserControlsTarget;
   onClose: () => void;
   onRefresh: () => Promise<void>;
+  showToast: (payload: unknown, fallback: string, tone: ToastTone) => void;
 }) {
   const [loadingAction, setLoadingAction] = useState("");
   const [walletValues, setWalletValues] = useState({
@@ -1226,8 +1253,11 @@ function UserControlsModal({
     proofOfPayment: "",
     paymentDate: "",
   });
+  const [pendingFundingPayload, setPendingFundingPayload] = useState<Record<string, unknown> | null>(null);
   const [fundWalletChallenge, setFundWalletChallenge] = useState<OtpChallenge | null>(null);
   const [fundWalletOtpCode, setFundWalletOtpCode] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [uploadingProof, setUploadingProof] = useState(false);
 
   const runAction = async (actionKey: string, request: () => Promise<unknown>, fallbackMessage: string) => {
     setLoadingAction(actionKey);
@@ -1235,9 +1265,9 @@ function UserControlsModal({
     try {
       const response = await request();
       await onRefresh();
-      await showServerResponseAlert(response, fallbackMessage);
+      showToast(response, fallbackMessage, "success");
     } catch (error) {
-      await showServerErrorAlert(error, "User control request failed");
+      showToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "User control request failed", "error");
     } finally {
       setLoadingAction("");
     }
@@ -1254,7 +1284,7 @@ function UserControlsModal({
       sourceLedger: walletValues.sourceLedger.trim(),
       narration: walletValues.narration.trim(),
       proofOfPayment: walletValues.proofOfPayment.trim(),
-      paymentDate: walletValues.paymentDate.trim(),
+      paymentDate: toIsoDateTime(walletValues.paymentDate),
     }).reduce<Record<string, unknown>>((accumulator, [key, value]) => {
       if (value === "" || value === undefined || (typeof value === "number" && Number.isNaN(value))) {
         return accumulator;
@@ -1264,27 +1294,22 @@ function UserControlsModal({
       return accumulator;
     }, {});
 
-    const payload = fundWalletChallenge
-      ? {
-          ...basePayload,
-          otpChallengeId: fundWalletChallenge.challengeId,
-          otpCode: fundWalletOtpCode.trim(),
-        }
-      : basePayload;
-
     try {
-      const response = await adminService.fundUserWallet(target.userId, payload);
+      const response = await adminService.fundUserWallet(target.userId, basePayload);
       const challenge = getOtpChallenge(response);
 
       if (challenge) {
         setFundWalletChallenge(challenge);
-        await showServerResponseAlert(response, "OTP verification required to fund wallet");
+        setPendingFundingPayload(basePayload);
+        showToast(response, "OTP verification required to fund wallet", "warning");
         return;
       }
 
       await onRefresh();
+      setPendingFundingPayload(null);
       setFundWalletChallenge(null);
       setFundWalletOtpCode("");
+      setProofFile(null);
       setWalletValues({
         amount: "",
         walletType: "wallet",
@@ -1293,9 +1318,69 @@ function UserControlsModal({
         proofOfPayment: "",
         paymentDate: "",
       });
-      await showServerResponseAlert(response, `Wallet funded for ${target.userName}`);
+      showToast(response, `Wallet funded for ${target.userName}`, "success");
     } catch (error) {
-      await showServerErrorAlert(error, "Wallet funding request failed");
+      showToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Wallet funding request failed", "error");
+    } finally {
+      setLoadingAction("");
+    }
+  };
+
+  const uploadProofOfPayment = async () => {
+    if (!proofFile) {
+      showToast({ message: "Select a proof file before uploading" }, "Select a proof file before uploading", "warning");
+      return;
+    }
+
+    setUploadingProof(true);
+
+    try {
+      const response = await adminService.uploadFile(proofFile);
+      const uploadedUrl = typeof unwrapPayload(response) === "string" ? String(unwrapPayload(response)) : "";
+
+      if (uploadedUrl) {
+        setWalletValues((current) => ({ ...current, proofOfPayment: uploadedUrl }));
+      }
+
+      showToast(response, "Proof uploaded successfully", "success");
+    } catch (error) {
+      showToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Proof upload failed", "error");
+    } finally {
+      setUploadingProof(false);
+    }
+  };
+
+  const confirmFundWalletOtp = async () => {
+    if (!fundWalletChallenge || !pendingFundingPayload) {
+      showToast({ message: "Funding challenge is missing. Start the funding request again." }, "Funding challenge is missing", "error");
+      return;
+    }
+
+    setLoadingAction("fund-wallet-otp");
+
+    try {
+      const response = await adminService.fundUserWallet(target.userId, {
+        ...pendingFundingPayload,
+        otpChallengeId: fundWalletChallenge.challengeId,
+        otpCode: fundWalletOtpCode.trim(),
+      });
+
+      await onRefresh();
+      setPendingFundingPayload(null);
+      setFundWalletChallenge(null);
+      setFundWalletOtpCode("");
+      setProofFile(null);
+      setWalletValues({
+        amount: "",
+        walletType: "wallet",
+        sourceLedger: "operations",
+        narration: "",
+        proofOfPayment: "",
+        paymentDate: "",
+      });
+      showToast(response, `Wallet funded for ${target.userName}`, "success");
+    } catch (error) {
+      showToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Wallet funding confirmation failed", "error");
     } finally {
       setLoadingAction("");
     }
@@ -1511,13 +1596,41 @@ function UserControlsModal({
                   />
                 </label>
 
+                <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                  <div>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Upload proof manually</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Select the receipt or transfer proof, upload it, then use the returned URL for this funding request.
+                    </p>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
+                    className="block w-full text-sm font-medium text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-[#069AFF] file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-[#0588e0] dark:text-slate-200"
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {proofFile ? `Selected: ${proofFile.name}` : "No proof file selected"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void uploadProofOfPayment()}
+                      disabled={uploadingProof || !proofFile}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                    >
+                      {uploadingProof ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />}
+                      Upload proof
+                    </button>
+                  </div>
+                </div>
+
                 <label>
                   <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Payment date</span>
                   <input
-                    type="text"
+                    type="datetime-local"
                     value={walletValues.paymentDate}
                     onChange={(event) => setWalletValues((current) => ({ ...current, paymentDate: event.target.value }))}
-                    placeholder="2026-06-11T10:30:00.000Z"
                     className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
                   />
                 </label>
@@ -1525,36 +1638,6 @@ function UserControlsModal({
                 <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 px-4 py-3 text-xs font-medium leading-6 text-slate-600 dark:border-[#069AFF]/25 dark:bg-[#069AFF]/10 dark:text-slate-300">
                   Submit only the fields the backend expects. `amount` is required. Funding proof and payment timestamp are sent only when provided.
                 </div>
-
-                {fundWalletChallenge && (
-                  <div className="grid gap-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-400/20 dark:bg-amber-400/10">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-100">OTP confirmation required</p>
-                      <p className="mt-2 text-sm font-medium leading-6 text-amber-800 dark:text-amber-100">
-                        Confirm this wallet funding with the OTP sent via {fundWalletChallenge.channel ?? "email"}.
-                      </p>
-                      <div className="mt-2 space-y-1 text-xs font-semibold text-amber-700 dark:text-amber-200">
-                        {fundWalletChallenge.email ? <p>Recipient: {fundWalletChallenge.email}</p> : null}
-                        {fundWalletChallenge.expiresAt ? <p>Expires: {formatDate(fundWalletChallenge.expiresAt)}</p> : null}
-                        <p>Challenge ID: {fundWalletChallenge.challengeId}</p>
-                      </div>
-                    </div>
-
-                    <label>
-                      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">OTP code</span>
-                      <input
-                        required
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        value={fundWalletOtpCode}
-                        onChange={(event) => setFundWalletOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                        placeholder="482193"
-                        className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold tracking-[0.2em] text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                      />
-                    </label>
-                  </div>
-                )}
 
                 <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
                   <button
@@ -1566,11 +1649,11 @@ function UserControlsModal({
                   </button>
                   <button
                     type="submit"
-                    disabled={Boolean(loadingAction) || Boolean(fundWalletChallenge && fundWalletOtpCode.trim().length < 6)}
+                    disabled={Boolean(loadingAction) || uploadingProof}
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {loadingAction === "fund-wallet" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <WalletCards className="h-4 w-4" aria-hidden="true" />}
-                    {fundWalletChallenge ? "Confirm funding" : "Fund wallet"}
+                    Fund wallet
                   </button>
                 </div>
               </form>
@@ -1578,11 +1661,129 @@ function UserControlsModal({
           </div>
         </div>
       </div>
+
+      {fundWalletChallenge && (
+        <OtpChallengeModal
+          title="Confirm wallet funding"
+          description="Enter the OTP sent for this manual funding request."
+          challenge={fundWalletChallenge}
+          otpCode={fundWalletOtpCode}
+          onChange={setFundWalletOtpCode}
+          onClose={() => {
+            if (loadingAction === "fund-wallet-otp") {
+              return;
+            }
+            setFundWalletChallenge(null);
+            setFundWalletOtpCode("");
+            setPendingFundingPayload(null);
+          }}
+          onSubmit={() => void confirmFundWalletOtp()}
+          submitting={loadingAction === "fund-wallet-otp"}
+        />
+      )}
     </div>
   );
 }
 
-function ActionModal({ action, onClose }: { action: FormAction; onClose: () => void }) {
+function OtpChallengeModal({
+  title,
+  description,
+  challenge,
+  otpCode,
+  onChange,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  title: string;
+  description: string;
+  challenge: OtpChallenge;
+  otpCode: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+  submitting: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="border-b border-slate-100 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">OTP confirmation</p>
+              <h3 className="mt-1 text-xl font-bold text-slate-950 dark:text-white">{title}</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{description}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+              aria-label="Close OTP confirmation"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 p-5">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-400/20 dark:bg-amber-400/10">
+            <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+              OTP sent via {challenge.channel ?? "email"}.
+            </p>
+            <div className="mt-2 space-y-1 text-xs font-semibold text-amber-700 dark:text-amber-200">
+              {challenge.email ? <p>Recipient: {challenge.email}</p> : null}
+              {challenge.expiresAt ? <p>Expires: {formatDate(challenge.expiresAt)}</p> : null}
+              <p>Challenge ID: {challenge.challengeId}</p>
+            </div>
+          </div>
+
+          <label>
+            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">OTP code</span>
+            <input
+              required
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={otpCode}
+              onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="482193"
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold tracking-[0.2em] text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            />
+          </label>
+
+          <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={submitting || otpCode.trim().length < 6}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ShieldCheck className="h-4 w-4" aria-hidden="true" />}
+              Confirm funding
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionModal({
+  action,
+  onClose,
+  showToast,
+}: {
+  action: FormAction;
+  onClose: () => void;
+  showToast: (payload: unknown, fallback: string, tone: ToastTone) => void;
+}) {
   const [values, setValues] = useState<Record<string, string>>(action.initialValues ?? {});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -1596,7 +1797,7 @@ function ActionModal({ action, onClose }: { action: FormAction; onClose: () => v
       await action.onSubmit(values);
     } catch (submitError) {
       setError(getErrorMessage(submitError));
-      await showServerErrorAlert(submitError, "User action failed");
+      showToast(getErrorPayload(submitError) ?? { message: getErrorMessage(submitError) }, "User action failed", "error");
       setSubmitting(false);
     }
   };
@@ -2173,6 +2374,7 @@ export default function UsersPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
   const { allowed: canOpenUsers } = useRouteAccess("/users");
+  const toastIdRef = useRef(0);
   const [usersState, setUsersState] = useState<UsersState>({
     payload: null,
     rows: [],
@@ -2185,6 +2387,7 @@ export default function UsersPage() {
   const [userDashboard, setUserDashboard] = useState<UserDashboardState | null>(null);
   const [userControls, setUserControls] = useState<UserControlsTarget | null>(null);
   const [formAction, setFormAction] = useState<FormAction | null>(null);
+  const [toasts, setToasts] = useState<ToastNotice[]>([]);
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -2248,11 +2451,39 @@ export default function UsersPage() {
     router.replace("/auth/login");
   };
 
+  const dismissToast = (id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  };
+
+  const showServerToast = (payload: unknown, fallback: string, tone: ToastTone) => {
+    toastIdRef.current += 1;
+    const id = toastIdRef.current;
+
+    setToasts((current) => [
+      {
+        id,
+        tone,
+        title: getResponseMessage(payload, fallback),
+        detail: getResponseDetail(payload) || undefined,
+      },
+      ...current,
+    ].slice(0, 4));
+
+    setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 4500);
+  };
+
   const submitAndRefresh = async (request: () => Promise<unknown>, fallbackMessage: string) => {
-    const response = await request();
-    await refreshUsers();
-    setFormAction(null);
-    await showServerResponseAlert(response, fallbackMessage);
+    try {
+      const response = await request();
+      await refreshUsers();
+      setFormAction(null);
+      showServerToast(response, fallbackMessage, "success");
+    } catch (error) {
+      showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "User action failed", "error");
+      throw error;
+    }
   };
 
   const openDetail = (title: string, request: () => Promise<unknown>) => {
@@ -2368,6 +2599,7 @@ export default function UsersPage() {
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">
+      <ToastViewport toasts={toasts} onDismiss={dismissToast} />
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-[#07111f]/80">
         <div className="mx-auto flex max-w-[1480px] flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between sm:px-8">
           <div>
@@ -2539,8 +2771,8 @@ export default function UsersPage() {
 
       {detail && <DetailModal detail={detail} onClose={() => setDetail(null)} />}
       {userDashboard && <UserDashboardModal key={userDashboard.userId} dashboard={userDashboard} onClose={() => setUserDashboard(null)} />}
-      {userControls && <UserControlsModal target={userControls} onClose={() => setUserControls(null)} onRefresh={refreshUsers} />}
-      {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
+      {userControls && <UserControlsModal target={userControls} onClose={() => setUserControls(null)} onRefresh={refreshUsers} showToast={showServerToast} />}
+      {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} showToast={showServerToast} />}
     </main>
   );
 }

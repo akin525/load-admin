@@ -27,6 +27,11 @@ type VerifyTwoFactorPayload = {
     code: string;
 };
 
+type ChangePasswordPayload = {
+    oldPassword: string;
+    newPassword: string;
+};
+
 type AdminPayload = Record<string, unknown>;
 type QueryParams = Record<string, string | number | boolean | undefined>;
 
@@ -41,6 +46,12 @@ export const adminService = {
     // POST /admin-login/verify-2fa
     verifyAdminTwoFactor: async (payload: VerifyTwoFactorPayload): Promise<LoginResponse> => {
         const response = await api.post('/admin-login/verify-2fa', payload);
+        return response.data;
+    },
+
+    // PUT /admin/change-password
+    changePassword: async (payload: ChangePasswordPayload): Promise<unknown> => {
+        const response = await api.put('/admin/change-password', payload);
         return response.data;
     },
 
@@ -263,6 +274,18 @@ export const adminService = {
     // POST /admin/users/:userId/fund-wallet
     fundUserWallet: async (userId: string, payload: AdminPayload): Promise<LoginResponse> => {
         const response = await api.post(`/admin/users/${userId}/fund-wallet`, payload);
+        return response.data;
+    },
+
+    // POST /file/upload
+    uploadFile: async (file: File): Promise<unknown> => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await api.post('/file/upload', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
         return response.data;
     },
 
