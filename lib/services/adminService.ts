@@ -146,9 +146,9 @@ export const adminService = {
         return response.data;
     },
 
-    // PUT /admin/roles/:id
+    // PATCH /roles/:id
     updateRole: async (id: string, roleData: AdminPayload): Promise<unknown> => {
-        const response = await api.put(`/admin/roles/${id}`, roleData);
+        const response = await api.patch(`/roles/${id}`, roleData);
         return response.data;
     },
 

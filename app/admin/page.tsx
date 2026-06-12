@@ -1869,20 +1869,24 @@ function PermissionLibrary({ permissions }: { permissions: Record<string, unknow
   );
 }
 
-function RoleCreateModal({
+function RoleFormModal({
   permissions,
+  initialData,
   onClose,
-  onCreate,
+  onSave,
 }: {
   permissions: Record<string, unknown>[];
+  initialData?: { id?: string; name: string; permissionIds: string[] } | null;
   onClose: () => void;
-  onCreate: (name: string, permissionIds: string[]) => Promise<void>;
+  onSave: (name: string, permissionIds: string[]) => Promise<void>;
 }) {
-  const [name, setName] = useState("");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [name, setName] = useState(initialData?.name || "");
+  const [selectedIds, setSelectedIds] = useState<string[]>(initialData?.permissionIds || []);
   const [query, setQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  const isEditing = !!initialData?.id;
 
   const filteredPermissions = permissions.filter((permission) => {
     const label = String(getRecordValue(permission, ["name", "title", "permission", "action"]) ?? "");
@@ -1903,7 +1907,10 @@ function RoleCreateModal({
   };
 
   const toggleGroup = (groupPermissions: Record<string, unknown>[]) => {
-    const ids = groupPermissions.map(getId).filter(Boolean);
+    const ids = groupPermissions.map(p => {
+      const rawId = isRecord(p) ? getId(p) : String(p);
+      return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
+    }).filter(Boolean) as string[];
     const allSelected = ids.every((id) => selectedSet.has(id));
 
     setSelectedIds((current) => {
@@ -1931,7 +1938,7 @@ function RoleCreateModal({
 
     setSubmitting(true);
     try {
-      await onCreate(name.trim(), selectedIds);
+      await onSave(name.trim(), selectedIds);
     } catch (submitError) {
       setError(getErrorMessage(submitError));
       setSubmitting(false);
@@ -1944,7 +1951,9 @@ function RoleCreateModal({
         <div className="flex items-start justify-between gap-5 border-b border-slate-100 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#069AFF]">Role control</p>
-            <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">Create role with permissions</h2>
+            <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">
+              {isEditing ? "Update role permissions" : "Create role with permissions"}
+            </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
               Select one or more permissions. The selected permission IDs are submitted as an array to the role endpoint.
             </p>
@@ -1986,7 +1995,10 @@ function RoleCreateModal({
             <div className="mt-5 grid gap-3">
               <button
                 type="button"
-                onClick={() => setSelectedIds(filteredPermissions.map(getId).filter(Boolean))}
+                onClick={() => setSelectedIds(filteredPermissions.map(p => {
+                  const rawId = isRecord(p) ? getId(p) : String(p);
+                  return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
+                }).filter(Boolean) as string[])}
                 className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
               >
                 Select visible
@@ -2004,7 +2016,7 @@ function RoleCreateModal({
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-                Create role
+                {isEditing ? "Update role" : "Create role"}
               </button>
             </div>
           </aside>
@@ -2025,7 +2037,10 @@ function RoleCreateModal({
 
             <div className="max-h-[58vh] overflow-y-auto pr-1">
               {Object.entries(groupedPermissions).map(([group, groupPermissions]) => {
-                const groupIds = groupPermissions.map(getId).filter(Boolean);
+                const groupIds = groupPermissions.map(p => {
+                  const rawId = isRecord(p) ? getId(p) : String(p);
+                  return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
+                }).filter(Boolean) as string[];
                 const allSelected = groupIds.length > 0 && groupIds.every((id) => selectedSet.has(id));
 
                 return (
@@ -2045,9 +2060,11 @@ function RoleCreateModal({
                     </div>
                     <div className="grid gap-2 p-3 sm:grid-cols-2">
                       {groupPermissions.map((permission, index) => {
-                        const id = getId(permission);
-                        const label = String(getRecordValue(permission, ["name", "title", "permission", "action"]) ?? `Permission ${index + 1}`);
-                        const checked = selectedSet.has(id);
+                        const rawId = isRecord(permission) ? getId(permission) : String(permission);
+                        const permissionName = String(getRecordValue(permission, ["name", "title", "permission", "action", "slug"]) ?? rawId);
+                        const id = permissionName; // Use the string name/action as the ID for submission
+                        const label = String(getRecordValue(permission, ["title", "name", "action"]) ?? `Permission ${index + 1}`);
+                        const checked = id ? selectedSet.has(id) : false;
 
                         return (
                           <label
@@ -2143,7 +2160,7 @@ export default function AdminCenterPage() {
   const [appLoanDetail, setAppLoanDetail] = useState<AppLoanDetailState | null>(null);
   const [bankoneSyncResult, setBankoneSyncResult] = useState<BankoneSyncResultState | null>(null);
   const [formAction, setFormAction] = useState<FormAction | null>(null);
-  const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [roleModalData, setRoleModalData] = useState<{ id?: string; name: string; permissionIds: string[] } | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const canOpenAdminCenter = canAccessRoute(adminSession, "/admin");
   const visibleSections = sections.filter((section) => canAccessAdminSection(adminSession, section.key as "admins" | "roles" | "kyc" | "tiers" | "support" | "content"));
@@ -2275,13 +2292,53 @@ export default function AdminCenterPage() {
   };
 
   const openCreateRole = () => {
-    setRoleModalOpen(true);
+    setRoleModalData({ name: "", permissionIds: [] });
   };
 
-  const createRole = async (name: string, permissionIds: string[]) => {
-    await adminService.createRole({ name, permissions: permissionIds });
+  const openEditRole = async (row: Record<string, unknown>) => {
+    const id = getId(row);
+    if (!id) return;
+
+    setBusyAction(`role-${id}`);
+    try {
+      const name = String(getRecordValue(row, ["name", "title", "role"]) ?? "");
+      let perms = Array.isArray(row.permissions) 
+        ? row.permissions.map(p => {
+            const rawId = isRecord(p) ? getId(p) : String(p);
+            return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
+          }).filter(Boolean) as string[]
+        : [];
+
+      // If permissions are not embedded, fetch them
+      if (perms.length === 0) {
+        const payload = await adminService.getRolePermissions(id);
+        const permsArray = unwrapPayload(payload);
+        if (Array.isArray(permsArray)) {
+          perms = permsArray.map(p => {
+            const rawId = isRecord(p) ? getId(p) : String(p);
+            return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
+          }).filter(Boolean) as string[];
+        }
+      }
+
+      setRoleModalData({ id, name, permissionIds: perms });
+    } catch (error) {
+      console.error("Failed to load role permissions", error);
+      const name = String(getRecordValue(row, ["name", "title", "role"]) ?? "");
+      setRoleModalData({ id, name, permissionIds: [] });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const saveRole = async (name: string, permissionIds: string[]) => {
+    if (roleModalData?.id) {
+      await adminService.updateRole(roleModalData.id, { name, permissions: permissionIds });
+    } else {
+      await adminService.createRole({ name, permissions: permissionIds });
+    }
     await refreshData();
-    setRoleModalOpen(false);
+    setRoleModalData(null);
   };
 
   const openCreateUser = () => {
@@ -2965,14 +3022,24 @@ export default function AdminCenterPage() {
                             </span>
                           </td>
                           <td className="px-5 py-4">
-                            <button
-                              type="button"
-                              disabled={!id || busyAction === `role-${id}`}
-                              onClick={() => disableRole(id)}
-                              className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
-                            >
-                              Disable
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                disabled={!id}
+                                onClick={() => openEditRole(row)}
+                                className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!id || busyAction === `role-${id}`}
+                                onClick={() => disableRole(id)}
+                                className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                              >
+                                Disable
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -3606,11 +3673,12 @@ export default function AdminCenterPage() {
       {appLoanDetail && <AppLoanDetailsModal loan={appLoanDetail} onClose={() => setAppLoanDetail(null)} />}
       {bankoneSyncResult && <BankoneSyncResultModal result={bankoneSyncResult} onClose={() => setBankoneSyncResult(null)} />}
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
-      {roleModalOpen && (
-        <RoleCreateModal
+      {roleModalData && (
+        <RoleFormModal
           permissions={permissions}
-          onClose={() => setRoleModalOpen(false)}
-          onCreate={createRole}
+          initialData={roleModalData}
+          onClose={() => setRoleModalData(null)}
+          onSave={saveRole}
         />
       )}
     </main>
