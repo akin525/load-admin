@@ -17,9 +17,17 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
+const normalizeMessage = (value: unknown) => (typeof value === 'string' ? value.toLowerCase().trim() : '');
+
+const hasStoredToken = () => typeof window !== 'undefined' && Boolean(localStorage.getItem('token'));
+
 const shouldForceLogout = (error: unknown) => {
-    if (!axios.isAxiosError(error)) {
+    if (!axios.isAxiosError(error) || !hasStoredToken()) {
         return false;
+    }
+
+    if (error.response?.status === 401) {
+        return true;
     }
 
     const payload = error.response?.data;
@@ -38,11 +46,20 @@ const shouldForceLogout = (error: unknown) => {
         };
     };
 
-    return response.code === 401
-        && response.name === 'NotAuthenticated'
-        && response.className === 'not-authenticated'
-        && response.message === 'jwt expired'
-        && response.data?.name === 'TokenExpiredError';
+    const message = normalizeMessage(response.message);
+    const responseName = normalizeMessage(response.name);
+    const className = normalizeMessage(response.className);
+    const dataName = normalizeMessage(response.data?.name);
+
+    return response.code === 401 && (
+        responseName === 'notauthenticated'
+        || className === 'not-authenticated'
+        || dataName === 'tokenexpirederror'
+        || message.includes('jwt expired')
+        || message.includes('token expired')
+        || message.includes('unauthorized')
+        || message.includes('not authenticated')
+    );
 };
 
 const forceLogout = () => {

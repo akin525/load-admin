@@ -338,7 +338,7 @@ function SidebarContent({
                   Role
                 </p>
                 <p className="mt-1 text-xs font-black text-slate-800 dark:text-white">
-                  {adminRole || "Administrator"}
+                  Admin
                 </p>
               </div>
             </div>
@@ -420,10 +420,10 @@ function SidebarContent({
 
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-black text-slate-950 dark:text-white">
-                  {adminName || "System Admin"}
+                  System Admin
                 </p>
                 <p className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  {adminRole || "Authenticated session"}
+                  Authenticated session
                 </p>
               </div>
 
