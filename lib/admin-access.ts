@@ -41,6 +41,7 @@ type RouteKey =
   | "/transfers"
   | "/audit-logs"
   | "/email-logs"
+  | "/faqs"
   | "/xpress-webhook-logs";
 
 export type AdminSectionKey = "admins" | "roles" | "kyc" | "tiers" | "support" | "content";
@@ -384,6 +385,7 @@ const routeScopeMap: Record<RouteKey, string> = {
   "/transfers": "transfers",
   "/audit-logs": "auditLogs",
   "/email-logs": "emailLogs",
+  "/faqs": "content",
   "/xpress-webhook-logs": "webhookLogs",
 };
 

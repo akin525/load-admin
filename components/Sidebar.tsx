@@ -15,6 +15,7 @@ import {
   CreditCard,
   FileSearch,
   FileText,
+  HelpCircle,
   KeyRound,
   Landmark,
   LayoutDashboard,
@@ -72,6 +73,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/admin", label: "Admin Center", icon: ShieldCheck },
       { href: "/system-settings", label: "System Settings", icon: Settings2 },
+      { href: "/faqs", label: "FAQs", icon: HelpCircle },
       { href: "/email-logs", label: "Email Logs", icon: FileText },
       { href: "/audit-logs", label: "Audit Logs", icon: FileText },
       { href: "/reconciliation", label: "Reconciliation", icon: FileSearch, badge: "New" },
