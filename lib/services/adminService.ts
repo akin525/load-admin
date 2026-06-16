@@ -607,6 +607,18 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/transfers
+    getTransfers: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/transfers', { params });
+        return response.data;
+    },
+
+    // GET /admin/transfers/:id
+    getTransferById: async (id: string): Promise<unknown> => {
+        const response = await api.get(`/admin/transfers/${id}`);
+        return response.data;
+    },
+
     // GET /admin/email-logs
     getEmailLogs: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/email-logs', { params });

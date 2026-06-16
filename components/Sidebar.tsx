@@ -22,6 +22,8 @@ import {
   LogOut,
   Menu,
   Moon,
+  Search,
+  Send,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -60,6 +62,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/fees", label: "Fees", icon: Landmark },
       { href: "/wallet-transactions", label: "Wallet Ledger", icon: WalletCards },
+      { href: "/transfers", label: "Transfers", icon: Send },
       { href: "/xpress-webhook-logs", label: "Webhook Logs", icon: Activity },
       { href: "/reports", label: "Reports", icon: BarChart3 },
     ],

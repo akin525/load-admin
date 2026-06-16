@@ -38,6 +38,7 @@ type RouteKey =
   | "/fees"
   | "/system-settings"
   | "/wallet-transactions"
+  | "/transfers"
   | "/audit-logs"
   | "/email-logs"
   | "/xpress-webhook-logs";
@@ -365,6 +366,7 @@ const scopeMatchers: Record<string, string[][]> = {
     ["general", "setting"],
   ],
   walletTransactions: [["wallet", "transaction"], ["wallet"], ["transaction"], ["ledger"]],
+  transfers: [["transfer"], ["payout"], ["disbursement"]],
   auditLogs: [["audit", "log"], ["audit"], ["log"]],
   emailLogs: [["email", "log"], ["mail", "log"], ["email"], ["mail"], ["template"]],
   webhookLogs: [["webhook", "log"], ["webhook"], ["xpress"]],
@@ -379,6 +381,7 @@ const routeScopeMap: Record<RouteKey, string> = {
   "/fees": "fees",
   "/system-settings": "systemSettings",
   "/wallet-transactions": "walletTransactions",
+  "/transfers": "transfers",
   "/audit-logs": "auditLogs",
   "/email-logs": "emailLogs",
   "/xpress-webhook-logs": "webhookLogs",
