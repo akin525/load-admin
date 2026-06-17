@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
 import { extractAdminSession, persistAdminSession, withRolePermissions } from "@/lib/admin-access";
+import { OtpInput } from "@/components/OtpInput";
 
 type TwoFactorChallenge = {
   challengeId: string;
@@ -286,27 +287,23 @@ export default function LoginPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="verificationCode">
-                      Verification code
-                    </label>
-                    <div className="relative">
-                      <ShieldCheck
-                        className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
-                        aria-hidden="true"
-                      />
-                      <input
-                        id="verificationCode"
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        value={verificationCode}
-                        onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                        className="h-12 w-full rounded-lg border border-slate-200 bg-white pl-11 pr-4 text-sm font-medium tracking-[0.3em] text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-950/70 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-sky-400 dark:focus:ring-sky-400/20"
-                        placeholder="123456"
-                        required
-                      />
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-200" htmlFor="verificationCode">
+                        Verification code
+                      </label>
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">6-digit OTP</span>
                     </div>
+                    
+                    <OtpInput
+                      value={verificationCode}
+                      onChange={setVerificationCode}
+                      disabled={loading}
+                    />
+                    
+                    <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+                      Didn&apos;t receive the code? Check your spam folder or wait a moment.
+                    </p>
                   </div>
 
                   <div className="flex gap-3">

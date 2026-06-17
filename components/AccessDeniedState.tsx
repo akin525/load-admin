@@ -4,11 +4,11 @@ import Link from "next/link";
 import { LockKeyhole, ShieldAlert } from "lucide-react";
 
 export function AccessDeniedState({
-  title,
-  description,
+  title = "Access restricted",
+  description = "You do not have the necessary permissions to view this section of the EazyCredit administration center.",
 }: {
-  title: string;
-  description: string;
+  title?: string;
+  description?: string;
 }) {
   return (
     <main className="min-h-screen px-6 py-10 text-slate-950 dark:text-white">

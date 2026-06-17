@@ -30,6 +30,7 @@ import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { OtpInput } from "@/components/OtpInput";
 
 type DataKey = "loans" | "loanPackages" | "loanTypes" | "appLoans";
 
@@ -542,9 +543,17 @@ function ActionModal({ action, onClose }: { action: FormAction; onClose: () => v
                 "mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-[#069AFF] dark:focus:ring-[#069AFF]/15";
 
               return (
-                <label key={field.name} className={field.type === "textarea" ? "sm:col-span-2" : ""}>
+                <label key={field.name} className={field.type === "textarea" || field.name === "otpCode" ? "sm:col-span-2" : ""}>
                   <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{field.label}</span>
-                  {field.type === "textarea" ? (
+                  {field.name === "otpCode" ? (
+                    <div className="mt-2">
+                      <OtpInput
+                        value={fieldValue}
+                        onChange={(val) => setValues((current) => ({ ...current, [field.name]: val }))}
+                        disabled={submitting}
+                      />
+                    </div>
+                  ) : field.type === "textarea" ? (
                     <textarea
                       required={field.required}
                       value={fieldValue}

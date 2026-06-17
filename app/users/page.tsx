@@ -33,6 +33,7 @@ import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { OtpInput } from "@/components/OtpInput";
 
 type DetailState = {
   title: string;
@@ -1738,19 +1739,14 @@ function OtpChallengeModal({
             </div>
           </div>
 
-          <label>
-            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">OTP code</span>
-            <input
-              required
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
+          <div className="space-y-3">
+            <label className="text-sm font-bold text-slate-700 dark:text-slate-200">OTP code</label>
+            <OtpInput
               value={otpCode}
-              onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="482193"
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold tracking-[0.2em] text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              onChange={onChange}
+              disabled={submitting}
             />
-          </label>
+          </div>
 
           <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
             <button
