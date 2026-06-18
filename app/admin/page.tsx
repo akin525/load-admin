@@ -95,6 +95,7 @@ type UserTransactionsState = DetailState & {
 
 type AppLoanDetailState = DetailState;
 type BankoneSyncResultState = DetailState;
+type KycDetailState = DetailState;
 type OtpChallenge = {
   challengeId: string;
   channel?: string;
@@ -440,6 +441,8 @@ const getCollectionTotal = (payload: unknown, key: string) => {
 const getDashboardCollection = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => getCollectionRows(payload, key);
 
 const getDashboardTotal = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => getCollectionTotal(payload, key);
+
+const isImageUrl = (value: unknown) => typeof value === "string" && /^https?:\/\/.+\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value);
 
 const sumCurrencyRows = (rows: Record<string, unknown>[], keys: string[]) =>
   rows.reduce((total, row) => {
@@ -886,6 +889,300 @@ function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => 
                   </p>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KycDocumentCard({
+  label,
+  helper,
+  url,
+}: {
+  label: string;
+  helper: string;
+  url?: string;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+        <div>
+          <h3 className="text-sm font-bold text-slate-950 dark:text-white">{label}</h3>
+          <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{helper}</p>
+        </div>
+        {url && (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-9 items-center rounded-xl border border-[#069AFF]/20 bg-[#069AFF]/8 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF]/15 dark:text-sky-200"
+          >
+            Open file
+          </a>
+        )}
+      </div>
+      <div className="bg-slate-50 p-4 dark:bg-slate-950/40">
+        {url ? (
+          <a href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-950/70">
+            {isImageUrl(url) ? (
+              <img src={url} alt={label} className="h-64 w-full object-cover sm:h-72" />
+            ) : (
+              <div className="flex h-64 flex-col items-center justify-center gap-3 text-center sm:h-72">
+                <FileText className="h-10 w-10 text-[#069AFF]" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-bold text-slate-950 dark:text-white">{label}</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">Preview unavailable. Open the uploaded document.</p>
+                </div>
+              </div>
+            )}
+          </a>
+        ) : (
+          <EmptyPanel label="No document was uploaded for this requirement." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function KycDetailsModal({ detail, onClose }: { detail: KycDetailState; onClose: () => void }) {
+  const record = unwrapPayload(detail.data);
+  const containerRecord = isRecord(record) ? record : null;
+  const kyc = containerRecord && isRecord(containerRecord.kyc) ? containerRecord.kyc : containerRecord;
+  const userRecord =
+    containerRecord && isRecord(containerRecord.user)
+      ? containerRecord.user
+      : kyc && isRecord(kyc.user)
+        ? kyc.user
+        : null;
+  const seededDocuments = [
+    {
+      key: "idImagePath",
+      label: "Identity document",
+      helper: "Uploaded government-issued identification.",
+      url: typeof kyc?.idImagePath === "string" ? kyc.idImagePath : undefined,
+    },
+    {
+      key: "selfieImagePath",
+      label: "Selfie verification",
+      helper: "Face capture used for identity comparison.",
+      url: typeof kyc?.selfieImagePath === "string" ? kyc.selfieImagePath : undefined,
+    },
+    {
+      key: "addressImagePath",
+      label: "Proof of address",
+      helper: "Supporting address document for the requested tier.",
+      url: typeof kyc?.addressImagePath === "string" ? kyc.addressImagePath : undefined,
+    },
+  ].filter((item) => item.url);
+
+  const discoveredDocuments = [kyc, userRecord].flatMap((source, sourceIndex) => {
+    if (!source) {
+      return [] as Array<{ key: string; label: string; helper: string; url: string }>;
+    }
+
+    return Object.entries(source)
+      .filter(([key, value]) => isImageUrl(value) && /(image|picture|profile|path|document|proof|selfie|file)/i.test(key))
+      .map(([key, value]) => ({
+        key: `${sourceIndex}-${key}`,
+        label: formatLabel(key),
+        helper: sourceIndex === 0 ? "Uploaded evidence returned with this KYC record." : "Customer file attached to the linked profile.",
+        url: String(value),
+      }));
+  });
+
+  const documentCards = [...seededDocuments, ...discoveredDocuments].filter(
+    (item, index, collection) => collection.findIndex((entry) => entry.url === item.url) === index,
+  );
+
+  const profileItems = kyc
+    ? [
+        { label: "User ID", value: String(getRecordValue(kyc, ["userId", "user_id"]) ?? "Not available") },
+        { label: "Tier request", value: String(getRecordValue(kyc, ["tier", "level"]) ?? "Not available") },
+        { label: "ID type", value: String(getRecordValue(kyc, ["idType"]) ?? "Not available") },
+        { label: "Status", value: String(getRecordValue(kyc, ["status"]) ?? "Pending") },
+      ]
+    : [];
+
+  const idType = String(getRecordValue(kyc ?? {}, ["idType"]) ?? "").toUpperCase();
+  const submittedIdValue = (() => {
+    const kycValue = getRecordValue(kyc ?? {}, ["idNumber", "idNo", "id_value", "documentNumber", "passportNumber", "nin", "bvn"]);
+    if (kycValue) {
+      return String(kycValue);
+    }
+
+    if (!userRecord) {
+      return "Not available";
+    }
+
+    const keyMap: Record<string, string[]> = {
+      NIN: ["nin"],
+      BVN: ["bvn"],
+      PASSPORT: ["passport", "passportNumber", "passport_number"],
+      DRIVERS_LICENSE: ["driversLicense", "drivers_license", "driverLicenseNumber", "licenseNumber"],
+      VOTER_CARD: ["voterCard", "voter_card", "voterCardNumber"],
+    };
+
+    const mappedKeys = keyMap[idType] ?? [];
+    const mappedValue = mappedKeys.length ? getRecordValue(userRecord, mappedKeys) : undefined;
+    if (mappedValue) {
+      return String(mappedValue);
+    }
+
+    const fallback = getRecordValue(userRecord, ["nin", "bvn", "passportNumber", "passport_number"]);
+    return fallback ? String(fallback) : "Not available";
+  })();
+
+  const customerItems = userRecord
+      ? [
+          {
+            label: "Customer name",
+            value:
+              [getRecordValue(userRecord, ["first_name", "firstName"]), getRecordValue(userRecord, ["last_name", "lastName"])]
+                .filter((value) => typeof value === "string" && String(value).trim())
+                .join(" ") || String(getRecordValue(userRecord, ["name", "fullName"]) ?? "Not available"),
+          },
+          { label: "Email", value: String(getRecordValue(userRecord, ["email"]) ?? "Not available") },
+          { label: "Phone", value: String(getRecordValue(userRecord, ["phone"]) ?? "Not available") },
+          { label: "BVN", value: String(getRecordValue(userRecord, ["bvn"]) ?? "Not available") },
+          { label: `${idType || "Submitted"} ID number`, value: submittedIdValue },
+        ]
+      : [];
+
+  const processingItems = kyc
+    ? [
+        { label: "Submitted", value: formatDate(getRecordValue(kyc, ["createdAt"])) },
+        { label: "Last updated", value: formatDate(getRecordValue(kyc, ["updatedAt"])) },
+        { label: "Approved at", value: formatDate(getRecordValue(kyc, ["approvedAt"])) },
+        { label: "Approved by", value: String(getRecordValue(kyc, ["approvedBy"]) ?? "Not available") },
+      ]
+    : [];
+
+  const reason = kyc ? String(getRecordValue(kyc, ["reason", "note"]) ?? "").trim() : "";
+  const status = kyc ? getRecordValue(kyc, ["status"]) ?? "pending" : "pending";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#08111f_0%,#0b2039_62%,#069AFF_160%)] px-6 py-6 text-white">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">KYC review file</p>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight">Customer verification packet</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+              Review identity evidence, approval history, and the submitted tier request in one administrative sheet.
+            </p>
+            {kyc && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <StatusBadge status={status} />
+                <span className="rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold tracking-[0.14em] text-sky-100">
+                  {String(getRecordValue(kyc, ["_id"]) ?? "No record ID")}
+                </span>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+            aria-label="Close KYC details"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="max-h-[78vh] overflow-y-auto p-6">
+          {detail.loading && (
+            <div className="flex min-h-72 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              Loading KYC review
+            </div>
+          )}
+
+          {detail.error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              {detail.error}
+            </div>
+          )}
+
+          {!detail.loading && !detail.error && (
+            <div className="grid gap-6">
+              <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:text-sky-200">
+                      <FileCheck2 className="h-7 w-7" aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Submission overview</p>
+                      <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">
+                        Tier {String(getRecordValue(kyc ?? {}, ["tier", "level"]) ?? "Not available")} verification request
+                      </h3>
+                      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        {reason || "No reviewer note was added to this KYC decision yet."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {profileItems.map((item) => (
+                      <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                        <p className="mt-2 text-sm font-bold text-slate-950 dark:text-white">{item.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+                      <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Decision trail</p>
+                      <h3 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">Processing and approval</h3>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid gap-3">
+                    {processingItems.map((item) => (
+                      <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                        <p className="mt-2 text-sm font-bold text-slate-950 dark:text-white">{item.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {customerItems.length > 0 && (
+                <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                  <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                    <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Customer profile</h3>
+                  </div>
+                  <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {customerItems.map((item) => (
+                      <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{item.label}</p>
+                        <p className="mt-2 text-sm font-bold text-slate-950 dark:text-white">{item.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="grid gap-5 xl:grid-cols-3">
+                {documentCards.length > 0 ? (
+                  documentCards.map((card) => (
+                    <KycDocumentCard key={`${card.label}-${card.url}`} label={card.label} helper={card.helper} url={card.url} />
+                  ))
+                ) : (
+                  <div className="xl:col-span-3">
+                    <EmptyPanel label="No uploaded KYC files were returned for this record." />
+                  </div>
+                )}
+              </section>
             </div>
           )}
         </div>
@@ -2221,6 +2518,7 @@ export default function AdminCenterPage() {
   const [adminData, setAdminData] = useState<AdminCenterData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [detail, setDetail] = useState<DetailState | null>(null);
+  const [kycDetail, setKycDetail] = useState<KycDetailState | null>(null);
   const [userDashboard, setUserDashboard] = useState<UserDashboardState | null>(null);
   const [appLoanDetail, setAppLoanDetail] = useState<AppLoanDetailState | null>(null);
   const [bankoneSyncResult, setBankoneSyncResult] = useState<BankoneSyncResultState | null>(null);
@@ -2615,6 +2913,17 @@ export default function AdminCenterPage() {
       setDetail({ title, loading: false, data, error: "" });
     } catch (error) {
       setDetail({ title, loading: false, data: null, error: getErrorMessage(error) });
+    }
+  };
+
+  const openKycDetail = async (id: string) => {
+    setKycDetail({ title: "KYC details", loading: true, data: null, error: "" });
+
+    try {
+      const data = await adminService.getKycById(id);
+      setKycDetail({ title: "KYC details", loading: false, data, error: "" });
+    } catch (error) {
+      setKycDetail({ title: "KYC details", loading: false, data: null, error: getErrorMessage(error) });
     }
   };
 
@@ -3569,25 +3878,37 @@ export default function AdminCenterPage() {
                   </button>
                 }
               >
-                {(row, index) => {
-                  const id = getId(row);
-                  const pending = String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "pending";
-                  return (
-                    <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
-                      <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["userId", "user_id", "email"]) ?? `KYC ${index + 1}`)}</td>
-                      <td className="px-5 py-4">{String(getRecordValue(row, ["tier", "level"]) ?? "Not available")}</td>
-                      <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "pending"} /></td>
-                      <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
-                      <td className="px-5 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            disabled={!id}
-                            onClick={() => openDetail("KYC details", () => adminService.getKycById(id))}
-                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-                          >
-                            <Eye className="h-4 w-4" aria-hidden="true" />
-                            View
+                  {(row, index) => {
+                    const id = getId(row);
+                    const pending = String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "pending";
+                    const userValue = String(getRecordValue(row, ["userId", "user_id", "email"]) ?? `KYC ${index + 1}`);
+                    const tierValue = String(getRecordValue(row, ["tier", "level"]) ?? "Not available");
+                    const idTypeValue = String(getRecordValue(row, ["idType"]) ?? "Not provided");
+                    return (
+                      <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
+                        <td className="px-5 py-4">
+                          <div className="min-w-0">
+                            <p className="truncate font-bold text-slate-950 dark:text-white">{userValue}</p>
+                            <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{idTypeValue}</p>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="inline-flex rounded-md border border-[#069AFF]/20 bg-[#069AFF]/6 px-2.5 py-1 text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF] dark:text-sky-200">
+                            Tier {tierValue}
+                          </div>
+                        </td>
+                        <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "pending"} /></td>
+                        <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openKycDetail(id)}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                            >
+                              <Eye className="h-4 w-4" aria-hidden="true" />
+                              View
                           </button>
                           <button
                             type="button"
@@ -3809,6 +4130,7 @@ export default function AdminCenterPage() {
       </div>
 
       {detail && <DetailModal detail={detail} onClose={() => setDetail(null)} />}
+      {kycDetail && <KycDetailsModal detail={kycDetail} onClose={() => setKycDetail(null)} />}
       {userDashboard && <UserDashboardModal key={userDashboard.userId} dashboard={userDashboard} onClose={() => setUserDashboard(null)} />}
       {appLoanDetail && <AppLoanDetailsModal loan={appLoanDetail} onClose={() => setAppLoanDetail(null)} />}
       {bankoneSyncResult && <BankoneSyncResultModal result={bankoneSyncResult} onClose={() => setBankoneSyncResult(null)} />}
