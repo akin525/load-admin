@@ -321,21 +321,45 @@ const toIsoDateTime = (value: string) => {
 
 const getCollectionRows = (payload: unknown, key: string) => {
   const data = unwrapPayload(payload);
-  if (!isRecord(data) || !isRecord(data[key])) {
+  if (!isRecord(data) || !(key in data)) {
     return [] as Record<string, unknown>[];
   }
 
-  const rows = data[key].data;
-  return Array.isArray(rows) ? rows.filter(isRecord) : [];
+  const collection = data[key];
+
+  if (Array.isArray(collection)) {
+    return collection.filter(isRecord);
+  }
+
+  if (!isRecord(collection)) {
+    return [];
+  }
+
+  if (Array.isArray(collection.data)) {
+    return collection.data.filter(isRecord);
+  }
+
+  const nestedList = Object.values(collection).find(Array.isArray);
+  return Array.isArray(nestedList) ? nestedList.filter(isRecord) : [];
 };
 
 const getCollectionTotal = (payload: unknown, key: string) => {
   const data = unwrapPayload(payload);
-  if (!isRecord(data) || !isRecord(data[key])) {
+  if (!isRecord(data) || !(key in data)) {
     return getCollectionRows(payload, key).length;
   }
 
-  const total = data[key].total;
+  const collection = data[key];
+
+  if (Array.isArray(collection)) {
+    return collection.length;
+  }
+
+  if (!isRecord(collection)) {
+    return getCollectionRows(payload, key).length;
+  }
+
+  const total = collection.total;
   return typeof total === "number" ? total : getCollectionRows(payload, key).length;
 };
 
@@ -510,70 +534,83 @@ function ToastViewport({
   );
 }
 
-function TransactionTimeline({ rows }: { rows: Record<string, unknown>[] }) {
-  return (
-    <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
-      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-white/10">
-        <div>
-          <h3 className="font-bold text-slate-950 dark:text-white">Timeline</h3>
-          <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Operational events returned for this customer.</p>
-        </div>
-        <span className="rounded-md bg-[#069AFF]/10 px-2.5 py-1 text-xs font-bold text-[#069AFF] dark:text-sky-200">
-          {formatValue(rows.length)}
-        </span>
-      </div>
-      <div className="max-h-[24rem] overflow-y-auto p-4">
-        {rows.length ? (
-          <div className="space-y-4">
-            {rows.map((row, index) => {
-              const title = String(getRecordValue(row, ["title", "event", "type", "status"]) ?? `Timeline event ${index + 1}`);
-              const note = String(getRecordValue(row, ["note", "description", "message"]) ?? "No note available");
-              const amount = getRecordValue(row, ["amount", "paidAmount", "totalAmount"]);
+function TransactionDetailGrid({
+  items,
+  columns = "sm:grid-cols-2 xl:grid-cols-4",
+}: {
+  items: Array<{ label: string; value: unknown }>;
+  columns?: string;
+}) {
+  const visibleItems = items.filter(({ value }) => value !== null && value !== undefined && value !== "");
 
-              return (
-                <div key={getId(row) || `${title}-${index}`} className="relative pl-7">
-                  <span className="absolute left-0 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-[#069AFF]/30 bg-[#069AFF]/15">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#069AFF]" />
-                  </span>
-                  {index < rows.length - 1 && <span className="absolute left-[6px] top-5 h-[calc(100%-0.25rem)] w-px bg-slate-200 dark:bg-white/10" />}
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-slate-950 dark:text-white">{formatLabel(title)}</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt", "date"]))}</p>
-                      </div>
-                      {amount !== undefined && <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(amount)}</p>}
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{note}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <EmptyPanel label="No timeline events returned." />
-        )}
-      </div>
-    </section>
+  if (!visibleItems.length) {
+    return null;
+  }
+
+  return (
+    <div className={`grid gap-3 ${columns}`}>
+      {visibleItems.map((item) => (
+        <div key={item.label} className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2.5 dark:border-white/10 dark:bg-slate-950/50">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{item.label}</p>
+          <p className="mt-1 break-words text-sm font-semibold text-slate-900 dark:text-white">{formatFieldValue(item.label, item.value)}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
-function TransactionStreamCard({
+function JsonInspector({
+  label,
+  value,
+  defaultOpen = false,
+}: {
+  label: string;
+  value: unknown;
+  defaultOpen?: boolean;
+}) {
+  if (!isRecord(value) && !Array.isArray(value)) {
+    return null;
+  }
+
+  return (
+    <details
+      open={defaultOpen}
+      className="rounded-lg border border-slate-200 bg-white/70 dark:border-white/10 dark:bg-slate-950/45"
+    >
+      <summary className="cursor-pointer list-none px-4 py-3 text-sm font-bold text-slate-800 dark:text-slate-100">
+        {label}
+      </summary>
+      <div className="border-t border-slate-200 px-4 py-3 dark:border-white/10">
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-100">
+          {JSON.stringify(value, null, 2)}
+        </pre>
+      </div>
+    </details>
+  );
+}
+
+function TransactionSectionShell({
   title,
   subtitle,
   rows,
   icon: Icon,
+  amountKeys,
+  emptyLabel,
+  children,
 }: {
   title: string;
   subtitle: string;
   rows: Record<string, unknown>[];
   icon: typeof Users;
+  amountKeys?: string[];
+  emptyLabel: string;
+  children: (row: Record<string, unknown>, index: number) => ReactNode;
 }) {
-  const totalAmount = sumCurrencyRows(rows, ["amount", "totalAmount", "paidAmount"]);
+  const totalAmount = amountKeys?.length ? sumCurrencyRows(rows, amountKeys) : 0;
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
-      <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
             <Icon className="h-5 w-5" aria-hidden="true" />
@@ -584,65 +621,345 @@ function TransactionStreamCard({
           </div>
         </div>
         <div className="text-right">
-          <p className="text-lg font-bold text-slate-950 dark:text-white">{formatCurrency(totalAmount)}</p>
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{formatValue(rows.length)} records</p>
+          {amountKeys?.length ? <p className="mt-1 text-lg font-bold text-slate-950 dark:text-white">{formatCurrency(totalAmount)}</p> : null}
         </div>
       </div>
-      <div className="max-h-[24rem] overflow-y-auto p-4">
-        {rows.length ? (
-          <div className="space-y-3">
-            {rows.map((row, index) => {
-              const details = isRecord(row.details) ? row.details : null;
-              const typeValue = getRecordValue(row, ["type"]);
-              const categoryValue = getRecordValue(row, ["category", "billType", "transactionType"]);
-              const titleValue = String(
-                getRecordValue(row, ["note", "reference", "transactionType", "category"]) ??
-                  getRecordValue(details ?? {}, ["accountName", "recipient", "serviceID"]) ??
-                  `Record ${index + 1}`,
-              );
-              const contextValues = [
-                getRecordValue(row, ["reference"]),
-                getRecordValue(row, ["provider", "source"]),
-                getRecordValue(details ?? {}, ["accountName", "bankName", "recipient", "customerAccountNo", "serviceID"]),
-              ]
-                .filter((value) => typeof value === "string" && value.trim())
-                .slice(0, 3)
-                .join(" / ");
-
-              return (
-                <div key={getId(row) || `${titleValue}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{titleValue}</p>
-                      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{contextValues || "No additional context"}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["amount", "totalAmount", "paidAmount"]))}</p>
-                      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <StatusBadge status={getRecordValue(row, ["status"]) ?? "success"} />
-                    {typeValue !== null && typeValue !== undefined && String(typeValue).trim() !== "" && (
-                      <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-                        {String(typeValue)}
-                      </span>
-                    )}
-                    {categoryValue !== null && categoryValue !== undefined && String(categoryValue).trim() !== "" && (
-                      <span className="rounded-md border border-[#069AFF]/20 bg-[#069AFF]/6 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#069AFF] dark:text-sky-200">
-                        {String(categoryValue)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <EmptyPanel label={`No ${title.toLowerCase()} returned.`} />
-        )}
+      <div className="max-h-[34rem] space-y-4 overflow-y-auto p-4">
+        {rows.length ? rows.map((row, index) => children(row, index)) : <EmptyPanel label={emptyLabel} />}
       </div>
     </section>
+  );
+}
+
+function TransactionTimeline({ rows }: { rows: Record<string, unknown>[] }) {
+  return (
+    <TransactionSectionShell
+      title="Timeline"
+      subtitle="Chronological events returned for this customer."
+      rows={rows}
+      icon={Activity}
+      amountKeys={["amount", "totalAmount", "paidAmount"]}
+      emptyLabel="No timeline events returned."
+    >
+      {(row, index) => {
+        const entry = isRecord(row.data) ? row.data : row;
+        const type = safeText(getRecordValue(row, ["type", "event", "title"]), `Event ${index + 1}`);
+        const title = safeText(
+          getRecordValue(entry, ["note", "narration", "description", "reference", "transactionType", "serviceType", "type"]),
+          `${formatLabel(type)} event`,
+        );
+        const amount = getRecordValue(entry, ["amount", "totalAmount", "paidAmount"]);
+
+        return (
+          <div key={getId(entry) || getId(row) || `${type}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-bold text-slate-950 dark:text-white">{title}</p>
+                  <span className="rounded-md border border-[#069AFF]/20 bg-[#069AFF]/8 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#069AFF] dark:text-sky-200">
+                    {formatLabel(type)}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt", "date"]) ?? getRecordValue(entry, ["createdAt", "updatedAt"]))}</p>
+              </div>
+              <div className="text-right">
+                {amount !== undefined ? <p className="text-sm font-bold text-slate-950 dark:text-white">{formatCurrency(amount)}</p> : null}
+                <StatusBadge status={getRecordValue(entry, ["status"]) ?? getRecordValue(row, ["status"]) ?? "success"} />
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <TransactionDetailGrid
+                columns="sm:grid-cols-2 xl:grid-cols-3"
+                items={[
+                  { label: "Reference", value: getRecordValue(entry, ["reference"]) },
+                  { label: "Transaction type", value: getRecordValue(entry, ["transactionType", "type"]) },
+                  { label: "Category", value: getRecordValue(entry, ["category", "serviceType", "billType"]) },
+                  { label: "Provider", value: getRecordValue(entry, ["provider", "providerType", "source"]) },
+                  { label: "Account / Recipient", value: getRecordValue(entry, ["accountName", "recipient", "customerAccountNo"]) },
+                  { label: "Wallet type", value: getRecordValue(entry, ["walletType"]) ?? getRecordValue(isRecord(entry.details) ? entry.details : {}, ["walletType"]) },
+                ]}
+              />
+              <JsonInspector label="Timeline payload" value={row} />
+            </div>
+          </div>
+        );
+      }}
+    </TransactionSectionShell>
+  );
+}
+
+function WalletTransactionSection({ rows }: { rows: Record<string, unknown>[] }) {
+  return (
+    <TransactionSectionShell
+      title="Wallet transactions"
+      subtitle="Wallet credits, debits, reversals, transfers, and balance movement."
+      rows={rows}
+      icon={WalletCards}
+      amountKeys={["amount", "totalDebitAmount", "grossAmount"]}
+      emptyLabel="No wallet transactions returned."
+    >
+      {(row, index) => {
+        const details = isRecord(row.details) ? row.details : null;
+        const title = safeText(getRecordValue(row, ["note", "reference", "transactionType"]), `Wallet transaction ${index + 1}`);
+
+        return (
+          <div key={getId(row) || `${title}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-950 dark:text-white">{title}</p>
+                <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-base font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["amount"]))}</p>
+                <div className="mt-2 flex flex-wrap justify-end gap-2">
+                  <StatusBadge status={getRecordValue(row, ["status"]) ?? "success"} />
+                  <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                    {safeText(getRecordValue(row, ["type"]), "unknown")}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <TransactionDetailGrid
+                items={[
+                  { label: "Reference", value: getRecordValue(row, ["reference"]) },
+                  { label: "Transaction type", value: getRecordValue(row, ["transactionType"]) },
+                  { label: "Category", value: getRecordValue(row, ["category"]) },
+                  { label: "Bill type", value: getRecordValue(row, ["billType"]) },
+                  { label: "Provider", value: getRecordValue(row, ["provider"]) },
+                  { label: "Source", value: getRecordValue(row, ["source"]) },
+                  { label: "Wallet ID", value: getRecordValue(row, ["wallet_id", "walletId"]) },
+                  { label: "Balance before", value: getRecordValue(row, ["bal_before"]) },
+                  { label: "Balance after", value: getRecordValue(row, ["bal_after"]) },
+                ]}
+              />
+              <TransactionDetailGrid
+                columns="sm:grid-cols-2 xl:grid-cols-3"
+                items={[
+                  { label: "Wallet type", value: getRecordValue(details ?? {}, ["walletType"]) },
+                  { label: "Account name", value: getRecordValue(details ?? {}, ["accountName"]) },
+                  { label: "Bank name", value: getRecordValue(details ?? {}, ["bankName"]) },
+                  { label: "Account number", value: getRecordValue(details ?? {}, ["accountNumber"]) },
+                  { label: "Recipient", value: getRecordValue(details ?? {}, ["recipient", "customerAccountNo"]) },
+                  { label: "Narration", value: getRecordValue(details ?? {}, ["narration"]) },
+                  { label: "Fee amount", value: getRecordValue(details ?? {}, ["feeAmount"]) },
+                  { label: "Total debit", value: getRecordValue(details ?? {}, ["totalDebitAmount"]) },
+                  { label: "Loan type", value: getRecordValue(details ?? {}, ["loanTypeName"]) },
+                ]}
+              />
+              <JsonInspector label="Transaction details" value={details} />
+              <JsonInspector label="Full wallet transaction payload" value={row} />
+            </div>
+          </div>
+        );
+      }}
+    </TransactionSectionShell>
+  );
+}
+
+function DepositTransactionSection({ rows }: { rows: Record<string, unknown>[] }) {
+  return (
+    <TransactionSectionShell
+      title="Deposits"
+      subtitle="Inbound funding records and provider confirmations."
+      rows={rows}
+      icon={Landmark}
+      amountKeys={["netAmount", "grossAmount", "amount"]}
+      emptyLabel="No deposits returned."
+    >
+      {(row, index) => {
+        const providerResponse = isRecord(row.providerResponse) ? row.providerResponse : null;
+        const responseData = providerResponse && isRecord(providerResponse.data) ? providerResponse.data : null;
+        const title = safeText(getRecordValue(row, ["accountName", "reference", "event"]), `Deposit ${index + 1}`);
+
+        return (
+          <div key={getId(row) || safeText(row.reference, `${title}-${index}`)} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-950 dark:text-white">{title}</p>
+                <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-base font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["netAmount", "grossAmount", "amount"]))}</p>
+                <StatusBadge status={getRecordValue(row, ["status"]) ?? "success"} />
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <TransactionDetailGrid
+                items={[
+                  { label: "Reference", value: getRecordValue(row, ["reference"]) },
+                  { label: "Event", value: getRecordValue(row, ["event"]) },
+                  { label: "Session ID", value: getRecordValue(row, ["sessionID"]) },
+                  { label: "Channel code", value: getRecordValue(row, ["channelCode"]) },
+                  { label: "Source", value: getRecordValue(row, ["source"]) },
+                  { label: "Provider", value: getRecordValue(row, ["provider"]) },
+                  { label: "Gross amount", value: getRecordValue(row, ["grossAmount", "amount"]) },
+                  { label: "Fee amount", value: getRecordValue(row, ["feeAmount"]) },
+                  { label: "Net amount", value: getRecordValue(row, ["netAmount"]) },
+                  { label: "Account name", value: getRecordValue(row, ["accountName"]) },
+                  { label: "Account number", value: getRecordValue(row, ["accountNumber"]) },
+                  { label: "Bank verification", value: getRecordValue(row, ["bankVerificationCode"]) },
+                  { label: "Wallet ID", value: getRecordValue(row, ["walletId"]) },
+                  { label: "Customer ID", value: getRecordValue(row, ["customerId"]) },
+                  { label: "Wallet transaction ID", value: getRecordValue(row, ["walletTransactionId"]) },
+                ]}
+              />
+              <TransactionDetailGrid
+                columns="sm:grid-cols-2 xl:grid-cols-3"
+                items={[
+                  { label: "Originator name", value: getRecordValue(responseData ?? {}, ["originatorAccountName"]) },
+                  { label: "Originator account", value: getRecordValue(responseData ?? {}, ["originatorAccountNumber"]) },
+                  { label: "Originator BVN", value: getRecordValue(responseData ?? {}, ["originatorBankVerificationNumber"]) },
+                  { label: "Narration", value: getRecordValue(responseData ?? {}, ["narration"]) },
+                  { label: "Paid at", value: getRecordValue(responseData ?? {}, ["paidAt"]) },
+                  { label: "Destination institution", value: getRecordValue(responseData ?? {}, ["destinationInstitutionCode"]) },
+                ]}
+              />
+              <JsonInspector label="Provider response" value={providerResponse} />
+              <JsonInspector label="Full deposit payload" value={row} />
+            </div>
+          </div>
+        );
+      }}
+    </TransactionSectionShell>
+  );
+}
+
+function BillTransactionSection({ rows }: { rows: Record<string, unknown>[] }) {
+  return (
+    <TransactionSectionShell
+      title="Bills"
+      subtitle="Bill payment records, token delivery, and provider outcome."
+      rows={rows}
+      icon={CreditCard}
+      amountKeys={["amount"]}
+      emptyLabel="No bills returned."
+    >
+      {(row, index) => {
+        const providerResponse = isRecord(row.providerResponse) ? row.providerResponse : null;
+        const responseContent = providerResponse && isRecord(providerResponse.content) ? providerResponse.content : null;
+        const title = safeText(getRecordValue(row, ["providerType", "serviceType", "billId"]), `Bill ${index + 1}`);
+
+        return (
+          <div key={getId(row) || safeText(row.reference, `${title}-${index}`)} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-950 dark:text-white">{title}</p>
+                <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-base font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["amount"]))}</p>
+                <StatusBadge status={getRecordValue(row, ["status"]) ?? "pending"} />
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <TransactionDetailGrid
+                items={[
+                  { label: "Reference", value: getRecordValue(row, ["reference"]) },
+                  { label: "Bill ID", value: getRecordValue(row, ["billId"]) },
+                  { label: "Provider", value: getRecordValue(row, ["providerType"]) },
+                  { label: "Service type", value: getRecordValue(row, ["serviceType"]) },
+                  { label: "Customer account", value: getRecordValue(row, ["customerAccountNo"]) },
+                  { label: "Recipient", value: getRecordValue(row, ["recipient"]) },
+                  { label: "Token", value: getRecordValue(row, ["token"]) },
+                  { label: "Provider code", value: getRecordValue(providerResponse ?? {}, ["code"]) },
+                  { label: "Response description", value: getRecordValue(providerResponse ?? {}, ["response_description"]) },
+                  { label: "Transaction date", value: getRecordValue(providerResponse ?? {}, ["transaction_date"]) },
+                  { label: "Customer name", value: getRecordValue(providerResponse ?? {}, ["customerName"]) },
+                  { label: "Meter number", value: getRecordValue(providerResponse ?? {}, ["meterNumber"]) },
+                  { label: "Units", value: getRecordValue(providerResponse ?? {}, ["units"]) },
+                  { label: "Tariff", value: getRecordValue(providerResponse ?? {}, ["tariff"]) },
+                ]}
+              />
+              <TransactionDetailGrid
+                columns="sm:grid-cols-2 xl:grid-cols-3"
+                items={[
+                  { label: "Purchased code", value: getRecordValue(providerResponse ?? {}, ["purchased_code"]) },
+                  { label: "Exchange reference", value: getRecordValue(providerResponse ?? {}, ["exchangeReference"]) },
+                  { label: "VAT", value: getRecordValue(providerResponse ?? {}, ["vat"]) },
+                  { label: "Tax amount", value: getRecordValue(providerResponse ?? {}, ["taxAmount"]) },
+                  { label: "Debt amount", value: getRecordValue(providerResponse ?? {}, ["debtAmount"]) },
+                  { label: "Response content fields", value: responseContent ? Object.keys(responseContent).length : null },
+                ]}
+              />
+              <JsonInspector label="Provider response" value={providerResponse} />
+              <JsonInspector label="Full bill payload" value={row} />
+            </div>
+          </div>
+        );
+      }}
+    </TransactionSectionShell>
+  );
+}
+
+function PayoutTransactionSection({ rows }: { rows: Record<string, unknown>[] }) {
+  return (
+    <TransactionSectionShell
+      title="Payouts & transfers"
+      subtitle="Outbound transfer instructions, fees, and provider settlement details."
+      rows={rows}
+      icon={Send}
+      amountKeys={["totalDebitAmount", "amount"]}
+      emptyLabel="No payouts returned."
+    >
+      {(row, index) => {
+        const details = isRecord(row.details) ? row.details : null;
+        const providerResponse = isRecord(row.providerResponse) ? row.providerResponse : null;
+        const transfer = providerResponse && isRecord(providerResponse.transfer) ? providerResponse.transfer : null;
+        const title = safeText(
+          getRecordValue(row, ["accountName", "note", "narration", "reference"]) ??
+            getRecordValue(details ?? {}, ["accountName", "narration"]),
+          `Payout ${index + 1}`,
+        );
+
+        return (
+          <div key={getId(row) || safeText(row.reference, `${title}-${index}`)} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-950 dark:text-white">{title}</p>
+                <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-base font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["totalDebitAmount", "amount"]))}</p>
+                <StatusBadge status={getRecordValue(row, ["status"]) ?? "pending"} />
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              <TransactionDetailGrid
+                items={[
+                  { label: "Reference", value: getRecordValue(row, ["reference"]) },
+                  { label: "Wallet type", value: getRecordValue(row, ["walletType"]) ?? getRecordValue(details ?? {}, ["walletType"]) },
+                  { label: "Provider", value: getRecordValue(row, ["provider"]) },
+                  { label: "Bank name", value: getRecordValue(row, ["bankName"]) ?? getRecordValue(details ?? {}, ["bankName"]) },
+                  { label: "Sort code", value: getRecordValue(row, ["sortCode"]) ?? getRecordValue(details ?? {}, ["sortCode"]) },
+                  { label: "Account number", value: getRecordValue(row, ["accountNumber"]) ?? getRecordValue(details ?? {}, ["accountNumber"]) },
+                  { label: "Account name", value: getRecordValue(row, ["accountName"]) ?? getRecordValue(details ?? {}, ["accountName"]) },
+                  { label: "Narration", value: getRecordValue(row, ["narration"]) ?? getRecordValue(details ?? {}, ["narration"]) },
+                  { label: "Base amount", value: getRecordValue(row, ["amount"]) ?? getRecordValue(details ?? {}, ["amount"]) },
+                  { label: "Fee amount", value: getRecordValue(row, ["feeAmount"]) ?? getRecordValue(details ?? {}, ["feeAmount"]) },
+                  { label: "Total debit", value: getRecordValue(row, ["totalDebitAmount"]) ?? getRecordValue(details ?? {}, ["totalDebitAmount"]) },
+                ]}
+              />
+              <TransactionDetailGrid
+                columns="sm:grid-cols-2 xl:grid-cols-3"
+                items={[
+                  { label: "Provider session", value: getRecordValue(transfer ?? {}, ["sessionID"]) },
+                  { label: "Provider reference", value: getRecordValue(transfer ?? {}, ["reference", "transactionReference"]) },
+                  { label: "Provider transaction ID", value: getRecordValue(transfer ?? {}, ["transactionId"]) },
+                  { label: "Paid at", value: getRecordValue(transfer ?? {}, ["paidAt"]) },
+                  { label: "Destination", value: getRecordValue(transfer ?? {}, ["destination"]) },
+                  { label: "Description", value: getRecordValue(transfer ?? {}, ["description"]) },
+                ]}
+              />
+              <JsonInspector label="Transfer details" value={details} />
+              <JsonInspector label="Provider response" value={providerResponse} />
+              <JsonInspector label="Full payout payload" value={row} />
+            </div>
+          </div>
+        );
+      }}
+    </TransactionSectionShell>
   );
 }
 const safeText = (value: unknown, fallback = "Not available") => {
@@ -1960,22 +2277,23 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
     const payouts = record ? [...getCollectionRows(record, "payouts"), ...getCollectionRows(record, "transfers")] : [];
     const timeline = record ? getCollectionRows(record, "timeline") : [];
     const summaryItems = summaryRecord
-      ? Object.entries(summaryRecord)
+      ? [{ label: "User ID", value: safeText(record?.userId) }, ...Object.entries(summaryRecord)
           .filter(([, value]) => !Array.isArray(value) && !isRecord(value))
           .slice(0, 8)
           .map(([key, value]) => ({
             label: formatLabel(key),
             value: formatFieldValue(key, value),
-          }))
+          }))]
       : [];
 
     const cards = [
-      { label: "Wallet transactions", value: formatValue(getCollectionTotal(record, "walletTransactions")), icon: WalletCards },
-      { label: "Deposits", value: formatValue(getCollectionTotal(record, "deposits")), icon: Landmark },
-      { label: "Bills", value: formatValue(getCollectionTotal(record, "bills")), icon: CreditCard },
+      { label: "Total records", value: formatValue(summaryRecord?.total ?? timeline.length), icon: BarChart3 },
+      { label: "Wallet transactions", value: formatValue(summaryRecord?.walletTransactions ?? getCollectionTotal(record, "walletTransactions")), icon: WalletCards },
+      { label: "Deposits", value: formatValue(summaryRecord?.deposits ?? getCollectionTotal(record, "deposits")), icon: Landmark },
+      { label: "Bills", value: formatValue(summaryRecord?.bills ?? getCollectionTotal(record, "bills")), icon: CreditCard },
       {
         label: "Payouts & transfers",
-        value: formatValue(payouts.length),
+        value: formatValue(summaryRecord?.payouts ?? payouts.length),
         icon: Send,
       },
     ];
@@ -2278,7 +2596,7 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
 
               {!transactions.loading && !transactions.error && (
                 <>
-                  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                     {transactionSnapshot.cards.map((item) => (
                       <SummaryCard key={item.label} label={item.label} value={item.value} icon={item.icon} />
                     ))}
@@ -2289,32 +2607,10 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
                     <DetailGrid title="Summary snapshot" items={transactionSnapshot.summaryItems} />
                   </section>
 
-                  <section className="grid gap-5 xl:grid-cols-2">
-                    <TransactionStreamCard
-                      title="Wallet transactions"
-                      subtitle="Full wallet movement stream for this customer."
-                      rows={transactionSnapshot.walletTransactions}
-                      icon={WalletCards}
-                    />
-                    <TransactionStreamCard
-                      title="Deposits"
-                      subtitle="Funding records captured for this customer."
-                      rows={transactionSnapshot.deposits}
-                      icon={Landmark}
-                    />
-                    <TransactionStreamCard
-                      title="Bills"
-                      subtitle="Bill payment activity and reversals."
-                      rows={transactionSnapshot.bills}
-                      icon={CreditCard}
-                    />
-                    <TransactionStreamCard
-                      title="Payouts & transfers"
-                      subtitle="Outbound payouts and transfer-related records."
-                      rows={transactionSnapshot.payouts}
-                      icon={Send}
-                    />
-                  </section>
+                  <WalletTransactionSection rows={transactionSnapshot.walletTransactions} />
+                  <DepositTransactionSection rows={transactionSnapshot.deposits} />
+                  <BillTransactionSection rows={transactionSnapshot.bills} />
+                  <PayoutTransactionSection rows={transactionSnapshot.payouts} />
                 </>
               )}
             </div>
