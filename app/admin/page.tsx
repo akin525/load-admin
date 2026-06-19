@@ -146,7 +146,6 @@ const endpoints: Array<[DataKey, () => Promise<unknown>]> = [
 const sections: Array<{ key: AdminSection; label: string; icon: typeof Users }> = [
   { key: "admins", label: "Admins", icon: ShieldCheck },
   { key: "roles", label: "Roles", icon: UserCog },
-  { key: "kyc", label: "KYC", icon: FileCheck2 },
   { key: "tiers", label: "Tiers", icon: BadgeCheck },
   { key: "support", label: "Support", icon: Send },
   { key: "content", label: "Content", icon: BriefcaseBusiness },
@@ -3744,21 +3743,6 @@ export default function AdminCenterPage() {
                         <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["name"]) ?? `Contact ${index + 1}`)}</td>
                         <td className="px-5 py-4">{String(getRecordValue(row, ["value"]) ?? "Not available")}</td>
                         <td className="px-5 py-4"><button type="button" onClick={() => openEditContact(row)} className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF]">Edit</button></td>
-                      </tr>
-                    )}
-                  </ManagementTable>
-
-                  <ManagementTable
-                    title="FAQs"
-                    rows={faqs}
-                    columns={["Question", "Answer", "Action"]}
-                    action={<button type="button" onClick={openCreateFaq} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white"><Plus className="h-4 w-4" aria-hidden="true" />New</button>}
-                  >
-                    {(row, index) => (
-                      <tr key={`${getId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
-                        <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["title"]) ?? `FAQ ${index + 1}`)}</td>
-                        <td className="px-5 py-4"><span className="line-clamp-2">{String(getRecordValue(row, ["content"]) ?? "Not available")}</span></td>
-                        <td className="px-5 py-4"><button type="button" onClick={() => openEditFaq(row)} className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF]">Edit</button></td>
                       </tr>
                     )}
                   </ManagementTable>

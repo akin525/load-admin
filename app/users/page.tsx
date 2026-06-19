@@ -2340,6 +2340,7 @@ function UserDashboardModal({
   const [activeTab, setActiveTab] = useState<UserDashboardTab>("overview");
   const [transactionFilters, setTransactionFilters] = useState<UserTransactionFilters>(() => getDefaultUserTransactionFilters());
   const [statementFilters, setStatementFilters] = useState<WalletStatementFilters>(() => getDefaultWalletStatementFilters());
+  const [kycAction, setKycAction] = useState("");
   const [kyc, setKyc] = useState<UserKycState>({
     title: "User KYC",
     loading: true,
@@ -2380,6 +2381,33 @@ function UserDashboardModal({
     { label: "Wallet balance", value: formatCurrency(walletBalance), icon: WalletCards },
     { label: "Loan records", value: formatValue(getDashboardTotal(dashboard.data, "loans")), icon: CreditCard },
   ];
+
+  const loadUserKyc = async () => {
+    setKyc((current) => ({
+      ...current,
+      loading: true,
+      error: "",
+    }));
+
+    try {
+      const data = await adminService.getUserKyc(dashboard.userId);
+      setKyc({
+        title: "User KYC",
+        loading: false,
+        data,
+        error: "",
+        loaded: true,
+      });
+    } catch (error) {
+      setKyc({
+        title: "User KYC",
+        loading: false,
+        data: null,
+        error: getErrorMessage(error),
+        loaded: true,
+      });
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -2425,6 +2453,32 @@ function UserDashboardModal({
       cancelled = true;
     };
   }, [dashboard.userId]);
+
+  const handleReviewKyc = async (kycId: string, action: "approve" | "reject") => {
+    const actionKey = `${kycId}-${action}`;
+    setKycAction(actionKey);
+
+    try {
+      const response = await adminService.approveKyc(kycId, {
+        action,
+        reason: action === "approve" ? "Approved from customer dashboard" : "Rejected from customer dashboard",
+      });
+      showToast(
+        response,
+        action === "approve" ? "KYC approved successfully" : "KYC rejected successfully",
+        "success",
+      );
+      await loadUserKyc();
+    } catch (error) {
+      showToast(
+        getErrorPayload(error) ?? { message: getErrorMessage(error) },
+        action === "approve" ? "KYC approval failed" : "KYC rejection failed",
+        "error",
+      );
+    } finally {
+      setKycAction("");
+    }
+  };
 
   const loadUserTransactions = async (filters: UserTransactionFilters) => {
     setTransactions((current) => ({
@@ -3027,8 +3081,19 @@ function UserDashboardModal({
                       Verification records returned from the KYC service for this customer.
                     </p>
                   </div>
-                  <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-[#069AFF] dark:border-[#069AFF]/30 dark:bg-[#069AFF]/10 dark:text-sky-200">
-                    {kyc.loading ? "Loading" : `${kycRows.length} record${kycRows.length === 1 ? "" : "s"}`}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-[#069AFF] dark:border-[#069AFF]/30 dark:bg-[#069AFF]/10 dark:text-sky-200">
+                      {kyc.loading ? "Loading" : `${kycRows.length} record${kycRows.length === 1 ? "" : "s"}`}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void loadUserKyc()}
+                      disabled={kyc.loading || Boolean(kycAction)}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${kyc.loading ? "animate-spin" : ""}`} aria-hidden="true" />
+                      Refresh
+                    </button>
                   </div>
                 </div>
                 <div className="grid gap-4 p-4">
@@ -3067,6 +3132,8 @@ function UserDashboardModal({
                     const statusValue =
                       getRecordValue(record, ["status", "verificationStatus", "approvalStatus"]) ??
                       getRecordValue(record, ["state"]);
+                    const normalizedStatus = String(statusValue ?? "pending").toLowerCase();
+                    const pending = normalizedStatus === "pending";
                     const title =
                       String(getRecordValue(record, ["documentType", "idType", "type", "tier", "level"]) ?? "").trim() ||
                       `KYC record ${index + 1}`;
@@ -3080,7 +3147,27 @@ function UserDashboardModal({
                             <p className="text-base font-bold text-slate-950 dark:text-white">{formatLabel(title)}</p>
                             <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{recordId}</p>
                           </div>
-                          <StatusBadge status={statusValue ?? "unknown"} />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={statusValue ?? "unknown"} />
+                            <button
+                              type="button"
+                              disabled={!pending || kycAction === `${recordId}-approve`}
+                              onClick={() => void handleReviewKyc(recordId, "approve")}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+                            >
+                              {kycAction === `${recordId}-approve` ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!pending || kycAction === `${recordId}-reject`}
+                              onClick={() => void handleReviewKyc(recordId, "reject")}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                            >
+                              {kycAction === `${recordId}-reject` ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+                              Reject
+                            </button>
+                          </div>
                         </div>
 
                         <div className="mt-4 grid gap-4">
