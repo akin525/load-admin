@@ -806,7 +806,7 @@ export default function AuditLogsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                      {paginatedRows.map((row, index) => {
+                      {rows.map((row, index) => {
                         const actor = getAuditActor(row);
                         const method = getAuditMethod(row);
                         const path = getAuditPath(row);

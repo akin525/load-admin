@@ -2733,7 +2733,7 @@ export default function LoansPage() {
                                 tone="success"
                                 busy={busyAction === `app-loan-${id}-approve`}
                                 disabled={!id || !isReviewed || isApproved || isRejected || isClosed}
-                                onClick={() => runAppLoanAction(id, "approve", () => adminService.approveAppLoan(id))}
+                                onClick={() => void startAppLoanApproval(id)}
                               />
                               <LoanActionButton
                                 label="Reject"
@@ -2869,7 +2869,7 @@ export default function LoansPage() {
                         <button
                           type="button"
                           disabled={!id || !reviewed || status === "approved" || status === "active" || status === "rejected" || status === "closed" || busyAction === `loan-${id}-approve`}
-                          onClick={() => void runLoanMaintenanceAction(id, "approve", () => adminService.approveLoan(id, { disburseToWallet: false }))}
+                          onClick={() => void startCoreLoanApproval(id)}
                           className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
                         >
                           Approve
