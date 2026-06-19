@@ -34,7 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
-import { canAccessRoute, clearAdminSession, useAdminSession } from "@/lib/admin-access";
+import { clearAdminSession } from "@/lib/admin-access";
 
 type NavItem = {
   href: string;
@@ -485,7 +485,6 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
-  const adminSession = useAdminSession();
 
   const mounted = useSyncExternalStore(subscribe, () => true, () => false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -511,16 +510,7 @@ export function Sidebar() {
 
   const isDarkMode = mounted && resolvedTheme === "dark";
 
-  const visibleNavGroups = useMemo(
-    () =>
-      navGroups
-        .map((group) => ({
-          ...group,
-          items: group.items.filter((item) => canAccessRoute(adminSession, item.href as never)),
-        }))
-        .filter((group) => group.items.length > 0),
-    [adminSession],
-  );
+  const visibleNavGroups = navGroups;
 
   const activeLabel = useMemo(() => {
     for (const group of visibleNavGroups) {
@@ -700,8 +690,6 @@ export function Sidebar() {
                 onClose={() => setMobileOpen(false)}
                 mobile
                 navGroups={visibleNavGroups}
-                adminName={adminSession?.name}
-                adminRole={adminSession?.roleName}
             />
           </aside>
         </div>
@@ -716,8 +704,6 @@ export function Sidebar() {
               onChangePassword={openChangePassword}
               onLogout={handleLogout}
               navGroups={visibleNavGroups}
-              adminName={adminSession?.name}
-              adminRole={adminSession?.roleName}
           />
         </aside>
 

@@ -287,6 +287,48 @@ const getTargetSummary = (record: Record<string, unknown>) =>
     ]) ?? "Not available",
   );
 
+const getActionType = (record: Record<string, unknown>) =>
+  String(findNestedValue(record, ["actionType", "action", "type", "requestType"]) ?? "Not available");
+
+const getActionLabel = (record: Record<string, unknown>) =>
+  String(findNestedValue(record, ["actionLabel", "label", "actionName"]) ?? getActionTitle(record));
+
+const getSubjectType = (record: Record<string, unknown>) =>
+  String(findNestedValue(record, ["subjectType", "targetType", "entityType", "resource"]) ?? "Not available");
+
+const getSubjectId = (record: Record<string, unknown>) =>
+  String(findNestedValue(record, ["subjectId", "userId", "user_id", "loanId", "appLoanId", "transferId", "walletTransactionId"]) ?? "Not available");
+
+const getSubjectName = (record: Record<string, unknown>) =>
+  String(findNestedValue(record, ["subjectName", "targetName", "userName", "customerName", "accountName"]) ?? getTargetSummary(record));
+
+const getPermissionName = (record: Record<string, unknown>) =>
+  String(findNestedValue(record, ["permissionName", "permission", "requiredPermission"]) ?? "Not available");
+
+const getInitiatedByName = (record: Record<string, unknown>) =>
+  String(
+    findNestedValue(record, [
+      "initiatedByAdminName",
+      "requestedByName",
+      "createdByName",
+      "adminName",
+      "requestedByEmail",
+      "createdByEmail",
+    ]) ?? "Not available",
+  );
+
+const getInitiatedByRoleName = (record: Record<string, unknown>) =>
+  String(findNestedValue(record, ["initiatedByRoleName", "roleName", "adminRoleName"]) ?? "Not available");
+
+const getDecisionByName = (record: Record<string, unknown>) =>
+  String(findNestedValue(record, ["approvedByAdminName", "rejectedByAdminName", "reviewedByAdminName"]) ?? "Not available");
+
+const getDecisionAt = (record: Record<string, unknown>) =>
+  findNestedValue(record, ["approvedAt", "rejectedAt", "reviewedAt"]);
+
+const getDecisionReason = (record: Record<string, unknown>) =>
+  String(findNestedValue(record, ["rejectionReason", "approvalReason", "reviewReason", "reason"]) ?? "Not available");
+
 const getActionTitle = (record: Record<string, unknown>) => {
   const signature = getActionSignature(record);
 
@@ -405,6 +447,40 @@ function SummaryCard({
   );
 }
 
+function DetailField({
+  label,
+  value,
+  className = "",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className={`rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.035] ${className}`}>
+      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-white">{value}</p>
+    </div>
+  );
+}
+
+function JsonPanel({
+  label,
+  value,
+}: {
+  label: string;
+  value: unknown;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-950 p-4 dark:border-white/10">
+      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-300">{label}</p>
+      <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words text-xs leading-6 text-slate-100">
+        {JSON.stringify(value ?? {}, null, 2)}
+      </pre>
+    </div>
+  );
+}
+
 function DetailModal({
   row,
   loading,
@@ -416,15 +492,29 @@ function DetailModal({
   error: string;
   onClose: () => void;
 }) {
+  const status = row ? getRequestStatus(row) : "pending";
+  const normalizedStatus = status.toLowerCase();
+  const hasDecision = ["approved", "rejected"].includes(normalizedStatus);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-4xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+      <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-5 dark:border-white/10">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#069AFF]">Action request</p>
             <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">
               {row ? getActionTitle(row) : "Loading request"}
             </h2>
+            {row ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-bold uppercase tracking-[0.14em] ${getStatusTone(status)}`}>
+                  {status}
+                </span>
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                  {getRequestDisplayId(row)}
+                </span>
+              </div>
+            ) : null}
           </div>
           <button
             type="button"
@@ -434,7 +524,7 @@ function DetailModal({
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div className="max-h-[80vh] overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-5">
           {loading ? (
             <div className="flex items-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -446,26 +536,73 @@ function DetailModal({
             </div>
           ) : row ? (
             <div className="grid gap-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                {[
-                  ["Request ID", getRequestDisplayId(row)],
-                  ["Action", getActionTitle(row)],
-                  ["Status", getRequestStatus(row)],
-                  ["Requested by", getRequestedBy(row)],
-                  ["Target", getTargetSummary(row)],
-                  ["Requested at", formatDate(getRequestedAt(row))],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.035]">
-                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{label}</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">{value}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-950 p-4 dark:border-white/10">
-                <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-300">Raw payload</p>
-                <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-slate-100">
-                  {JSON.stringify(row, null, 2)}
-                </pre>
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)]">
+                <div className="grid gap-5">
+                  <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#069AFF]">Request overview</p>
+                      <h3 className="mt-2 text-lg font-bold text-slate-950 dark:text-white">{getActionLabel(row)}</h3>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <DetailField label="Request ID" value={getRequestDisplayId(row)} />
+                      <DetailField label="Action Type" value={getActionType(row)} />
+                      <DetailField label="Action Label" value={getActionLabel(row)} />
+                      <DetailField label="Permission" value={getPermissionName(row)} />
+                      <DetailField label="Created At" value={formatDate(getRequestedAt(row))} />
+                      <DetailField label="Updated At" value={formatDate(findNestedValue(row, ["updatedAt"]))} />
+                    </div>
+                  </section>
+
+                  <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#069AFF]">Subject</p>
+                      <h3 className="mt-2 text-lg font-bold text-slate-950 dark:text-white">{getSubjectName(row)}</h3>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <DetailField label="Subject Type" value={getSubjectType(row)} />
+                      <DetailField label="Subject ID" value={getSubjectId(row)} />
+                    </div>
+                  </section>
+
+                  <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#069AFF]">Initiated By</p>
+                      <h3 className="mt-2 text-lg font-bold text-slate-950 dark:text-white">{getInitiatedByName(row)}</h3>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <DetailField label="Admin Name" value={getInitiatedByName(row)} />
+                      <DetailField label="Role" value={getInitiatedByRoleName(row)} />
+                      <DetailField label="Admin ID" value={formatValue(findNestedValue(row, ["initiatedByAdminId"]))} />
+                      <DetailField label="Admin User ID" value={formatValue(findNestedValue(row, ["initiatedByAdminUserId"]))} />
+                    </div>
+                  </section>
+
+                  {hasDecision ? (
+                    <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#069AFF]">Decision</p>
+                        <h3 className="mt-2 text-lg font-bold text-slate-950 dark:text-white">
+                          {normalizedStatus === "rejected" ? "Rejected request" : "Approved request"}
+                        </h3>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <DetailField label="Decision By" value={getDecisionByName(row)} />
+                        <DetailField label="Decision At" value={formatDate(getDecisionAt(row))} />
+                        <DetailField
+                          label={normalizedStatus === "rejected" ? "Rejection Reason" : "Decision Reason"}
+                          value={getDecisionReason(row)}
+                          className="sm:col-span-2"
+                        />
+                      </div>
+                    </section>
+                  ) : null}
+                </div>
+
+                <div className="grid gap-5">
+                  <JsonPanel label="Payload" value={findNestedValue(row, ["payload"])} />
+                  <JsonPanel label="Metadata" value={findNestedValue(row, ["metadata"])} />
+                  <JsonPanel label="Raw Request JSON" value={row} />
+                </div>
               </div>
             </div>
           ) : null}

@@ -42,7 +42,7 @@ type DetailState = {
   error: string;
 };
 
-type UserDashboardTab = "overview" | "transactions";
+type UserDashboardTab = "overview" | "transactions" | "kyc";
 
 type UserTransactionFilters = {
   fromDate: string;
@@ -58,6 +58,10 @@ type UserDashboardState = DetailState & {
 };
 
 type UserTransactionsState = DetailState & {
+  loaded: boolean;
+};
+
+type UserKycState = DetailState & {
   loaded: boolean;
 };
 
@@ -151,6 +155,40 @@ const extractRows = (payload: unknown): Record<string, unknown>[] => {
   const list = Object.values(value).find(Array.isArray);
   return Array.isArray(list) ? list.filter(isRecord) : [];
 };
+
+const extractRowsOrRecord = (payload: unknown): Record<string, unknown>[] => {
+  const rows = extractRows(payload);
+
+  if (rows.length) {
+    return rows;
+  }
+
+  const value = unwrapPayload(payload);
+
+  if (isRecord(value)) {
+    return [value];
+  }
+
+  return [];
+};
+
+const isHttpUrl = (value: unknown): value is string =>
+  typeof value === "string" && /^https?:\/\//i.test(value);
+
+const getPrimitiveRecordItems = (record: Record<string, unknown>) =>
+  Object.entries(record)
+    .filter(([, value]) => !isRecord(value) && !Array.isArray(value))
+    .map(([key, value]) => ({
+      label: formatLabel(key),
+      value,
+    }));
+
+const getImageFieldEntries = (record: Record<string, unknown>) =>
+  Object.entries(record).filter(
+    ([key, value]) =>
+      isHttpUrl(value) &&
+      /(image|photo|selfie|passport|address|document|id)/i.test(key),
+  );
 
 const getRecordValue = (record: Record<string, unknown>, keys: string[]) => {
   const foundKey = keys.find((key) => key in record);
@@ -2302,6 +2340,13 @@ function UserDashboardModal({
   const [activeTab, setActiveTab] = useState<UserDashboardTab>("overview");
   const [transactionFilters, setTransactionFilters] = useState<UserTransactionFilters>(() => getDefaultUserTransactionFilters());
   const [statementFilters, setStatementFilters] = useState<WalletStatementFilters>(() => getDefaultWalletStatementFilters());
+  const [kyc, setKyc] = useState<UserKycState>({
+    title: "User KYC",
+    loading: true,
+    data: null,
+    error: "",
+    loaded: false,
+  });
   const [transactions, setTransactions] = useState<UserTransactionsState>({
     title: "User transactions",
     loading: false,
@@ -2315,12 +2360,71 @@ function UserDashboardModal({
   const wallets = getDashboardCollection(dashboard.data, "wallets");
   const loans = getDashboardCollection(dashboard.data, "loans");
   const walletBalance = sumCurrencyRows(wallets, ["balance", "availableBalance", "amount"]);
+  const kycRows = useMemo(() => extractRowsOrRecord(kyc.data), [kyc.data]);
+  const kycPayload = useMemo(() => unwrapPayload(kyc.data), [kyc.data]);
+  const kycSummaryItems = useMemo(() => {
+    if (!isRecord(kycPayload)) {
+      return [];
+    }
+
+    return [
+      { label: "Total", value: getRecordValue(kycPayload, ["total"]) },
+      { label: "Returned", value: kycRows.length },
+      { label: "Limit", value: getRecordValue(kycPayload, ["limit"]) },
+      { label: "Skip", value: getRecordValue(kycPayload, ["skip"]) },
+    ];
+  }, [kycPayload, kycRows.length]);
 
   const summary = [
     { label: "Virtual accounts", value: formatValue(getDashboardTotal(dashboard.data, "virtualAccounts")), icon: Landmark },
     { label: "Wallet balance", value: formatCurrency(walletBalance), icon: WalletCards },
     { label: "Loan records", value: formatValue(getDashboardTotal(dashboard.data, "loans")), icon: CreditCard },
   ];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setKyc({
+      title: "User KYC",
+      loading: true,
+      data: null,
+      error: "",
+      loaded: false,
+    });
+
+    void adminService
+      .getUserKyc(dashboard.userId)
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+
+        setKyc({
+          title: "User KYC",
+          loading: false,
+          data,
+          error: "",
+          loaded: true,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setKyc({
+          title: "User KYC",
+          loading: false,
+          data: null,
+          error: getErrorMessage(error),
+          loaded: true,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboard.userId]);
 
   const loadUserTransactions = async (filters: UserTransactionFilters) => {
     setTransactions((current) => ({
@@ -2502,6 +2606,11 @@ function UserDashboardModal({
                 label: "Transactions",
                 description: "Wallet, deposits, bills, and transfers",
               },
+              {
+                key: "kyc" as const,
+                label: "KYC",
+                description: "Verification records and identity data",
+              },
             ].map((tab) => {
               const active = activeTab === tab.key;
 
@@ -2638,10 +2747,11 @@ function UserDashboardModal({
                       {!loans.length && <EmptyPanel label="No loan records returned." />}
                     </div>
                   </section>
+
                 </div>
               )}
             </>
-          ) : (
+          ) : activeTab === "transactions" ? (
             <div className="grid gap-5">
               <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
@@ -2906,6 +3016,124 @@ function UserDashboardModal({
                 </>
               )}
             </div>
+          ) : (
+            <section className="grid gap-5">
+              <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF]">KYC records</p>
+                    <h3 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">Customer KYC</h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Verification records returned from the KYC service for this customer.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-[#069AFF] dark:border-[#069AFF]/30 dark:bg-[#069AFF]/10 dark:text-sky-200">
+                    {kyc.loading ? "Loading" : `${kycRows.length} record${kycRows.length === 1 ? "" : "s"}`}
+                  </div>
+                </div>
+                <div className="grid gap-4 p-4">
+                  {kyc.loading && (
+                    <div className="flex min-h-24 items-center justify-center gap-3 rounded-lg border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-400">
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      Loading customer KYC
+                    </div>
+                  )}
+
+                  {!kyc.loading && kyc.error && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                      {kyc.error}
+                    </div>
+                  )}
+
+                  {!kyc.loading && !kyc.error && !kycRows.length && (
+                    <EmptyPanel label="No KYC records returned for this customer." />
+                  )}
+
+                  {!kyc.loading && !kyc.error && Boolean(kycSummaryItems.length) && (
+                    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      {kycSummaryItems.map((item) => (
+                        <SummaryCard
+                          key={item.label}
+                          label={item.label}
+                          value={formatFieldValue(item.label, item.value)}
+                          icon={ShieldCheck}
+                        />
+                      ))}
+                    </section>
+                  )}
+
+                  {!kyc.loading && !kyc.error && kycRows.map((record, index) => {
+                    const recordId = getId(record) || `kyc-${index + 1}`;
+                    const statusValue =
+                      getRecordValue(record, ["status", "verificationStatus", "approvalStatus"]) ??
+                      getRecordValue(record, ["state"]);
+                    const title =
+                      String(getRecordValue(record, ["documentType", "idType", "type", "tier", "level"]) ?? "").trim() ||
+                      `KYC record ${index + 1}`;
+                    const imageEntries = getImageFieldEntries(record);
+                    const primitiveItems = getPrimitiveRecordItems(record);
+
+                    return (
+                      <div key={recordId} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-base font-bold text-slate-950 dark:text-white">{formatLabel(title)}</p>
+                            <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{recordId}</p>
+                          </div>
+                          <StatusBadge status={statusValue ?? "unknown"} />
+                        </div>
+
+                        <div className="mt-4 grid gap-4">
+                          <TransactionDetailGrid items={primitiveItems} columns="sm:grid-cols-2 xl:grid-cols-4" />
+
+                          {Boolean(imageEntries.length) && (
+                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                              {imageEntries.map(([key, value]) => (
+                                <div key={key} className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-950/50">
+                                  <div className="border-b border-slate-100 px-4 py-3 dark:border-white/10">
+                                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                                      {formatLabel(key)}
+                                    </p>
+                                  </div>
+                                  <div className="p-4">
+                                    <a
+                                      href={String(value)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="block overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-white/10 dark:bg-slate-900"
+                                    >
+                                      <img
+                                        src={String(value)}
+                                        alt={formatLabel(key)}
+                                        className="h-48 w-full object-cover"
+                                      />
+                                    </a>
+                                    <a
+                                      href={String(value)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="mt-3 block break-all text-xs font-semibold text-[#069AFF] hover:underline dark:text-sky-200"
+                                    >
+                                      {String(value)}
+                                    </a>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <JsonInspector label="Raw KYC record" value={record} />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {!kyc.loading && !kyc.error && (
+                    <JsonInspector label="Full KYC response payload" value={kycPayload} />
+                  )}
+                </div>
+              </div>
+            </section>
           )}
         </div>
       </div>
