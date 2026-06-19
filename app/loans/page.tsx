@@ -253,6 +253,36 @@ const getOtpChallenge = (payload: unknown): OtpChallenge | null => {
   };
 };
 
+const isPendingApprovalResponse = (payload: unknown) =>
+  isRecord(payload) &&
+  (payload.pending_approval === true ||
+    payload.pendingApproval === true ||
+    String(payload.status ?? "").toLowerCase() === "pending_approval");
+
+const getPendingRequestId = (payload: unknown) => {
+  if (!isRecord(payload)) {
+    return "";
+  }
+
+  const direct = [payload.requestId, payload.request_id]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+  if (direct) {
+    return direct;
+  }
+
+  if (isRecord(payload.data)) {
+    const nested = [payload.data.requestId, payload.data.request_id]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return "";
+};
+
 const getResponseDetail = (payload: unknown) => {
   if (!isRecord(payload)) {
     return "";
@@ -1839,6 +1869,18 @@ export default function LoansPage() {
   const submitAndRefresh = async (request: () => Promise<unknown>) => {
     try {
       const response = await request();
+
+      if (isPendingApprovalResponse(response)) {
+        const requestId = getPendingRequestId(response);
+        setFormAction(null);
+        showServerToast(
+          response,
+          requestId ? `Submitted for approval. Request ID: ${requestId}` : "Submitted for approval",
+          "warning",
+        );
+        return;
+      }
+
       await refreshData();
       setFormAction(null);
       showServerToast(response, "Action completed successfully", "success");
@@ -1860,6 +1902,17 @@ export default function LoansPage() {
 
     try {
       const response = await request();
+
+      if (isPendingApprovalResponse(response)) {
+        const requestId = getPendingRequestId(response);
+        showServerToast(
+          response,
+          requestId ? `Submitted for approval. Request ID: ${requestId}` : "Submitted for approval",
+          "warning",
+        );
+        return;
+      }
+
       await refreshData();
       showServerToast(response, "Loan action completed successfully", "success");
     } catch (error) {
@@ -2008,6 +2061,17 @@ export default function LoansPage() {
     setBusyAction(`app-loan-${id}-${action}`);
     try {
       const response = await request();
+
+      if (isPendingApprovalResponse(response)) {
+        const requestId = getPendingRequestId(response);
+        showServerToast(
+          response,
+          requestId ? `Submitted for approval. Request ID: ${requestId}` : "Submitted for approval",
+          "warning",
+        );
+        return;
+      }
+
       await refreshData();
       if (action === "score") {
         setCreditScoreResult({
@@ -2180,10 +2244,52 @@ export default function LoansPage() {
       eyebrow: "App loan",
       title: "Close application loan",
       description: "Close this loan only after it is fully settled.",
-      submitLabel: "Close loan",
+      submitLabel: "Submit close request",
       initialValues: { reason: "Fully settled" },
       fields: [{ name: "reason", label: "Closure reason", type: "textarea", required: true }],
       onSubmit: (values) => submitAndRefresh(() => adminService.closeAppLoan(id, { reason: values.reason })),
+    });
+  };
+
+  const openMarkAppLoanOverdue = (id: string) => {
+    setFormAction({
+      eyebrow: "App loan",
+      title: "Mark application loan overdue",
+      description: "Use this only when repayment deadlines have passed and the status should be escalated immediately.",
+      submitLabel: "Mark overdue",
+      initialValues: { reason: "Repayment deadline passed" },
+      fields: [{ name: "reason", label: "Reason", type: "textarea", required: true }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.markAppLoanOverdue(id, { reason: values.reason })),
+    });
+  };
+
+  const openRescheduleAppLoan = (id: string) => {
+    setFormAction({
+      eyebrow: "App loan",
+      title: "Reschedule application loan",
+      description: "Submit a revised repayment plan. This request will require approval before it takes effect.",
+      submitLabel: "Submit reschedule request",
+      initialValues: {
+        dueDate: "",
+        nextDueDate: "",
+        installmentAmount: "",
+        note: "Customer approved repayment plan update",
+      },
+      fields: [
+        { name: "dueDate", label: "New due date", required: true, placeholder: "2026-06-30T00:00:00.000Z" },
+        { name: "nextDueDate", label: "Next repayment date", placeholder: "2026-06-23T00:00:00.000Z" },
+        { name: "installmentAmount", label: "Installment amount", placeholder: "10000" },
+        { name: "note", label: "Reschedule note", type: "textarea", required: true },
+      ],
+      onSubmit: (values) =>
+        submitAndRefresh(() =>
+          adminService.rescheduleAppLoan(id, {
+            dueDate: values.dueDate,
+            nextDueDate: values.nextDueDate,
+            installmentAmount: values.installmentAmount ? Number(values.installmentAmount) : undefined,
+            note: values.note,
+          }),
+        ),
     });
   };
 
@@ -2317,10 +2423,22 @@ export default function LoansPage() {
       eyebrow: "Core loan",
       title: "Close core loan",
       description: "Close this legacy loan only after confirming it is fully settled.",
-      submitLabel: "Close loan",
+      submitLabel: "Submit close request",
       initialValues: { reason: "Fully settled" },
       fields: [{ name: "reason", label: "Closure reason", type: "textarea", required: true }],
       onSubmit: (values) => submitAndRefresh(() => adminService.closeLoan(id, { reason: values.reason })),
+    });
+  };
+
+  const openMarkCoreLoanOverdue = (id: string) => {
+    setFormAction({
+      eyebrow: "Core loan",
+      title: "Mark core loan overdue",
+      description: "Use this only when the BankOne loan is past due and should move into overdue status.",
+      submitLabel: "Mark overdue",
+      initialValues: { reason: "Repayment deadline passed" },
+      fields: [{ name: "reason", label: "Reason", type: "textarea", required: true }],
+      onSubmit: (values) => submitAndRefresh(() => adminService.markLoanOverdue(id, { reason: values.reason })),
     });
   };
 
@@ -2350,6 +2468,24 @@ export default function LoansPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setFormAction({
+                  eyebrow: "Portfolio maintenance",
+                  title: "Mark overdue app loans",
+                  description: "Submit a bulk overdue sweep for application loans that have crossed their repayment dates.",
+                  submitLabel: "Run overdue sweep",
+                  initialValues: { note: "Bulk overdue sweep" },
+                  fields: [{ name: "note", label: "Operational note", type: "textarea", required: true }],
+                  onSubmit: (values) => submitAndRefresh(() => adminService.markAllAppLoansOverdue({ note: values.note })),
+                })
+              }
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+              Overdue sweep
+            </button>
             <button
               type="button"
               onClick={() => void refreshData()}
@@ -2597,7 +2733,7 @@ export default function LoansPage() {
                                 tone="success"
                                 busy={busyAction === `app-loan-${id}-approve`}
                                 disabled={!id || !isReviewed || isApproved || isRejected || isClosed}
-                                onClick={() => void startAppLoanApproval(id)}
+                                onClick={() => runAppLoanAction(id, "approve", () => adminService.approveAppLoan(id))}
                               />
                               <LoanActionButton
                                 label="Reject"
@@ -2654,6 +2790,20 @@ export default function LoansPage() {
                                 icon={ShieldCheck}
                                 disabled={!id || !canClose}
                                 onClick={() => openCloseAppLoan(id)}
+                              />
+                              <LoanActionButton
+                                label="Mark overdue"
+                                icon={AlertCircle}
+                                tone="danger"
+                                disabled={!id || isClosed || isRejected}
+                                onClick={() => openMarkAppLoanOverdue(id)}
+                              />
+                              <LoanActionButton
+                                label="Reschedule"
+                                icon={RefreshCw}
+                                tone="primary"
+                                disabled={!id || isClosed || isRejected}
+                                onClick={() => openRescheduleAppLoan(id)}
                               />
                             </div>
                             <p className="mt-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
@@ -2719,7 +2869,7 @@ export default function LoansPage() {
                         <button
                           type="button"
                           disabled={!id || !reviewed || status === "approved" || status === "active" || status === "rejected" || status === "closed" || busyAction === `loan-${id}-approve`}
-                          onClick={() => void startCoreLoanApproval(id)}
+                          onClick={() => void runLoanMaintenanceAction(id, "approve", () => adminService.approveLoan(id, { disburseToWallet: false }))}
                           className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
                         >
                           Approve
@@ -2755,6 +2905,14 @@ export default function LoansPage() {
                           className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                         >
                           Close
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!id || isClosed}
+                          onClick={() => openMarkCoreLoanOverdue(id)}
+                          className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                        >
+                          Mark overdue
                         </button>
                       </div>
                     </td>

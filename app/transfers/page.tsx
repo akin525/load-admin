@@ -43,6 +43,11 @@ type TransfersState = {
   error: string;
 };
 
+type ActionNotice = {
+  tone: "success" | "error" | "warning";
+  message: string;
+};
+
 const STATUS_VARIANTS: Record<string, { label: string; icon: any; className: string }> = {
   success: {
     label: "Success",
@@ -78,6 +83,57 @@ const formatDate = (dateString: string) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const getErrorMessage = (error: unknown) => {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const payload = (error as { response?: { data?: unknown } }).response?.data;
+
+    if (payload && typeof payload === "object" && "message" in payload && typeof (payload as { message?: unknown }).message === "string") {
+      return (payload as { message: string }).message;
+    }
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Request failed";
+};
+
+const isPendingApprovalResponse = (payload: unknown) =>
+  Boolean(
+    payload &&
+      typeof payload === "object" &&
+      !Array.isArray(payload) &&
+      (((payload as Record<string, unknown>).pending_approval === true ||
+        (payload as Record<string, unknown>).pendingApproval === true ||
+        String((payload as Record<string, unknown>).status ?? "").toLowerCase() === "pending_approval")),
+  );
+
+const getPendingRequestId = (payload: unknown) => {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return "";
+  }
+
+  const record = payload as Record<string, unknown>;
+  const direct = [record.requestId, record.request_id]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+  if (direct) {
+    return direct;
+  }
+
+  if (record.data && typeof record.data === "object" && !Array.isArray(record.data)) {
+    const nested = [(record.data as Record<string, unknown>).requestId, (record.data as Record<string, unknown>).request_id]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return "";
 };
 
 function TransferDetailModal({
@@ -355,6 +411,8 @@ export default function TransfersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
+  const [reversingId, setReversingId] = useState("");
+  const [notice, setNotice] = useState<ActionNotice | null>(null);
 
   const fetchTransfers = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: "" }));
@@ -393,6 +451,30 @@ export default function TransfersPage() {
   const paginatedRows = useMemo(() => {
     return paginateItems(filteredRows, currentPage, pageSize);
   }, [filteredRows, currentPage, pageSize]);
+
+  const handleReverseTransfer = async (id: string) => {
+    if (!id) {
+      setNotice({ tone: "error", message: "This transfer has no identifier for reversal." });
+      return;
+    }
+
+    setReversingId(id);
+    setNotice(null);
+
+    try {
+      const response = await adminService.reverseTransfer(id);
+      const requestId = getPendingRequestId(response);
+      setNotice({
+        tone: isPendingApprovalResponse(response) ? "warning" : "success",
+        message: requestId ? `Transfer reversal submitted. Request ID: ${requestId}` : "Transfer reversal submitted.",
+      });
+      await fetchTransfers();
+    } catch (error) {
+      setNotice({ tone: "error", message: getErrorMessage(error) });
+    } finally {
+      setReversingId("");
+    }
+  };
 
   if (!allowed) {
     return <AccessDeniedState />;
@@ -480,6 +562,22 @@ export default function TransfersPage() {
 
         {/* Content Section */}
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#0d1728]">
+          {notice && (
+            <div
+              className={`border-b px-6 py-4 text-sm font-semibold ${
+                notice.tone === "error"
+                  ? "border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                  : notice.tone === "warning"
+                    ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{notice.message}</span>
+              </div>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -504,7 +602,10 @@ export default function TransfersPage() {
                     </td>
                   </tr>
                 ) : paginatedRows.length > 0 ? (
-                  paginatedRows.map((row) => (
+                  paginatedRows.map((row) => {
+                    const canReverse = String(row.status ?? "").toLowerCase() === "success";
+
+                    return (
                     <tr key={row._id} className="group transition hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
                       <td className="px-6 py-5">
                         <div className="flex flex-col">
@@ -542,15 +643,25 @@ export default function TransfersPage() {
                         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{formatDate(row.createdAt)}</span>
                       </td>
                       <td className="px-6 py-5 text-right">
-                        <button
-                          onClick={() => setSelectedTransferId(row._id)}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition group-hover:bg-[#069AFF] group-hover:text-white dark:bg-white/5 dark:text-slate-400"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setSelectedTransferId(row._id)}
+                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition group-hover:bg-[#069AFF] group-hover:text-white dark:bg-white/5 dark:text-slate-400"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => void handleReverseTransfer(row._id)}
+                            disabled={!canReverse || reversingId === row._id}
+                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-[10px] font-black uppercase tracking-wider text-amber-700 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100"
+                          >
+                            {reversingId === row._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                            Reverse
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  ))
+                  )})
                 ) : (
                   <tr>
                     <td colSpan={7} className="py-24 text-center">

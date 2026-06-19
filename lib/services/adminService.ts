@@ -35,6 +35,54 @@ type ChangePasswordPayload = {
 type AdminPayload = Record<string, unknown>;
 type QueryParams = Record<string, string | number | boolean | undefined>;
 
+const getHeaderValue = (headers: unknown, key: string) => {
+    if (!headers || typeof headers !== 'object') {
+        return '';
+    }
+
+    if ('get' in headers && typeof (headers as { get?: unknown }).get === 'function') {
+        const value = (headers as { get: (name: string) => unknown }).get(key);
+        return typeof value === 'string' ? value : '';
+    }
+
+    const record = headers as Record<string, unknown>;
+    const direct = record[key] ?? record[key.toLowerCase()] ?? record[key.toUpperCase()];
+    return typeof direct === 'string' ? direct : '';
+};
+
+const parseFilenameFromDisposition = (contentDisposition: string) => {
+    const utfMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utfMatch?.[1]) {
+        return decodeURIComponent(utfMatch[1]);
+    }
+
+    const quotedMatch = contentDisposition.match(/filename="([^"]+)"/i);
+    if (quotedMatch?.[1]) {
+        return quotedMatch[1];
+    }
+
+    const plainMatch = contentDisposition.match(/filename=([^;]+)/i);
+    return plainMatch?.[1]?.trim() ?? '';
+};
+
+const inferExtensionFromType = (contentType: string, fallback = 'csv') => {
+    const normalized = contentType.toLowerCase();
+
+    if (normalized.includes('pdf')) {
+        return 'pdf';
+    }
+
+    if (normalized.includes('csv') || normalized.includes('excel') || normalized.includes('spreadsheet')) {
+        return 'csv';
+    }
+
+    if (normalized.includes('json')) {
+        return 'json';
+    }
+
+    return fallback;
+};
+
 // Map exactly to the data expected by your Node.js backend
 export const adminService = {
     // POST /admin-login
@@ -241,6 +289,51 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/users/:userId/wallets/statement/download
+    downloadUserWalletStatement: async (
+        userId: string,
+        params?: QueryParams,
+    ): Promise<{ blob: Blob; filename: string; contentType: string }> => {
+        const response = await api.get(`/admin/users/${userId}/wallets/statement/download`, {
+            params,
+            responseType: 'blob',
+        });
+        const contentDisposition = getHeaderValue(response.headers, 'content-disposition');
+        const contentType = getHeaderValue(response.headers, 'content-type') || 'application/octet-stream';
+        const extension = String(params?.format ?? 'pdf').toLowerCase();
+        const filename = parseFilenameFromDisposition(contentDisposition) || `wallet-statement-${userId}.${extension}`;
+
+        return {
+            blob: response.data as Blob,
+            filename,
+            contentType,
+        };
+    },
+
+    // POST /admin/users/:userId/wallets/statement/email
+    emailUserWalletStatement: async (userId: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/wallets/statement/email`, payload);
+        return response.data;
+    },
+
+    // GET /admin/action-requests
+    getActionRequests: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/action-requests', { params });
+        return response.data;
+    },
+
+    // GET /admin/action-requests/:id
+    getActionRequestById: async (id: string): Promise<unknown> => {
+        const response = await api.get(`/admin/action-requests/${id}`);
+        return response.data;
+    },
+
+    // POST /admin/action-requests/:id/reject
+    rejectActionRequest: async (id: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/action-requests/${id}/reject`, payload ?? {});
+        return response.data;
+    },
+
     // POST /admin/users/:userId/reset-password
     resetUserPassword: async (userId: string): Promise<unknown> => {
         const response = await api.post(`/admin/users/${userId}/reset-password`, {});
@@ -274,6 +367,42 @@ export const adminService = {
     // POST /admin/users/:userId/fund-wallet
     fundUserWallet: async (userId: string, payload: AdminPayload): Promise<LoginResponse> => {
         const response = await api.post(`/admin/users/${userId}/fund-wallet`, payload);
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/reset-password/approve
+    approveResetUserPassword: async (userId: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/users/${userId}/reset-password/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/lock/approve
+    approveLockUser: async (userId: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/users/${userId}/lock/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/unlock/approve
+    approveUnlockUser: async (userId: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/users/${userId}/unlock/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/disable/approve
+    approveDisableUser: async (userId: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/users/${userId}/disable/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/enable/approve
+    approveEnableUser: async (userId: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/users/${userId}/enable/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/fund-wallet/approve
+    approveFundUserWallet: async (userId: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/users/${userId}/fund-wallet/approve`, payload ?? {});
         return response.data;
     },
 
@@ -364,6 +493,18 @@ export const adminService = {
     // POST /admin/loans/:loanId/close
     closeLoan: async (loanId: string, payload?: AdminPayload): Promise<unknown> => {
         const response = await api.post(`/admin/loans/${loanId}/close`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/loans/:loanId/close/approve
+    approveCloseLoan: async (loanId: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/loans/${loanId}/close/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/loans/:loanId/mark-overdue
+    markLoanOverdue: async (loanId: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/loans/${loanId}/mark-overdue`, payload ?? {});
         return response.data;
     },
 
@@ -559,6 +700,63 @@ export const adminService = {
         return response.data;
     },
 
+    // POST /admin/app-loans/:id/close/approve
+    approveCloseAppLoan: async (id: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/app-loans/${id}/close/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/app-loans/:id/mark-overdue
+    markAppLoanOverdue: async (id: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/app-loans/${id}/mark-overdue`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/app-loans/mark-overdue
+    markAllAppLoansOverdue: async (payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/app-loans/mark-overdue', payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/app-loans/:id/reschedule
+    rescheduleAppLoan: async (id: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/app-loans/${id}/reschedule`, payload);
+        return response.data;
+    },
+
+    // POST /admin/app-loans/:id/reschedule/approve
+    approveRescheduleAppLoan: async (id: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/app-loans/${id}/reschedule/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // GET /admin/reports/center
+    getReportCenter: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reports/center', { params });
+        return response.data;
+    },
+
+    // GET /admin/reports/export/:type
+    downloadReportExport: async (
+        type: string,
+        params?: QueryParams,
+    ): Promise<{ blob: Blob; filename: string; contentType: string }> => {
+        const response = await api.get(`/admin/reports/export/${encodeURIComponent(type)}`, {
+            params,
+            responseType: 'blob',
+        });
+        const contentDisposition = getHeaderValue(response.headers, 'content-disposition');
+        const contentType = getHeaderValue(response.headers, 'content-type') || 'application/octet-stream';
+        const extension = inferExtensionFromType(contentType, 'csv');
+        const filename = parseFilenameFromDisposition(contentDisposition) || `${type}-report.${extension}`;
+
+        return {
+            blob: response.data as Blob,
+            filename,
+            contentType,
+        };
+    },
+
     // GET /admin/reports/financial
     getFinancialReport: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/reports/financial', { params });
@@ -601,6 +799,18 @@ export const adminService = {
         return response.data;
     },
 
+    // POST /admin/wallet-transactions/:id/reverse
+    reverseWalletTransaction: async (id: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/wallet-transactions/${id}/reverse`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/wallet-transactions/:id/reverse/approve
+    approveReverseWalletTransaction: async (id: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/wallet-transactions/${id}/reverse/approve`, payload ?? {});
+        return response.data;
+    },
+
     // GET /admin/xpress-webhook-logs
     getXpressWebhookLogs: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/xpress-webhook-logs', { params });
@@ -616,6 +826,42 @@ export const adminService = {
     // GET /admin/transfers/:id
     getTransferById: async (id: string): Promise<unknown> => {
         const response = await api.get(`/admin/transfers/${id}`);
+        return response.data;
+    },
+
+    // POST /admin/transfers/:id/reverse
+    reverseTransfer: async (id: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/transfers/${id}/reverse`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/transfers/:id/reverse/approve
+    approveReverseTransfer: async (id: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/transfers/${id}/reverse/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // GET /admin/reconciliation/overview
+    getReconciliationOverview: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reconciliation/overview', { params });
+        return response.data;
+    },
+
+    // GET /admin/reconciliation/deposits
+    getReconciliationDeposits: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reconciliation/deposits', { params });
+        return response.data;
+    },
+
+    // GET /admin/reconciliation/transfers
+    getReconciliationTransfers: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reconciliation/transfers', { params });
+        return response.data;
+    },
+
+    // GET /admin/reconciliation/webhooks
+    getReconciliationWebhooks: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reconciliation/webhooks', { params });
         return response.data;
     },
 

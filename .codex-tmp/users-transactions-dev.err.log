@@ -1,0 +1,8 @@
+⨯ Another next dev server is already running.
+
+- Local:        http://localhost:3001
+- PID:          18296
+- Dir:          C:\Users\HP\WebstormProjects\admin-easycredit
+- Log:          .next\dev\logs\next-development.log
+
+Run taskkill /PID 18296 /F to stop it.

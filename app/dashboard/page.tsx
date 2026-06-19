@@ -658,7 +658,16 @@ function DepositsTable({
           <h2 className="text-base font-bold text-slate-950 dark:text-white">Deposit records</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Incoming deposits across customer wallets and payment channels.</p>
         </div>
-        <WalletCards className="h-5 w-5 text-slate-400" aria-hidden="true" />
+        <div className="flex items-center gap-3">
+          <Link
+            href="/deposits"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+          >
+            <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+            Open workspace
+          </Link>
+          <WalletCards className="h-5 w-5 text-slate-400" aria-hidden="true" />
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -1297,6 +1306,22 @@ export default function DashboardPage() {
                 </button>
               ))}
             </div>
+
+            <Link
+              href="/action-requests"
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+              Action requests
+            </Link>
+
+            <Link
+              href="/reconciliation"
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              Reconciliation
+            </Link>
 
             <button
               type="button"

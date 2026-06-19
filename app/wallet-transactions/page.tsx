@@ -51,6 +51,11 @@ type WalletTransactionsState = {
   error: string;
 };
 
+type ActionNotice = {
+  tone: "success" | "error" | "warning";
+  message: string;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -140,6 +145,14 @@ const formatDate = (value: unknown): string => {
 };
 
 const getErrorMessage = (error: unknown) => {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const payload = (error as { response?: { data?: unknown } }).response?.data;
+
+    if (isRecord(payload) && typeof payload.message === "string") {
+      return payload.message;
+    }
+  }
+
   if (typeof error === "object" && error !== null && "message" in error) {
     const message = (error as { message?: unknown }).message;
 
@@ -149,6 +162,36 @@ const getErrorMessage = (error: unknown) => {
   }
 
   return "Request failed";
+};
+
+const isPendingApprovalResponse = (payload: unknown) =>
+  isRecord(payload) &&
+  (payload.pending_approval === true ||
+    payload.pendingApproval === true ||
+    String(payload.status ?? "").toLowerCase() === "pending_approval");
+
+const getPendingRequestId = (payload: unknown) => {
+  if (!isRecord(payload)) {
+    return "";
+  }
+
+  const direct = [payload.requestId, payload.request_id]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+  if (direct) {
+    return direct;
+  }
+
+  if (isRecord(payload.data)) {
+    const nested = [payload.data.requestId, payload.data.request_id]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return "";
 };
 
 const getRecordValue = (record: Record<string, unknown>, keys: string[]) => {
@@ -610,6 +653,8 @@ export default function WalletTransactionsPage() {
     error: "",
   });
   const [selectedTransaction, setSelectedTransaction] = useState<Record<string, unknown> | null>(null);
+  const [notice, setNotice] = useState<ActionNotice | null>(null);
+  const [reversingId, setReversingId] = useState("");
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -693,6 +738,34 @@ export default function WalletTransactionsPage() {
   const handleLogout = () => {
     localStorage.removeItem("token");
     router.replace("/auth/login");
+  };
+
+  const handleReverse = async (row: Record<string, unknown>) => {
+    const id = getTransactionId(row);
+
+    if (!id) {
+      setNotice({ tone: "error", message: "This wallet transaction has no identifier for reversal." });
+      return;
+    }
+
+    setReversingId(id);
+    setNotice(null);
+
+    try {
+      const response = await adminService.reverseWalletTransaction(id);
+      const requestId = getPendingRequestId(response);
+
+      setNotice({
+        tone: isPendingApprovalResponse(response) ? "warning" : "success",
+        message: requestId
+          ? `Wallet transaction reversal submitted. Request ID: ${requestId}`
+          : "Wallet transaction reversal submitted.",
+      });
+    } catch (error) {
+      setNotice({ tone: "error", message: getErrorMessage(error) });
+    } finally {
+      setReversingId("");
+    }
   };
 
   if (!canOpenWalletLedger) {
@@ -878,6 +951,23 @@ export default function WalletTransactionsPage() {
               </div>
             )}
 
+            {notice && (
+              <div
+                className={`rounded-lg border p-4 text-sm font-semibold ${
+                  notice.tone === "error"
+                    ? "border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                    : notice.tone === "warning"
+                      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+                }`}
+              >
+                <div className="flex gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                  <span>{notice.message}</span>
+                </div>
+              </div>
+            )}
+
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
               <SummaryCard label="Returned records" value={formatValue(rows.length)} icon={WalletCards} />
               <SummaryCard label="Successful transactions" value={formatValue(totals.successCount)} icon={Landmark} />
@@ -920,6 +1010,16 @@ export default function WalletTransactionsPage() {
                       const direction = getDirection(row);
                       const directionTone = getDirectionTone(direction);
                       const DirectionIcon = directionTone.icon;
+                      const rowId = getTransactionId(row);
+                      const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();
+                      const joined = [
+                        String(getRecordValue(row, ["transactionType"]) ?? ""),
+                        String(getRecordValue(row, ["category"]) ?? ""),
+                        String(getRecordValue(row, ["source"]) ?? ""),
+                      ]
+                        .join(" ")
+                        .toLowerCase();
+                      const canReverse = Boolean(rowId) && status === "success" && !joined.includes("reversal");
 
                       return (
                         <tr key={`${getTransactionId(row)}-${index}`} className="text-slate-700 dark:text-slate-300">
@@ -969,14 +1069,25 @@ export default function WalletTransactionsPage() {
                             {formatDate(getRecordValue(row, ["createdAt", "updatedAt", "date", "transactionDate"]))}
                           </td>
                           <td className="px-5 py-4">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedTransaction(row)}
-                              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-                            >
-                              <Eye className="h-4 w-4" aria-hidden="true" />
-                              View
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedTransaction(row)}
+                                className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                              >
+                                <Eye className="h-4 w-4" aria-hidden="true" />
+                                View
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!canReverse || reversingId === rowId}
+                                onClick={() => void handleReverse(row)}
+                                className="inline-flex h-9 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100"
+                              >
+                                {reversingId === rowId ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                                Reverse
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

@@ -32,8 +32,11 @@ type AuthResponseLike = {
 type RouteKey =
   | "/dashboard"
   | "/admin"
+  | "/action-requests"
+  | "/deposits"
   | "/users"
   | "/loans"
+  | "/reconciliation"
   | "/reports"
   | "/fees"
   | "/system-settings"
@@ -339,6 +342,8 @@ const scopeMatchers: Record<string, string[][]> = {
     ["user"],
     ["customer"],
   ],
+  actionRequests: [["action", "request"], ["approval"], ["approve"], ["maker"], ["checker"], ["admin"]],
+  deposits: [["view", "deposit"], ["deposit"], ["funding"], ["payin"], ["wallet"]],
   loans: [
     ["view", "loan"],
     ["view", "loans"],
@@ -351,6 +356,7 @@ const scopeMatchers: Record<string, string[][]> = {
     ["other", "loan"],
     ["loan"],
   ],
+  reconciliation: [["reconciliation"], ["reconcile"], ["deposit"], ["transfer"], ["webhook"], ["settlement"]],
   reports: [["report"], ["financial"], ["revenue"], ["profit"], ["audit", "report"]],
   fees: [["fee"]],
   systemSettings: [
@@ -376,8 +382,11 @@ const scopeMatchers: Record<string, string[][]> = {
 const routeScopeMap: Record<RouteKey, string> = {
   "/dashboard": "dashboard",
   "/admin": "admin",
+  "/action-requests": "actionRequests",
+  "/deposits": "deposits",
   "/users": "users",
   "/loans": "loans",
+  "/reconciliation": "reconciliation",
   "/reports": "reports",
   "/fees": "fees",
   "/system-settings": "systemSettings",

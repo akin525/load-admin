@@ -54,10 +54,22 @@ type UserTransactionFilters = {
 type UserDashboardState = DetailState & {
   userId: string;
   userName: string;
+  userEmail: string;
 };
 
 type UserTransactionsState = DetailState & {
   loaded: boolean;
+};
+
+type WalletStatementFilters = {
+  walletType: string;
+  fromDate: string;
+  toDate: string;
+  status: string;
+  transactionType: string;
+  category: string;
+  format: "csv" | "pdf";
+  email: string;
 };
 
 type UserControlsTarget = {
@@ -310,6 +322,36 @@ const getOtpChallenge = (payload: unknown): OtpChallenge | null => {
   };
 };
 
+const isPendingApprovalResponse = (payload: unknown) =>
+  isRecord(payload) &&
+  (payload.pending_approval === true ||
+    payload.pendingApproval === true ||
+    String(payload.status ?? "").toLowerCase() === "pending_approval");
+
+const getPendingRequestId = (payload: unknown) => {
+  if (!isRecord(payload)) {
+    return "";
+  }
+
+  const direct = [payload.requestId, payload.request_id]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+  if (direct) {
+    return direct;
+  }
+
+  if (isRecord(payload.data)) {
+    const nested = [payload.data.requestId, payload.data.request_id]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return "";
+};
+
 const toIsoDateTime = (value: string) => {
   if (!value.trim()) {
     return "";
@@ -380,6 +422,28 @@ const getDefaultUserTransactionFilters = (): UserTransactionFilters => ({
   status: "",
   limit: "50",
 });
+
+const getDefaultWalletStatementFilters = (): WalletStatementFilters => ({
+  walletType: "wallet",
+  fromDate: "",
+  toDate: "",
+  status: "",
+  transactionType: "",
+  category: "",
+  format: "pdf",
+  email: "",
+});
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const objectUrl = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(objectUrl);
+};
 
 const fetchUsers = async (): Promise<UsersState> => {
   try {
@@ -1583,6 +1647,17 @@ function UserControlsModal({
 
     try {
       const response = await request();
+
+      if (isPendingApprovalResponse(response)) {
+        const requestId = getPendingRequestId(response);
+        showToast(
+          response,
+          requestId ? `${fallbackMessage}. Request ID: ${requestId}` : fallbackMessage,
+          "warning",
+        );
+        return;
+      }
+
       await onRefresh();
       showToast(response, fallbackMessage, "success");
     } catch (error) {
@@ -1615,12 +1690,26 @@ function UserControlsModal({
 
     try {
       const response = await adminService.fundUserWallet(target.userId, basePayload);
-      const challenge = getOtpChallenge(response);
 
-      if (challenge) {
-        setFundWalletChallenge(challenge);
-        setPendingFundingPayload(basePayload);
-        showToast(response, "OTP verification required to fund wallet", "warning");
+      if (isPendingApprovalResponse(response)) {
+        const requestId = getPendingRequestId(response);
+        setPendingFundingPayload(null);
+        setFundWalletChallenge(null);
+        setFundWalletOtpCode("");
+        setProofFile(null);
+        setWalletValues({
+          amount: "",
+          walletType: "wallet",
+          sourceLedger: "operations",
+          narration: "",
+          proofOfPayment: "",
+          paymentDate: "",
+        });
+        showToast(
+          response,
+          requestId ? `Wallet funding submitted for approval. Request ID: ${requestId}` : "Wallet funding submitted for approval",
+          "warning",
+        );
         return;
       }
 
@@ -1718,7 +1807,7 @@ function UserControlsModal({
         runAction(
           "reset-password",
           () => adminService.resetUserPassword(target.userId),
-          `Password reset completed for ${target.userName}`,
+          `Password reset submitted for approval for ${target.userName}`,
         ),
     },
     {
@@ -1733,7 +1822,7 @@ function UserControlsModal({
         runAction(
           "lock-user",
           () => adminService.lockUser(target.userId),
-          `${target.userName} has been locked`,
+          `${target.userName} lock request submitted for approval`,
         ),
     },
     {
@@ -1748,7 +1837,7 @@ function UserControlsModal({
         runAction(
           "unlock-user",
           () => adminService.unlockUser(target.userId),
-          `${target.userName} has been unlocked`,
+          `${target.userName} unlock request submitted for approval`,
         ),
     },
     {
@@ -1763,7 +1852,7 @@ function UserControlsModal({
         runAction(
           "disable-user",
           () => adminService.disableUser(target.userId),
-          `${target.userName} has been disabled`,
+          `${target.userName} disable request submitted for approval`,
         ),
     },
     {
@@ -1778,7 +1867,7 @@ function UserControlsModal({
         runAction(
           "enable-user",
           () => adminService.enableUser(target.userId),
-          `${target.userName} has been enabled`,
+          `${target.userName} enable request submitted for approval`,
         ),
     },
   ] as const;
@@ -2201,9 +2290,18 @@ function ActionModal({
   );
 }
 
-function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardState; onClose: () => void }) {
+function UserDashboardModal({
+  dashboard,
+  onClose,
+  showToast,
+}: {
+  dashboard: UserDashboardState;
+  onClose: () => void;
+  showToast: (payload: unknown, fallback: string, tone: ToastTone) => void;
+}) {
   const [activeTab, setActiveTab] = useState<UserDashboardTab>("overview");
   const [transactionFilters, setTransactionFilters] = useState<UserTransactionFilters>(() => getDefaultUserTransactionFilters());
+  const [statementFilters, setStatementFilters] = useState<WalletStatementFilters>(() => getDefaultWalletStatementFilters());
   const [transactions, setTransactions] = useState<UserTransactionsState>({
     title: "User transactions",
     loading: false,
@@ -2211,6 +2309,7 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
     error: "",
     loaded: false,
   });
+  const [statementAction, setStatementAction] = useState<"" | "download" | "email">("");
 
   const virtualAccounts = getDashboardCollection(dashboard.data, "virtualAccounts");
   const wallets = getDashboardCollection(dashboard.data, "wallets");
@@ -2267,6 +2366,63 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
     }
   };
 
+  const buildStatementParams = () =>
+    Object.entries({
+      walletType: statementFilters.walletType.trim(),
+      fromDate: statementFilters.fromDate,
+      toDate: statementFilters.toDate,
+      status: statementFilters.status.trim(),
+      transactionType: statementFilters.transactionType.trim(),
+      category: statementFilters.category.trim(),
+      format: statementFilters.format,
+    }).reduce<Record<string, string>>((accumulator, [key, value]) => {
+      if (!value) {
+        return accumulator;
+      }
+
+      accumulator[key] = value;
+      return accumulator;
+    }, {});
+
+  const handleStatementDownload = async () => {
+    setStatementAction("download");
+
+    try {
+      const result = await adminService.downloadUserWalletStatement(dashboard.userId, buildStatementParams());
+      downloadBlob(result.blob, result.filename);
+      showToast({ message: `Statement download started for ${dashboard.userName}` }, "Statement download started", "success");
+    } catch (error) {
+      showToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Wallet statement download failed", "error");
+    } finally {
+      setStatementAction("");
+    }
+  };
+
+  const handleStatementEmail = async () => {
+    setStatementAction("email");
+
+    try {
+      const payload = Object.entries({
+        ...buildStatementParams(),
+        email: statementFilters.email.trim(),
+      }).reduce<Record<string, string>>((accumulator, [key, value]) => {
+        if (!value) {
+          return accumulator;
+        }
+
+        accumulator[key] = value;
+        return accumulator;
+      }, {});
+
+      const response = await adminService.emailUserWalletStatement(dashboard.userId, payload);
+      showToast(response, `Wallet statement email queued for ${dashboard.userName}`, "success");
+    } catch (error) {
+      showToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Wallet statement email failed", "error");
+    } finally {
+      setStatementAction("");
+    }
+  };
+
   const transactionSnapshot = useMemo(() => {
     const payload = unwrapPayload(transactions.data);
     const record = isRecord(payload) ? payload : null;
@@ -2310,8 +2466,8 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
   }, [transactions.data]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-6xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6">
+      <div className="h-[92vh] w-full max-w-[92rem] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
         <div className="flex items-start justify-between gap-5 border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_58%,#069AFF_145%)] px-5 py-5 text-white">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Customer finance dashboard</p>
@@ -2370,7 +2526,7 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
           </div>
         </div>
 
-        <div className="max-h-[76vh] overflow-y-auto p-5">
+        <div className="h-[calc(92vh-10.5rem)] overflow-y-auto p-5">
           {activeTab === "overview" ? (
             <>
               {dashboard.loading && (
@@ -2487,6 +2643,142 @@ function UserDashboardModal({ dashboard, onClose }: { dashboard: UserDashboardSt
             </>
           ) : (
             <div className="grid gap-5">
+              <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF]">Wallet statements</p>
+                    <h3 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">Download or email statement</h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Generate statement files for the customer&apos;s main wallet or loan wallet. Leave the email blank to send to the customer&apos;s default address.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 px-4 py-3 text-xs font-semibold text-slate-600 dark:border-[#069AFF]/25 dark:bg-[#069AFF]/10 dark:text-slate-300">
+                    <p>Customer: {dashboard.userName}</p>
+                    <p className="mt-1">Default email: {dashboard.userEmail || "Uses backend default"}</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Wallet type</span>
+                    <select
+                      value={statementFilters.walletType}
+                      onChange={(event) => setStatementFilters((current) => ({ ...current, walletType: event.target.value }))}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    >
+                      <option value="wallet">Wallet</option>
+                      <option value="loan">Loan</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">From date</span>
+                    <input
+                      type="date"
+                      value={statementFilters.fromDate}
+                      onChange={(event) => setStatementFilters((current) => ({ ...current, fromDate: event.target.value }))}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">To date</span>
+                    <input
+                      type="date"
+                      value={statementFilters.toDate}
+                      onChange={(event) => setStatementFilters((current) => ({ ...current, toDate: event.target.value }))}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Format</span>
+                    <select
+                      value={statementFilters.format}
+                      onChange={(event) => setStatementFilters((current) => ({ ...current, format: event.target.value as "csv" | "pdf" }))}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    >
+                      <option value="pdf">PDF</option>
+                      <option value="csv">CSV</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Status</span>
+                    <select
+                      value={statementFilters.status}
+                      onChange={(event) => setStatementFilters((current) => ({ ...current, status: event.target.value }))}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    >
+                      <option value="">All statuses</option>
+                      <option value="success">Success</option>
+                      <option value="pending">Pending</option>
+                      <option value="failed">Failed</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Transaction type</span>
+                    <input
+                      type="text"
+                      value={statementFilters.transactionType}
+                      onChange={(event) => setStatementFilters((current) => ({ ...current, transactionType: event.target.value }))}
+                      placeholder="loan_repayment"
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Category</span>
+                    <input
+                      type="text"
+                      value={statementFilters.category}
+                      onChange={(event) => setStatementFilters((current) => ({ ...current, category: event.target.value }))}
+                      placeholder="loan"
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    />
+                  </label>
+                  <label className="grid gap-2 md:col-span-2 xl:col-span-1">
+                    <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Override email</span>
+                    <input
+                      type="email"
+                      value={statementFilters.email}
+                      onChange={(event) => setStatementFilters((current) => ({ ...current, email: event.target.value }))}
+                      placeholder={dashboard.userEmail || "ops@example.com"}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Download sends the file to the admin browser. Email uses the customer&apos;s email unless you set an override address.
+                  </p>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => setStatementFilters(getDefaultWalletStatementFilters())}
+                      disabled={Boolean(statementAction)}
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                    >
+                      Reset statement filters
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleStatementDownload()}
+                      disabled={Boolean(statementAction)}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                    >
+                      {statementAction === "download" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileText className="h-4 w-4" aria-hidden="true" />}
+                      Download statement
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleStatementEmail()}
+                      disabled={Boolean(statementAction)}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0] disabled:opacity-60"
+                    >
+                      {statementAction === "email" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+                      Email statement
+                    </button>
+                  </div>
+                </div>
+              </section>
+
               <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
                   <div>
@@ -2853,7 +3145,7 @@ export default function UsersPage() {
     });
   };
 
-  const openUserDashboard = (userId: string, userName: string) => {
+  const openUserDashboard = (userId: string, userName: string, userEmail: string) => {
     setUserDashboard({
       title: "Customer dashboard",
       loading: true,
@@ -2861,6 +3153,7 @@ export default function UsersPage() {
       error: "",
       userId,
       userName,
+      userEmail,
     });
 
     void adminService
@@ -2873,6 +3166,7 @@ export default function UsersPage() {
           error: "",
           userId,
           userName,
+          userEmail,
         }),
       )
       .catch((error) =>
@@ -2883,6 +3177,7 @@ export default function UsersPage() {
           error: getErrorMessage(error),
           userId,
           userName,
+          userEmail,
         }),
       );
   };
@@ -3035,7 +3330,7 @@ export default function UsersPage() {
                         <button
                           type="button"
                           disabled={!id}
-                          onClick={() => openUserDashboard(id, name)}
+                          onClick={() => openUserDashboard(id, name, email === "Not available" ? "" : email)}
                           className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
                         >
                           <Eye className="h-4 w-4" aria-hidden="true" />
@@ -3079,7 +3374,14 @@ export default function UsersPage() {
       </div>
 
       {detail && <DetailModal detail={detail} onClose={() => setDetail(null)} />}
-      {userDashboard && <UserDashboardModal key={userDashboard.userId} dashboard={userDashboard} onClose={() => setUserDashboard(null)} />}
+      {userDashboard && (
+        <UserDashboardModal
+          key={userDashboard.userId}
+          dashboard={userDashboard}
+          onClose={() => setUserDashboard(null)}
+          showToast={showServerToast}
+        />
+      )}
       {userControls && <UserControlsModal target={userControls} onClose={() => setUserControls(null)} onRefresh={refreshUsers} showToast={showServerToast} />}
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} showToast={showServerToast} />}
     </main>

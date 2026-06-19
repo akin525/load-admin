@@ -10,7 +10,6 @@ import {
   BarChart3,
   BriefcaseBusiness,
   CreditCard,
-  FileSpreadsheet,
   FileText,
   Landmark,
   Loader2,
@@ -23,7 +22,6 @@ import {
   WalletCards,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
-import { exportReportsToExcel, exportReportsToPdf } from "@/lib/reports/export";
 import { useRouteAccess } from "@/lib/admin-access";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
@@ -41,6 +39,20 @@ type ReportState = {
   loaded: boolean;
   loading: boolean;
 };
+
+type ReportCenterState = {
+  payload: unknown;
+  metrics: Array<{ label: string; value: string }>;
+  error: string;
+};
+
+type ReportExportType =
+  | "dashboard-summary"
+  | "reconciliation-overview"
+  | "financial"
+  | "loan-performance"
+  | "profit-loss"
+  | "revenue";
 
 const reportRequests: Array<[ReportKey, (params: Record<string, string>) => Promise<unknown>]> = [
   ["financial", adminService.getFinancialReport],
@@ -165,6 +177,17 @@ const getErrorMessage = (error: unknown) => {
   }
 
   return "Request failed";
+};
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 };
 
 const formatFieldValue = (key: string, value: unknown): string => {
@@ -306,6 +329,34 @@ const fetchReports = async (filters: ReportFilters): Promise<ReportState> => {
     loaded: true,
     loading: false,
   };
+};
+
+const fetchReportCenter = async (filters: ReportFilters): Promise<ReportCenterState> => {
+  const params: Record<string, string> = {};
+
+  if (filters.fromDate) {
+    params.fromDate = filters.fromDate;
+  }
+
+  if (filters.toDate) {
+    params.toDate = filters.toDate;
+  }
+
+  try {
+    const payload = await adminService.getReportCenter(params);
+
+    return {
+      payload,
+      metrics: extractReportMetrics(payload).slice(0, 6),
+      error: "",
+    };
+  } catch (error) {
+    return {
+      payload: null,
+      metrics: [],
+      error: getErrorMessage(error),
+    };
+  }
 };
 
 function SummaryCard({
@@ -474,7 +525,12 @@ export default function ReportsPage() {
     loaded: false,
     loading: false,
   });
-  const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
+  const [reportCenter, setReportCenter] = useState<ReportCenterState>({
+    payload: null,
+    metrics: [],
+    error: "",
+  });
+  const [exporting, setExporting] = useState<ReportExportType | null>(null);
   const [exportError, setExportError] = useState("");
   const isDarkMode = resolvedTheme === "dark";
 
@@ -491,9 +547,10 @@ export default function ReportsPage() {
       return;
     }
 
-    void fetchReports(appliedFilters).then((result) => {
+    void Promise.all([fetchReports(appliedFilters), fetchReportCenter(appliedFilters)]).then(([reportResult, centerResult]) => {
       if (!cancelled) {
-        setReports(result);
+        setReports(reportResult);
+        setReportCenter(centerResult);
       }
     });
 
@@ -504,8 +561,9 @@ export default function ReportsPage() {
 
   const refreshReports = async (filters = appliedFilters) => {
     setReports((current) => ({ ...current, loading: true }));
-    const result = await fetchReports(filters);
-    setReports(result);
+    const [reportResult, centerResult] = await Promise.all([fetchReports(filters), fetchReportCenter(filters)]);
+    setReports(reportResult);
+    setReportCenter(centerResult);
   };
 
   const financialLead = useMemo(() => getReportLead(reports.data.financial), [reports.data.financial]);
@@ -518,18 +576,15 @@ export default function ReportsPage() {
     router.replace("/auth/login");
   };
 
-  const handleExport = async (type: "pdf" | "excel") => {
+  const handleExport = async (type: ReportExportType) => {
     setExporting(type);
     setExportError("");
 
     try {
-      if (type === "pdf") {
-        await exportReportsToPdf(reports.data, appliedFilters);
-      } else {
-        await exportReportsToExcel(reports.data, appliedFilters);
-      }
+      const result = await adminService.downloadReportExport(type, appliedFilters);
+      downloadBlob(result.blob, result.filename);
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : "Export failed.");
+      setExportError(getErrorMessage(error));
     } finally {
       setExporting(null);
     }
@@ -648,30 +703,47 @@ export default function ReportsPage() {
                   </div>
                   <div className="rounded-lg border border-white/15 bg-[#041628]/55 p-4">
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-sky-100">Export pack</p>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-sky-100">Report center</p>
                       <p className="mt-1 text-sm font-medium text-slate-200">
-                        Branded management report for {appliedFilters.fromDate || "N/A"} to {appliedFilters.toDate || "N/A"}
+                        Backend summary and export center for {appliedFilters.fromDate || "N/A"} to {appliedFilters.toDate || "N/A"}
                       </p>
                     </div>
+                    {reportCenter.metrics.length > 0 && (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {reportCenter.metrics.map((metric) => (
+                          <div key={metric.label} className="rounded-lg border border-white/10 bg-white/5 p-3">
+                            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-100">{metric.label}</p>
+                            <p className="mt-2 text-lg font-bold text-white">{metric.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {reportCenter.error && (
+                      <div className="mt-4 flex gap-3 rounded-lg border border-red-300/30 bg-red-500/10 p-3 text-sm font-semibold text-red-100">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span>{reportCenter.error}</span>
+                      </div>
+                    )}
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleExport("pdf")}
-                        disabled={!reports.loaded || reports.loading || exporting !== null}
-                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-70"
-                      >
-                        {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileText className="h-4 w-4" aria-hidden="true" />}
-                        Export PDF
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleExport("excel")}
-                        disabled={!reports.loaded || reports.loading || exporting !== null}
-                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-70"
-                      >
-                        {exporting === "excel" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />}
-                        Export Excel
-                      </button>
+                      {[
+                        { key: "dashboard-summary", label: "Dashboard summary" },
+                        { key: "reconciliation-overview", label: "Reconciliation overview" },
+                        { key: "financial", label: "Financial" },
+                        { key: "loan-performance", label: "Loan performance" },
+                        { key: "profit-loss", label: "Profit & loss" },
+                        { key: "revenue", label: "Revenue" },
+                      ].map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => void handleExport(item.key as ReportExportType)}
+                          disabled={!reports.loaded || reports.loading || exporting !== null}
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {exporting === item.key ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileText className="h-4 w-4" aria-hidden="true" />}
+                          Export {item.label}
+                        </button>
+                      ))}
                     </div>
                     {exportError && (
                       <div className="mt-4 flex gap-3 rounded-lg border border-red-300/30 bg-red-500/10 p-3 text-sm font-semibold text-red-100">
