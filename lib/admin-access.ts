@@ -33,6 +33,7 @@ type RouteKey =
   | "/dashboard"
   | "/admin"
   | "/action-requests"
+  | "/bills"
   | "/deposits"
   | "/users"
   | "/loans"
@@ -45,7 +46,8 @@ type RouteKey =
   | "/audit-logs"
   | "/email-logs"
   | "/faqs"
-  | "/xpress-webhook-logs";
+  | "/xpress-webhook-logs"
+  | "/vtpass-webhook-logs";
 
 export type AdminSectionKey = "admins" | "roles" | "kyc" | "tiers" | "support" | "content";
 
@@ -343,6 +345,7 @@ const scopeMatchers: Record<string, string[][]> = {
     ["customer"],
   ],
   actionRequests: [["action", "request"], ["approval"], ["approve"], ["maker"], ["checker"], ["admin"]],
+  bills: [["view", "bill"], ["bill"], ["billing"], ["vtpass"]],
   deposits: [["view", "deposit"], ["deposit"], ["funding"], ["payin"], ["wallet"]],
   loans: [
     ["view", "loan"],
@@ -383,6 +386,7 @@ const routeScopeMap: Record<RouteKey, string> = {
   "/dashboard": "dashboard",
   "/admin": "admin",
   "/action-requests": "actionRequests",
+  "/bills": "bills",
   "/deposits": "deposits",
   "/users": "users",
   "/loans": "loans",
@@ -396,6 +400,7 @@ const routeScopeMap: Record<RouteKey, string> = {
   "/email-logs": "emailLogs",
   "/faqs": "content",
   "/xpress-webhook-logs": "webhookLogs",
+  "/vtpass-webhook-logs": "webhookLogs",
 };
 
 const sectionScopeMap: Record<AdminSectionKey, string> = {

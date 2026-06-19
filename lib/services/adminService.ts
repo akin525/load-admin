@@ -817,6 +817,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/vtpass-webhook-logs
+    getVtpassWebhookLogs: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/vtpass-webhook-logs', { params });
+        return response.data;
+    },
+
     // GET /admin/transfers
     getTransfers: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/transfers', { params });

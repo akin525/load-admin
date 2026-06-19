@@ -61,11 +61,13 @@ const navGroups: NavGroup[] = [
   {
     title: "Finance Operations",
     items: [
+      { href: "/bills", label: "Bills", icon: FileText },
       { href: "/deposits", label: "Deposits", icon: Landmark },
       { href: "/fees", label: "Fees", icon: Landmark },
       { href: "/wallet-transactions", label: "Wallet Ledger", icon: WalletCards },
       { href: "/transfers", label: "Transfers", icon: Send },
-      { href: "/xpress-webhook-logs", label: "Webhook Logs", icon: Activity },
+      { href: "/xpress-webhook-logs", label: "Xpress Webhooks", icon: Activity },
+      { href: "/vtpass-webhook-logs", label: "VTPass Webhooks", icon: Activity },
       { href: "/reports", label: "Reports", icon: BarChart3 },
     ],
   },
