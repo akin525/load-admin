@@ -61,6 +61,7 @@ const navGroups: NavGroup[] = [
   {
     title: "Finance Operations",
     items: [
+      { href: "/deposits", label: "Deposits", icon: Landmark },
       { href: "/fees", label: "Fees", icon: Landmark },
       { href: "/wallet-transactions", label: "Wallet Ledger", icon: WalletCards },
       { href: "/transfers", label: "Transfers", icon: Send },
@@ -72,6 +73,7 @@ const navGroups: NavGroup[] = [
     title: "Control Center",
     items: [
       { href: "/admin", label: "Admin Center", icon: ShieldCheck },
+      { href: "/action-requests", label: "Action Requests", icon: FileText, badge: "New" },
       { href: "/system-settings", label: "System Settings", icon: Settings2 },
       { href: "/faqs", label: "FAQs", icon: HelpCircle },
       { href: "/email-logs", label: "Email Logs", icon: FileText },
