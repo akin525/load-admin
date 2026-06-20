@@ -271,9 +271,15 @@ export const adminService = {
         return response.data;
     },
 
-    // POST /admin/users/:userId/broadcast
-    broadcastToUser: async (userId: string, payload: AdminPayload): Promise<unknown> => {
-        const response = await api.post(`/admin/users/${userId}/broadcast`, payload);
+    // POST /admin/users/:userId/notifications/send
+    sendUserNotification: async (userId: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/notifications/send`, payload);
+        return response.data;
+    },
+
+    // POST /admin/notifications/broadcast
+    broadcastNotification: async (payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/notifications/broadcast', payload);
         return response.data;
     },
 

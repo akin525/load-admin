@@ -164,6 +164,30 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isNumericLike = (value: unknown) =>
   typeof value === "number" || (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value)));
 
+const parseJsonObjectInput = (value: string, fallback: Record<string, unknown> = {}) => {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+
+    if (!isRecord(parsed)) {
+      throw new Error("Notification data must be a JSON object.");
+    }
+
+    return parsed;
+  } catch (error) {
+    if (error instanceof Error && error.message === "Notification data must be a JSON object.") {
+      throw error;
+    }
+
+    throw new Error("Notification data must be valid JSON.");
+  }
+};
+
 const toDateInputValue = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -2870,15 +2894,87 @@ export default function AdminCenterPage() {
 
   const openBroadcast = (userId: string, name: string) => {
     setFormAction({
-      eyebrow: "Customer broadcast",
-      title: `Broadcast to ${name}`,
-      description: "Schedule a direct message for this customer.",
-      submitLabel: "Send broadcast",
+      eyebrow: "Customer communication",
+      title: `Notify ${name}`,
+      description: "Send a direct push notification to this customer.",
+      submitLabel: "Send notification",
+      initialValues: {
+        type: "general",
+        channel: "general",
+        data: "{}",
+      },
       fields: [
         { name: "title", label: "Title", required: true, placeholder: "Account update" },
-        { name: "content", label: "Message", type: "textarea", required: true, placeholder: "Write the message here." },
+        { name: "body", label: "Message", type: "textarea", required: true, placeholder: "Write the message here." },
+        {
+          name: "type",
+          label: "Type",
+          required: true,
+          placeholder: "loan_update",
+          helper: "Examples: loan_update, account_update, reminder, general.",
+        },
+        {
+          name: "channel",
+          label: "Channel",
+          required: true,
+          placeholder: "general",
+          helper: "Use the delivery channel expected by the mobile client.",
+        },
+        {
+          name: "data",
+          label: "Data JSON",
+          type: "textarea",
+          placeholder: "{\"loanId\":\"6a27ff932a6deb87e2dc2426\"}",
+          helper: "Provide a JSON object. Use {} when no extra metadata is needed.",
+        },
       ],
-      onSubmit: (values) => submitAndRefresh(() => adminService.broadcastToUser(userId, values)),
+      onSubmit: (values) =>
+        submitAndRefresh(() =>
+          adminService.sendUserNotification(userId, {
+            title: values.title.trim(),
+            body: values.body.trim(),
+            type: values.type.trim(),
+            channel: values.channel.trim(),
+            data: parseJsonObjectInput(values.data, {}),
+          }),
+        ),
+    });
+  };
+
+  const openBroadcastAllActive = () => {
+    setFormAction({
+      eyebrow: "Customer communication",
+      title: "Broadcast to all active users",
+      description: "Send a push notification to every active user through the admin broadcast endpoint.",
+      submitLabel: "Broadcast notification",
+      initialValues: {
+        type: "broadcast",
+        channel: "general",
+        data: "{\"scope\":\"all_users\"}",
+      },
+      fields: [
+        { name: "title", label: "Title", required: true, placeholder: "System Notice" },
+        { name: "body", label: "Message", type: "textarea", required: true, placeholder: "Scheduled maintenance starts at 11PM." },
+        { name: "type", label: "Type", required: true, placeholder: "broadcast" },
+        { name: "channel", label: "Channel", required: true, placeholder: "general" },
+        {
+          name: "data",
+          label: "Data JSON",
+          type: "textarea",
+          placeholder: "{\"scope\":\"all_users\"}",
+          helper: "Provide a JSON object. Default scope is all active users.",
+        },
+      ],
+      onSubmit: (values) =>
+        submitAndRefresh(() =>
+          adminService.broadcastNotification({
+            title: values.title.trim(),
+            body: values.body.trim(),
+            type: values.type.trim(),
+            channel: values.channel.trim(),
+            data: parseJsonObjectInput(values.data, { scope: "all_users" }),
+          }),
+        ),
     });
   };
 
@@ -3510,14 +3606,24 @@ export default function AdminCenterPage() {
                         Open a customer dashboard to review virtual accounts, wallets, and loan exposure without leaving the admin workspace.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={openCreateUser}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
-                    >
-                      <Plus className="h-4 w-4" aria-hidden="true" />
-                      Create user
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={openBroadcastAllActive}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:bg-white/15"
+                      >
+                        <Send className="h-4 w-4" aria-hidden="true" />
+                        Broadcast active users
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openCreateUser}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                        Create user
+                      </button>
+                    </div>
                   </div>
                   <div className="grid gap-4 border-t border-slate-100 p-5 dark:border-white/10 md:grid-cols-3">
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
@@ -3587,7 +3693,7 @@ export default function AdminCenterPage() {
                               className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
                             >
                               <Send className="h-4 w-4" aria-hidden="true" />
-                              Broadcast
+                              Notify
                             </button>
                           </div>
                         </td>
