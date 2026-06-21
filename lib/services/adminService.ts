@@ -883,6 +883,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/push-notification-logs
+    getPushNotificationLogs: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/push-notification-logs', { params });
+        return response.data;
+    },
+
     // GET /admin/fees
     getFees: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/fees', { params });
