@@ -48,6 +48,8 @@ type ActionNotice = {
   message: string;
 };
 
+type UserLabelMap = Record<string, { name: string; email: string }>;
+
 const STATUS_VARIANTS: Record<string, { label: string; icon: any; className: string }> = {
   success: {
     label: "Success",
@@ -134,6 +136,33 @@ const getPendingRequestId = (payload: unknown) => {
   }
 
   return "";
+};
+
+const getUserDisplayNameFromPayload = (payload: unknown) => {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { name: "", email: "" };
+  }
+
+  const detail =
+    "data" in payload && payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+      ? (payload.data as Record<string, unknown>)
+      : (payload as Record<string, unknown>);
+
+  const directName = [detail.fullName, detail.name, detail.userName, detail.displayName]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? "";
+  const directEmail = typeof detail.email === "string" ? detail.email : "";
+
+  if (directName) {
+    return { name: directName, email: directEmail };
+  }
+
+  const firstName = typeof detail.firstName === "string" ? detail.firstName : typeof detail.firstname === "string" ? detail.firstname : "";
+  const lastName = typeof detail.lastName === "string" ? detail.lastName : typeof detail.lastname === "string" ? detail.lastname : "";
+
+  return {
+    name: [firstName, lastName].filter(Boolean).join(" ").trim(),
+    email: directEmail,
+  };
 };
 
 function TransferDetailModal({
@@ -413,6 +442,7 @@ export default function TransfersPage() {
   const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
   const [reversingId, setReversingId] = useState("");
   const [notice, setNotice] = useState<ActionNotice | null>(null);
+  const [userLabels, setUserLabels] = useState<UserLabelMap>({});
 
   const fetchTransfers = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: "" }));
@@ -451,6 +481,49 @@ export default function TransfersPage() {
   const paginatedRows = useMemo(() => {
     return paginateItems(filteredRows, currentPage, pageSize);
   }, [filteredRows, currentPage, pageSize]);
+
+  useEffect(() => {
+    const visibleUserIds = Array.from(
+      new Set(
+        paginatedRows
+          .map((row) => String(row.user_id || row.userId || row.metadata?.userId || "").trim())
+          .filter(Boolean),
+      ),
+    ).filter((userId) => !userLabels[userId]);
+
+    if (!visibleUserIds.length) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.all(
+      visibleUserIds.map(async (userId) => {
+        try {
+          const payload = await adminService.getUserDetails(userId);
+          return [userId, getUserDisplayNameFromPayload(payload)] as const;
+        } catch {
+          return [userId, { name: userId, email: "" }] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) {
+        return;
+      }
+
+      setUserLabels((current) => {
+        const next = { ...current };
+        entries.forEach(([userId, detail]) => {
+          next[userId] = detail;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paginatedRows, userLabels]);
 
   const handleReverseTransfer = async (id: string) => {
     if (!id) {
@@ -584,7 +657,7 @@ export default function TransfersPage() {
                 <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-white/[0.04] dark:bg-white/[0.02]">
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Transaction</th>
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Recipient</th>
-                  <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Customer</th>
+                  <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Initiated By</th>
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Amount</th>
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th>
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Date</th>
@@ -604,6 +677,12 @@ export default function TransfersPage() {
                 ) : paginatedRows.length > 0 ? (
                   paginatedRows.map((row) => {
                     const canReverse = String(row.status ?? "").toLowerCase() === "success";
+                    const userId = String(row.user_id || row.userId || row.metadata?.userId || "").trim();
+                    const embeddedName = typeof row.user?.name === "string" && row.user.name.trim() ? row.user.name : "";
+                    const embeddedEmail = typeof row.user?.email === "string" ? row.user.email : "";
+                    const resolvedUser = userId ? userLabels[userId] : undefined;
+                    const initiatorName = embeddedName || resolvedUser?.name || userId || "N/A";
+                    const initiatorEmail = embeddedEmail || resolvedUser?.email || userId || "-";
 
                     return (
                     <tr key={row._id} className="group transition hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
@@ -621,8 +700,8 @@ export default function TransfersPage() {
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-slate-900 dark:text-white">{row.user?.name || "N/A"}</span>
-                          <span className="text-[10px] font-bold text-slate-400">{row.user?.email || row.user_id || row.userId}</span>
+                          <span className="text-sm font-bold text-slate-900 dark:text-white">{initiatorName}</span>
+                          <span className="text-[10px] font-bold text-slate-400">{initiatorEmail}</span>
                         </div>
                       </td>
                       <td className="px-6 py-5">

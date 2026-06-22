@@ -62,6 +62,8 @@ type ApplyWebhookTarget = {
   service: string;
 };
 
+type UserLabelMap = Record<string, string>;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -159,6 +161,36 @@ const getErrorMessage = (error: unknown) => {
   }
 
   return "Request failed";
+};
+
+const getUserDisplayNameFromPayload = (payload: unknown): string => {
+  const detail = unwrapPayload(payload);
+  const record = isRecord(detail) ? detail : null;
+
+  if (!record) {
+    return "";
+  }
+
+  const direct = getRecordValue(record, [
+    "fullName",
+    "name",
+    "userName",
+    "displayName",
+    "email",
+  ]);
+
+  if (typeof direct === "string" && direct.trim()) {
+    return direct.trim();
+  }
+
+  const firstName = getRecordValue(record, ["firstName", "firstname"]);
+  const lastName = getRecordValue(record, ["lastName", "lastname"]);
+  const combined = [firstName, lastName]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .trim();
+
+  return combined;
 };
 
 const toDateInputValue = (date: Date) => {
@@ -635,6 +667,7 @@ export default function BillsPage() {
   const [applyWebhookError, setApplyWebhookError] = useState("");
   const [applyingWebhookId, setApplyingWebhookId] = useState("");
   const [notice, setNotice] = useState<NoticeState>(null);
+  const [userLabels, setUserLabels] = useState<UserLabelMap>({});
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -717,6 +750,49 @@ export default function BillsPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [filters]);
+
+  useEffect(() => {
+    const visibleUserIds = Array.from(
+      new Set(
+        paginatedRows
+          .map((row) => String(getRecordValue(row, ["userId", "user_id"]) ?? "").trim())
+          .filter(Boolean),
+      ),
+    ).filter((userId) => !userLabels[userId]);
+
+    if (!visibleUserIds.length) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.all(
+      visibleUserIds.map(async (userId) => {
+        try {
+          const payload = await adminService.getUserDetails(userId);
+          return [userId, getUserDisplayNameFromPayload(payload) || userId] as const;
+        } catch {
+          return [userId, userId] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) {
+        return;
+      }
+
+      setUserLabels((current) => {
+        const next = { ...current };
+        entries.forEach(([userId, label]) => {
+          next[userId] = label;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paginatedRows, userLabels]);
 
   const totals = useMemo(() => {
     const successCount = filteredRows.filter((row) => String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "success").length;
@@ -1043,7 +1119,7 @@ export default function BillsPage() {
                 <table className="w-full min-w-[980px] text-left text-sm">
                   <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
                     <tr>
-                      <th className="px-5 py-3">Customer / Recipient</th>
+                      <th className="px-5 py-3">Initiated By / Recipient</th>
                       <th className="px-5 py-3">Service</th>
                       <th className="px-5 py-3">Amount</th>
                       <th className="px-5 py-3">Provider</th>
@@ -1055,6 +1131,7 @@ export default function BillsPage() {
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
                     {paginatedRows.map((row, index) => {
                       const id = getBillId(row);
+                      const userId = String(getRecordValue(row, ["userId", "user_id"]) ?? "").trim();
                       const name = getRecordValue(row, ["customerName", "name", "fullName", "userName", "recipient", "email"]) ?? `Bill ${index + 1}`;
                       const reference = getRecordValue(row, ["reference", "requestId", "transactionId", "billId"]) ?? "No reference";
                       const service = getRecordValue(row, ["serviceType", "providerType", "service", "type"]) ?? "Bill";
@@ -1064,7 +1141,12 @@ export default function BillsPage() {
                       return (
                         <tr key={`${id || reference}-${index}`} className="text-slate-700 dark:text-slate-300">
                           <td className="px-5 py-4">
-                            <p className="font-bold text-slate-950 dark:text-white">{String(name)}</p>
+                            <p className="font-bold text-slate-950 dark:text-white">
+                              {userId ? userLabels[userId] ?? userId : String(name)}
+                            </p>
+                            <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                              Recipient: {String(name)}
+                            </p>
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{String(reference)}</p>
                           </td>
                           <td className="px-5 py-4">
