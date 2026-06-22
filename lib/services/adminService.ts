@@ -181,6 +181,12 @@ export const adminService = {
         return response.data;
     },
 
+    // POST /admin/bills/:id/apply-vtpass-webhook
+    applyVtpassWebhookToBill: async (id: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/bills/${id}/apply-vtpass-webhook`, payload);
+        return response.data;
+    },
+
     // GET /admin/deposits
     getDeposits: async (): Promise<unknown> => {
         const response = await api.get('/admin/deposits');
@@ -274,6 +280,12 @@ export const adminService = {
     // POST /admin/users/:userId/notifications/send
     sendUserNotification: async (userId: string, payload: AdminPayload): Promise<unknown> => {
         const response = await api.post(`/admin/users/${userId}/notifications/send`, payload);
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/revoke-sessions
+    revokeUserSessions: async (userId: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/revoke-sessions`, payload);
         return response.data;
     },
 
@@ -829,6 +841,12 @@ export const adminService = {
         return response.data;
     },
 
+    // POST /admin/vtpass-webhook-logs/:id/reprocess
+    reprocessVtpassWebhookLog: async (id: string): Promise<unknown> => {
+        const response = await api.post(`/admin/vtpass-webhook-logs/${id}/reprocess`, {});
+        return response.data;
+    },
+
     // GET /admin/transfers
     getTransfers: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/transfers', { params });
@@ -880,6 +898,12 @@ export const adminService = {
     // GET /admin/email-logs
     getEmailLogs: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/email-logs', { params });
+        return response.data;
+    },
+
+    // GET /admin/security-events
+    getSecurityEvents: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/security-events', { params });
         return response.data;
     },
 
@@ -947,5 +971,11 @@ export const adminService = {
     deleteSystemSetting: async (name: string): Promise<unknown> => {
         const response = await api.delete(`/admin/system-settings/${encodeURIComponent(name)}`);
         return response.data;
-    }
+    },
+
+    // POST /admin/admins/:id/revoke-sessions
+    revokeAdminSessions: async (id: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/admins/${id}/revoke-sessions`, payload);
+        return response.data;
+    },
 };

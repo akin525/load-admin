@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  ShieldAlert,
   UserCog,
   Users,
   WalletCards,
@@ -418,6 +419,9 @@ const getErrorMessage = (error: unknown) => {
   return "Request failed";
 };
 
+const isImageUrl = (value: unknown) =>
+  typeof value === "string" && /^(https?:\/\/|\/).+\.(png|jpe?g|gif|webp|svg)$/i.test(value.trim());
+
 const getOtpChallenge = (payload: unknown): OtpChallenge | null => {
   if (!isRecord(payload) || payload.requiresOtp !== true || !isRecord(payload.data)) {
     return null;
@@ -464,8 +468,6 @@ const getCollectionTotal = (payload: unknown, key: string) => {
 const getDashboardCollection = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => getCollectionRows(payload, key);
 
 const getDashboardTotal = (payload: unknown, key: "virtualAccounts" | "wallets" | "loans") => getCollectionTotal(payload, key);
-
-const isImageUrl = (value: unknown) => typeof value === "string" && /^https?:\/\/.+\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value);
 
 const sumCurrencyRows = (rows: Record<string, unknown>[], keys: string[]) =>
   rows.reduce((total, row) => {
@@ -2541,8 +2543,8 @@ export default function AdminCenterPage() {
   const [adminData, setAdminData] = useState<AdminCenterData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [detail, setDetail] = useState<DetailState | null>(null);
-  const [kycDetail, setKycDetail] = useState<KycDetailState | null>(null);
   const [userDashboard, setUserDashboard] = useState<UserDashboardState | null>(null);
+  const [kycDetail, setKycDetail] = useState<KycDetailState | null>(null);
   const [appLoanDetail, setAppLoanDetail] = useState<AppLoanDetailState | null>(null);
   const [bankoneSyncResult, setBankoneSyncResult] = useState<BankoneSyncResultState | null>(null);
   const [formAction, setFormAction] = useState<FormAction | null>(null);
@@ -2978,6 +2980,34 @@ export default function AdminCenterPage() {
     });
   };
 
+  const openRevokeAdminSessions = (id: string, name: string) => {
+    setFormAction({
+      eyebrow: "Security response",
+      title: `Revoke sessions for ${name}`,
+      description: "Terminate all active sessions for this administrator. Use this when an admin token reset or account protection step is required.",
+      submitLabel: "Revoke sessions",
+      initialValues: {
+        reason: "Admin token reset",
+      },
+      fields: [
+        {
+          name: "reason",
+          label: "Reason",
+          type: "textarea",
+          required: true,
+          placeholder: "Admin token reset",
+          helper: "This reason is submitted with the session revocation request.",
+        },
+      ],
+      onSubmit: (values) =>
+        submitAndRefresh(() =>
+          adminService.revokeAdminSessions(id, {
+            reason: values.reason.trim(),
+          }),
+        ),
+    });
+  };
+
   const openUserDashboard = async (userId: string, userName: string) => {
     setUserDashboard({ title: "User dashboard", userId, userName, loading: true, data: null, error: "" });
 
@@ -3000,17 +3030,6 @@ export default function AdminCenterPage() {
     }
   };
 
-  const openDetail = async (title: string, request: () => Promise<unknown>) => {
-    setDetail({ title, loading: true, data: null, error: "" });
-
-    try {
-      const data = await request();
-      setDetail({ title, loading: false, data, error: "" });
-    } catch (error) {
-      setDetail({ title, loading: false, data: null, error: getErrorMessage(error) });
-    }
-  };
-
   const openKycDetail = async (id: string) => {
     setKycDetail({ title: "KYC details", loading: true, data: null, error: "" });
 
@@ -3019,6 +3038,17 @@ export default function AdminCenterPage() {
       setKycDetail({ title: "KYC details", loading: false, data, error: "" });
     } catch (error) {
       setKycDetail({ title: "KYC details", loading: false, data: null, error: getErrorMessage(error) });
+    }
+  };
+
+  const openDetail = async (title: string, request: () => Promise<unknown>) => {
+    setDetail({ title, loading: true, data: null, error: "" });
+
+    try {
+      const data = await request();
+      setDetail({ title, loading: false, data, error: "" });
+    } catch (error) {
+      setDetail({ title, loading: false, data: null, error: getErrorMessage(error) });
     }
   };
 
@@ -3480,23 +3510,35 @@ export default function AdminCenterPage() {
                   const id = getId(row);
                   const user = getRecordValue(row, ["user"]);
                   const userRecord = isRecord(user) ? user : row;
+                  const name = getPersonName(userRecord);
                   return (
                     <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
-                      <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{getPersonName(userRecord)}</td>
+                      <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{name}</td>
                       <td className="px-5 py-4">{String(getRecordValue(userRecord, ["email"]) ?? "Not available")}</td>
                       <td className="px-5 py-4">{String(getRecordValue(row, ["role", "role_id", "roleId"]) ?? "Admin")}</td>
                       <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "active"} /></td>
                       <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
                       <td className="px-5 py-4">
-                        <button
-                          type="button"
-                          disabled={!id || busyAction === `admin-${id}`}
-                          onClick={() => toggleAdmin(id)}
-                          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-                        >
-                          {busyAction === `admin-${id}` ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
-                          Toggle
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={!id}
+                            onClick={() => openRevokeAdminSessions(id, name)}
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                          >
+                            <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+                            Revoke Sessions
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!id || busyAction === `admin-${id}`}
+                            onClick={() => toggleAdmin(id)}
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                          >
+                            {busyAction === `admin-${id}` ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                            Toggle
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

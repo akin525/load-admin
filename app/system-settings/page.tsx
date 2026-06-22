@@ -13,6 +13,7 @@ import {
   Search,
   Settings2,
   ShieldCheck,
+  ShieldAlert,
   Trash2,
   Upload,
   X,
@@ -706,6 +707,20 @@ export default function SystemSettingsPage() {
     });
   };
 
+  const openAdminIpAllowlistModal = () => {
+    setModalConfig({
+      mode: "upsert",
+      title: "Configure admin IP allowlist",
+      description: "Set the comma-separated IP addresses or CIDR ranges permitted for admin access.",
+      values: {
+        name: "admin_ip_allowlist",
+        value: "102.88.114.242,102.89.33.86,197.210.0.0/16",
+        description: "Allowed admin IPs or CIDR ranges",
+      },
+      nameReadOnly: true,
+    });
+  };
+
   const openUpdateModal = (row: Record<string, unknown>) => {
     setModalConfig({
       mode: "update",
@@ -870,6 +885,14 @@ export default function SystemSettingsPage() {
                     >
                       <Upload className="h-4 w-4" />
                       Bulk upsert
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openAdminIpAllowlistModal}
+                      className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10"
+                    >
+                      <ShieldAlert className="h-4 w-4" />
+                      Admin IP Allowlist
                     </button>
                   </div>
                 </div>

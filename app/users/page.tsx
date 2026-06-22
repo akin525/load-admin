@@ -22,7 +22,7 @@ import {
   Plus,
   RefreshCw,
   Send,
-  ShieldCheck, Smartphone,
+  ShieldAlert, ShieldCheck, Smartphone,
   Sun, UserRound,
   Upload,
   Users,
@@ -3267,9 +3267,14 @@ function ManagementTable({
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
+  const paginatedRows = useMemo(() => paginateItems(rows, currentPage, pageSize), [rows, currentPage, pageSize]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, pageSize, rows.length]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30">
@@ -3293,7 +3298,7 @@ function ManagementTable({
       </div>
       <TablePagination
         totalItems={rows.length}
-        currentPage={safeCurrentPage}
+        currentPage={currentPage}
         pageSize={pageSize}
         onPageChange={setCurrentPage}
         onPageSizeChange={(next) => {
@@ -3536,6 +3541,36 @@ export default function UsersPage() {
     });
   };
 
+  const openRevokeUserSessions = (userId: string, userName: string) => {
+    setFormAction({
+      eyebrow: "Security response",
+      title: `Revoke sessions for ${userName}`,
+      description: "Terminate all active sessions for this customer. Use this when suspicious activity or token compromise is detected.",
+      submitLabel: "Revoke sessions",
+      initialValues: {
+        reason: "Suspicious activity detected",
+      },
+      fields: [
+        {
+          name: "reason",
+          label: "Reason",
+          type: "textarea",
+          required: true,
+          placeholder: "Suspicious activity detected",
+          helper: "This reason is submitted with the session revocation request.",
+        },
+      ],
+      onSubmit: (values) =>
+        submitAndRefresh(
+          () =>
+            adminService.revokeUserSessions(userId, {
+              reason: values.reason.trim(),
+            }),
+          `Sessions revoked for ${userName}`,
+        ),
+    });
+  };
+
   const openUserDashboard = (userId: string, userName: string, userEmail: string) => {
     setUserDashboard({
       title: "Customer dashboard",
@@ -3744,19 +3779,28 @@ export default function UsersPage() {
                           <FileText className="h-4 w-4" aria-hidden="true" />
                           Profile
                         </button>
-                        <button
-                          type="button"
-                          disabled={!id}
-                          onClick={() => openBroadcast(id, name)}
-                          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-                        >
-                          <Send className="h-4 w-4" aria-hidden="true" />
-                          Notify
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!id}
-                          onClick={() => openUserControls(id, name, status)}
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openBroadcast(id, name)}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                            >
+                              <Send className="h-4 w-4" aria-hidden="true" />
+                              Notify
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openRevokeUserSessions(id, name)}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                            >
+                              <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+                              Revoke Sessions
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openUserControls(id, name, status)}
                           className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
                         >
                           <KeyRound className="h-4 w-4" aria-hidden="true" />

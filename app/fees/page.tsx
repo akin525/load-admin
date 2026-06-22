@@ -241,9 +241,14 @@ function ManagementTable({
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
+  const paginatedRows = useMemo(() => paginateItems(rows, currentPage, pageSize), [rows, currentPage, pageSize]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, pageSize, rows.length]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30">
@@ -267,7 +272,7 @@ function ManagementTable({
       </div>
       <TablePagination
         totalItems={rows.length}
-        currentPage={safeCurrentPage}
+        currentPage={currentPage}
         pageSize={pageSize}
         onPageChange={setCurrentPage}
         onPageSizeChange={(next) => {

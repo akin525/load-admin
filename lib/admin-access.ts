@@ -44,6 +44,7 @@ type RouteKey =
   | "/wallet-transactions"
   | "/transfers"
   | "/audit-logs"
+  | "/security-events"
   | "/email-logs"
   | "/push-notification-logs"
   | "/faqs"
@@ -379,6 +380,7 @@ const scopeMatchers: Record<string, string[][]> = {
   walletTransactions: [["wallet", "transaction"], ["wallet"], ["transaction"], ["ledger"]],
   transfers: [["transfer"], ["payout"], ["disbursement"]],
   auditLogs: [["audit", "log"], ["audit"], ["log"]],
+  securityEvents: [["security", "event"], ["security"], ["session"], ["login"], ["otp"], ["auth"], ["allowlist"], ["ip"]],
   emailLogs: [["email", "log"], ["mail", "log"], ["email"], ["mail"], ["template"]],
   pushNotificationLogs: [["push", "notification"], ["notification", "log"], ["push"], ["firebase"], ["notification"]],
   webhookLogs: [["webhook", "log"], ["webhook"], ["xpress"]],
@@ -399,6 +401,7 @@ const routeScopeMap: Record<RouteKey, string> = {
   "/wallet-transactions": "walletTransactions",
   "/transfers": "transfers",
   "/audit-logs": "auditLogs",
+  "/security-events": "securityEvents",
   "/email-logs": "emailLogs",
   "/push-notification-logs": "pushNotificationLogs",
   "/faqs": "content",
