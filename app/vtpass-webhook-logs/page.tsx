@@ -42,6 +42,13 @@ type VtpassWebhookLogsState = {
   error: string;
 };
 
+type NoticeState =
+  | {
+      tone: "success" | "error" | "warning";
+      message: string;
+    }
+  | null;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -358,6 +365,8 @@ export default function VtpassWebhookLogsPage() {
   });
   const [refreshing, setRefreshing] = useState(false);
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
+  const [reprocessingId, setReprocessingId] = useState("");
+  const [notice, setNotice] = useState<NoticeState>(null);
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -419,6 +428,31 @@ export default function VtpassWebhookLogsPage() {
   const handleLogout = () => {
     localStorage.removeItem("token");
     router.replace("/auth/login");
+  };
+
+  const handleReprocess = async (row: Record<string, unknown>) => {
+    const id = getWebhookId(row);
+
+    if (!id) {
+      setNotice({ tone: "error", message: "This webhook log has no identifier for reprocessing." });
+      return;
+    }
+
+    setReprocessingId(id);
+    setNotice(null);
+
+    try {
+      const response = await adminService.reprocessVtpassWebhookLog(id);
+      const message =
+        (isRecord(response) && typeof response.message === "string" && response.message) ||
+        "Webhook log reprocessed.";
+      setNotice({ tone: "success", message });
+      await refreshLogs();
+    } catch (error) {
+      setNotice({ tone: "error", message: getErrorMessage(error) });
+    } finally {
+      setReprocessingId("");
+    }
   };
 
   if (!canOpenWebhookLogs) {
@@ -624,6 +658,20 @@ export default function VtpassWebhookLogsPage() {
               </div>
             )}
 
+            {notice && (
+              <div
+                className={`rounded-lg border p-4 text-sm font-semibold ${
+                  notice.tone === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+                    : notice.tone === "warning"
+                      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100"
+                      : "border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                }`}
+              >
+                {notice.message}
+              </div>
+            )}
+
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
               {summaryCards.map((item) => (
                 <SummaryCard key={item.label} label={item.label} value={item.value} icon={item.icon} />
@@ -647,7 +695,7 @@ export default function VtpassWebhookLogsPage() {
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
                     <tr>
-                      {["Type", "Reference", "Request ID", "Provider", "Processing", "Final", "Created", "Action"].map((column) => (
+                      {["Type", "Reference", "Request ID", "Provider", "Processing", "Final", "Created", "Actions"].map((column) => (
                         <th key={column} className="px-5 py-3 font-bold">{column}</th>
                       ))}
                     </tr>
@@ -688,14 +736,29 @@ export default function VtpassWebhookLogsPage() {
                             {formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}
                           </td>
                           <td className="px-5 py-4">
-                            <button
-                              type="button"
-                              onClick={() => setDetail(row)}
-                              className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white dark:text-sky-200"
-                            >
-                              <Eye className="h-4 w-4" aria-hidden="true" />
-                              Inspect
-                            </button>
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                disabled={!getWebhookId(row) || reprocessingId === getWebhookId(row)}
+                                onClick={() => void handleReprocess(row)}
+                                className="inline-flex h-9 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100 dark:hover:bg-amber-400/15"
+                              >
+                                {reprocessingId === getWebhookId(row) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                ) : (
+                                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                                )}
+                                Reprocess
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDetail(row)}
+                                className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white dark:text-sky-200"
+                              >
+                                <Eye className="h-4 w-4" aria-hidden="true" />
+                                Inspect
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

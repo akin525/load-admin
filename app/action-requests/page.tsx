@@ -24,7 +24,6 @@ import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 import { OtpInput } from "@/components/OtpInput";
-
 type QueueFilters = {
   search: string;
   status: string;
@@ -53,10 +52,10 @@ type OtpChallenge = {
 type PendingApproval = {
   title: string;
   description: string;
+  requestId: string;
   challenge: OtpChallenge;
   onConfirm: (otpCode: string) => Promise<void>;
 };
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -369,13 +368,24 @@ type ApprovalTarget = {
 const deriveApprovalTarget = (record: Record<string, unknown>): ApprovalTarget | null => {
   const signature = getActionSignature(record);
   const requestId = getRequestDisplayId(record);
+  const subjectType = getSubjectType(record).toLowerCase();
+  const subjectId = String(findNestedValue(record, ["subjectId", "subject_id", "targetId", "resourceId"]) ?? "");
   const withRequestId = (payload?: Record<string, unknown>) => ({ requestId, ...(payload ?? {}) });
 
-  const userId = String(findNestedValue(record, ["userId", "user_id", "targetUserId", "subjectUserId"]) ?? "");
-  const appLoanId = String(findNestedValue(record, ["appLoanId", "app_loan_id", "applicationLoanId"]) ?? "");
-  const loanId = String(findNestedValue(record, ["loanId", "loan_id", "targetLoanId"]) ?? "");
-  const walletTransactionId = String(findNestedValue(record, ["walletTransactionId", "wallet_transaction_id", "transactionId"]) ?? "");
-  const transferId = String(findNestedValue(record, ["transferId", "transfer_id"]) ?? "");
+  const directUserId = String(findNestedValue(record, ["userId", "user_id", "targetUserId", "subjectUserId"]) ?? "");
+  const directAppLoanId = String(findNestedValue(record, ["appLoanId", "app_loan_id", "applicationLoanId"]) ?? "");
+  const directLoanId = String(findNestedValue(record, ["loanId", "loan_id", "targetLoanId"]) ?? "");
+  const directWalletTransactionId = String(findNestedValue(record, ["walletTransactionId", "wallet_transaction_id", "transactionId"]) ?? "");
+  const directTransferId = String(findNestedValue(record, ["transferId", "transfer_id"]) ?? "");
+
+  const userId = directUserId || (subjectType.includes("user") ? subjectId : "");
+  const appLoanId =
+    directAppLoanId ||
+    ((subjectType.includes("app") || subjectType.includes("application")) && subjectType.includes("loan") ? subjectId : "");
+  const loanId = directLoanId || (subjectType === "loan" || (subjectType.includes("loan") && !appLoanId) ? subjectId : "");
+  const walletTransactionId =
+    directWalletTransactionId || (subjectType.includes("wallet") && subjectType.includes("transaction") ? subjectId : "");
+  const transferId = directTransferId || (subjectType.includes("transfer") ? subjectId : "");
 
   if (signature.includes("reset") && signature.includes("password") && userId) {
     return { label: "Approve password reset", submit: (payload) => adminService.approveResetUserPassword(userId, withRequestId(payload)) };
@@ -645,6 +655,30 @@ function OtpModal({
           </button>
         </div>
         <div className="grid gap-4 p-5">
+          <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.035]">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Request ID</p>
+              <p className="mt-1 break-all text-sm font-semibold text-slate-950 dark:text-white">{pending.requestId}</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Challenge ID</p>
+                <p className="mt-1 break-all text-sm font-semibold text-slate-950 dark:text-white">{pending.challenge.challengeId}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Channel</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">{pending.challenge.channel || "Not available"}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Recipient</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">{pending.challenge.email || "Not available"}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Expires At</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">{formatDate(pending.challenge.expiresAt)}</p>
+              </div>
+            </div>
+          </div>
           <div>
             <label className="text-sm font-bold text-slate-700 dark:text-slate-200">OTP code</label>
             <OtpInput value={otpCode} onChange={onChange} disabled={submitting} />
@@ -806,6 +840,7 @@ export default function ActionRequestsPage() {
         setPendingApproval({
           title: target.label,
           description: "Approval requires an admin OTP confirmation.",
+          requestId: id,
           challenge,
           onConfirm: async (code) => {
             setSubmittingId(id);

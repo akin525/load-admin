@@ -19,7 +19,6 @@ import {
   LogOut,
   Moon,
   RefreshCw,
-  RotateCcw,
   Search,
   Send,
   ShieldCheck,
@@ -529,13 +528,9 @@ function StatusBadge({ status }: { status: unknown }) {
 function BillHistoryTable({
   rows,
   onView,
-  onReverse,
-  reversingId,
 }: {
   rows: Record<string, unknown>[];
   onView: (id: string) => void;
-  onReverse: (id: string) => void;
-  reversingId: string | null;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -553,7 +548,7 @@ function BillHistoryTable({
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-white/10">
         <div>
           <h2 className="text-base font-bold text-slate-950 dark:text-white">Bill transaction history</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Administrative billing records and reversal control.</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Administrative billing records and provider delivery status.</p>
         </div>
         <div className="flex items-center gap-3">
           <Link
@@ -588,8 +583,6 @@ function BillHistoryTable({
               const amount = getRecordValue(row, ["amount", "billAmount", "total", "totalAmount"]);
               const status = getRecordValue(row, ["status", "paymentStatus", "billStatus"]);
               const createdAt = getRecordValue(row, ["createdAt", "date", "transactionDate", "updatedAt"]);
-              const failed = String(status ?? "").toLowerCase() === "failed";
-
               return (
                 <tr key={`${id || reference}-${index}`} className="text-slate-700 dark:text-slate-300">
                   <td className="px-5 py-4">
@@ -610,19 +603,6 @@ function BillHistoryTable({
                       >
                         <Eye className="h-4 w-4" aria-hidden="true" />
                         View
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!id || failed || reversingId === id}
-                        onClick={() => onReverse(id)}
-                        className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200 dark:hover:bg-red-400/15"
-                      >
-                        {reversingId === id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                        )}
-                        Reverse
                       </button>
                     </div>
                   </td>
@@ -1157,7 +1137,6 @@ export default function DashboardPage() {
   const [billServiceType, setBillServiceType] = useState("all");
   const [selectedBill, setSelectedBill] = useState<{ loading: boolean; data: unknown; error: string } | null>(null);
   const [selectedDeposit, setSelectedDeposit] = useState<Record<string, unknown> | null>(null);
-  const [reversingId, setReversingId] = useState<string | null>(null);
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -1256,23 +1235,6 @@ export default function DashboardPage() {
       setSelectedBill({ loading: false, data, error: "" });
     } catch (error) {
       setSelectedBill({ loading: false, data: null, error: getErrorMessage(error) });
-    }
-  };
-
-  const handleReverseBill = async (id: string) => {
-    setReversingId(id);
-
-    try {
-      await adminService.failReverseBill(id);
-      const billHistory = billServiceType === "all"
-        ? await adminService.getBillHistory()
-        : await adminService.getBillHistoryByServiceType(billServiceType);
-
-      if (dashboardData) {
-        setDashboardData({ ...dashboardData, billHistory });
-      }
-    } finally {
-      setReversingId(null);
     }
   };
 
@@ -1430,8 +1392,6 @@ export default function DashboardPage() {
                   <BillHistoryTable
                     rows={billRows.slice(0, 8)}
                     onView={handleViewBill}
-                    onReverse={handleReverseBill}
-                    reversingId={reversingId}
                   />
                   <DepositsTable rows={depositRows.slice(0, 8)} onView={setSelectedDeposit} />
                 </section>
@@ -1472,8 +1432,6 @@ export default function DashboardPage() {
                 <BillHistoryTable
                   rows={billRows}
                   onView={handleViewBill}
-                  onReverse={handleReverseBill}
-                  reversingId={reversingId}
                 />
               </div>
             )}

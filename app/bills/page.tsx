@@ -14,7 +14,6 @@ import {
   LogOut,
   Moon,
   RefreshCw,
-  RotateCcw,
   Search,
   Send,
   Sun,
@@ -48,6 +47,19 @@ type SelectedBillState = {
   data: unknown;
   loading: boolean;
   error: string;
+};
+
+type NoticeState =
+  | {
+      tone: "success" | "error";
+      message: string;
+    }
+  | null;
+
+type ApplyWebhookTarget = {
+  id: string;
+  reference: string;
+  service: string;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -168,6 +180,16 @@ const getDefaultFilters = (): BillFilters => {
     toDate: toDateInputValue(now),
   };
 };
+
+const getDefaultWebhookPayload = () =>
+  JSON.stringify(
+    {
+      type: "transaction-update",
+      data: {},
+    },
+    null,
+    2,
+  );
 
 const getBillId = (row: Record<string, unknown>) =>
   String(getRecordValue(row, ["_id", "id", "reference"]) ?? "");
@@ -497,6 +519,90 @@ function BillDetailsModal({
   );
 }
 
+function ApplyWebhookModal({
+  target,
+  payload,
+  error,
+  submitting,
+  onPayloadChange,
+  onClose,
+  onSubmit,
+}: {
+  target: ApplyWebhookTarget;
+  payload: string;
+  error: string;
+  submitting: boolean;
+  onPayloadChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-4xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-[#069AFF]/20 bg-[linear-gradient(135deg,#06172b_0%,#083d70_55%,#069AFF_145%)] px-5 py-5 text-white">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-100">Manual VTpass recovery</p>
+            <h2 className="mt-2 break-words text-2xl font-bold tracking-tight">Apply VTpass webhook to bill</h2>
+            <p className="mt-2 break-words text-sm leading-6 text-slate-300">
+              Bill: {target.reference} · Service: {target.service}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+            aria-label="Close apply webhook modal"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="grid gap-4 p-5">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-600 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-300">
+            Paste the raw VTpass webhook JSON payload. If the payload does not include a request ID, the backend will fall back to the bill reference.
+          </div>
+
+          <label className="grid gap-2">
+            <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Webhook payload JSON</span>
+            <textarea
+              value={payload}
+              onChange={(event) => onPayloadChange(event.target.value)}
+              rows={18}
+              className="w-full rounded-lg border border-slate-200 bg-slate-950 px-4 py-3 font-mono text-xs leading-6 text-slate-100 outline-none transition focus:border-[#069AFF] dark:border-white/10"
+              spellCheck={false}
+            />
+          </label>
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              {error}
+            </div>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-11 items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={submitting}
+              className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#069AFF] px-4 text-sm font-bold text-white transition hover:bg-[#0583d8] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileText className="h-4 w-4" aria-hidden="true" />}
+              Apply webhook
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LoadingBillsPage() {
   return (
     <div className="grid gap-5">
@@ -524,7 +630,11 @@ export default function BillsPage() {
     error: "",
   });
   const [selectedBill, setSelectedBill] = useState<SelectedBillState | null>(null);
-  const [reversingId, setReversingId] = useState<string | null>(null);
+  const [applyWebhookTarget, setApplyWebhookTarget] = useState<ApplyWebhookTarget | null>(null);
+  const [webhookPayload, setWebhookPayload] = useState(getDefaultWebhookPayload);
+  const [applyWebhookError, setApplyWebhookError] = useState("");
+  const [applyingWebhookId, setApplyingWebhookId] = useState("");
+  const [notice, setNotice] = useState<NoticeState>(null);
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -654,23 +764,66 @@ export default function BillsPage() {
     }
   };
 
-  const handleReverseBill = async (id: string) => {
-    setReversingId(id);
+  const openApplyWebhookModal = (row: Record<string, unknown>) => {
+    const id = getBillId(row);
+
+    if (!id) {
+      setNotice({ tone: "error", message: "This bill has no identifier for webhook recovery." });
+      return;
+    }
+
+    setApplyWebhookTarget({
+      id,
+      reference: String(getRecordValue(row, ["reference", "billId", "requestId"]) ?? "No reference"),
+      service: String(getRecordValue(row, ["serviceType", "providerType", "service"]) ?? "Bill"),
+    });
+    setWebhookPayload(getDefaultWebhookPayload());
+    setApplyWebhookError("");
+  };
+
+  const handleApplyWebhook = async () => {
+    if (!applyWebhookTarget) {
+      return;
+    }
+
+    let parsedPayload: unknown;
 
     try {
-      await adminService.failReverseBill(id);
+      parsedPayload = JSON.parse(webhookPayload);
+    } catch {
+      setApplyWebhookError("Webhook payload must be valid JSON.");
+      return;
+    }
+
+    if (!isRecord(parsedPayload)) {
+      setApplyWebhookError("Webhook payload must be a JSON object.");
+      return;
+    }
+
+    setApplyingWebhookId(applyWebhookTarget.id);
+    setApplyWebhookError("");
+    setNotice(null);
+
+    try {
+      const response = await adminService.applyVtpassWebhookToBill(applyWebhookTarget.id, parsedPayload);
+      const message =
+        (isRecord(response) && typeof response.message === "string" && response.message) ||
+        "VTpass webhook payload applied.";
+      setNotice({ tone: "success", message });
       await refreshBills();
 
-      if (selectedBill?.id === id) {
-        await handleViewBill(id);
+      if (selectedBill?.id === applyWebhookTarget.id) {
+        await handleViewBill(applyWebhookTarget.id);
       }
+
+      setApplyWebhookTarget(null);
+      setWebhookPayload(getDefaultWebhookPayload());
     } catch (error) {
-      setBills((current) => ({
-        ...current,
-        error: getErrorMessage(error),
-      }));
+      const message = getErrorMessage(error);
+      setApplyWebhookError(message);
+      setNotice({ tone: "error", message });
     } finally {
-      setReversingId(null);
+      setApplyingWebhookId("");
     }
   };
 
@@ -849,6 +1002,18 @@ export default function BillsPage() {
               </div>
             )}
 
+            {notice && (
+              <div
+                className={`rounded-lg border p-4 text-sm font-semibold ${
+                  notice.tone === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+                    : "border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                }`}
+              >
+                {notice.message}
+              </div>
+            )}
+
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
               <SummaryCard label="Filtered bills" value={formatValue(filteredRows.length)} icon={FileText} />
               <SummaryCard label="Successful bills" value={formatValue(totals.successCount)} icon={CheckCircle2} />
@@ -896,8 +1061,6 @@ export default function BillsPage() {
                       const amount = getRecordValue(row, ["amount", "billAmount", "total", "totalAmount"]);
                       const status = getRecordValue(row, ["status", "paymentStatus", "billStatus"]);
                       const createdAt = getRecordValue(row, ["createdAt", "date", "transactionDate", "updatedAt"]);
-                      const failed = String(status ?? "").toLowerCase() === "failed";
-
                       return (
                         <tr key={`${id || reference}-${index}`} className="text-slate-700 dark:text-slate-300">
                           <td className="px-5 py-4">
@@ -927,16 +1090,12 @@ export default function BillsPage() {
                               </button>
                               <button
                                 type="button"
-                                disabled={!id || failed || reversingId === id}
-                                onClick={() => void handleReverseBill(id)}
-                                className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200 dark:hover:bg-red-400/15"
+                                disabled={!id || applyingWebhookId === id}
+                                onClick={() => openApplyWebhookModal(row)}
+                                className="inline-flex h-9 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100 dark:hover:bg-amber-400/15"
                               >
-                                {reversingId === id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                                ) : (
-                                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                                )}
-                                Reverse
+                                <FileText className="h-4 w-4" aria-hidden="true" />
+                                Apply Webhook
                               </button>
                             </div>
                           </td>
@@ -969,6 +1128,24 @@ export default function BillsPage() {
       </div>
 
       {selectedBill && <BillDetailsModal state={selectedBill} onClose={() => setSelectedBill(null)} />}
+      {applyWebhookTarget && (
+        <ApplyWebhookModal
+          target={applyWebhookTarget}
+          payload={webhookPayload}
+          error={applyWebhookError}
+          submitting={applyingWebhookId === applyWebhookTarget.id}
+          onPayloadChange={setWebhookPayload}
+          onClose={() => {
+            if (applyingWebhookId) {
+              return;
+            }
+
+            setApplyWebhookTarget(null);
+            setApplyWebhookError("");
+          }}
+          onSubmit={() => void handleApplyWebhook()}
+        />
+      )}
     </main>
   );
 }
