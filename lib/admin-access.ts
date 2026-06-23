@@ -30,10 +30,10 @@ type AuthResponseLike = {
 };
 
 type RouteKey =
-  | "/dashboard"
-  | "/admin"
-  | "/action-requests"
-  | "/bills"
+    | "/dashboard"
+    | "/admin"
+    | "/action-requests"
+    | "/bills"
   | "/deposits"
   | "/users"
   | "/loans"
@@ -44,11 +44,12 @@ type RouteKey =
   | "/wallet-transactions"
   | "/transfers"
   | "/audit-logs"
-  | "/email-logs"
-  | "/push-notification-logs"
-  | "/faqs"
-  | "/xpress-webhook-logs"
-  | "/vtpass-webhook-logs";
+    | "/email-logs"
+    | "/push-notification-logs"
+    | "/security-events"
+    | "/faqs"
+    | "/xpress-webhook-logs"
+    | "/vtpass-webhook-logs";
 
 export type AdminSectionKey = "admins" | "roles" | "kyc" | "tiers" | "support" | "content";
 
@@ -398,13 +399,14 @@ const routeScopeMap: Record<RouteKey, string> = {
   "/system-settings": "systemSettings",
   "/wallet-transactions": "walletTransactions",
   "/transfers": "transfers",
-  "/audit-logs": "auditLogs",
-  "/email-logs": "emailLogs",
-  "/push-notification-logs": "pushNotificationLogs",
-  "/faqs": "content",
-  "/xpress-webhook-logs": "webhookLogs",
-  "/vtpass-webhook-logs": "webhookLogs",
-};
+    "/audit-logs": "auditLogs",
+    "/email-logs": "emailLogs",
+    "/push-notification-logs": "pushNotificationLogs",
+    "/security-events": "securityEvents",
+    "/faqs": "content",
+    "/xpress-webhook-logs": "webhookLogs",
+    "/vtpass-webhook-logs": "webhookLogs",
+  };
 
 const sectionScopeMap: Record<AdminSectionKey, string> = {
   admins: "admins",
