@@ -259,6 +259,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/users/:userId/xpress-wallet/balance
+    getUserXpressWalletBalance: async (userId: string): Promise<unknown> => {
+        const response = await api.get(`/admin/users/${userId}/xpress-wallet/balance`);
+        return response.data;
+    },
+
     // GET /admin/users/:userId/bills
     getUserBills: async (userId: string): Promise<unknown> => {
         const response = await api.get(`/admin/users/${userId}/bills`);

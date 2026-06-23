@@ -3648,24 +3648,14 @@ export default function AdminCenterPage() {
                         Open a customer dashboard to review virtual accounts, wallets, and loan exposure without leaving the admin workspace.
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={openBroadcastAllActive}
-                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:bg-white/15"
-                      >
-                        <Send className="h-4 w-4" aria-hidden="true" />
-                        Broadcast active users
-                      </button>
-                      <button
-                        type="button"
-                        onClick={openCreateUser}
-                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
-                      >
-                        <Plus className="h-4 w-4" aria-hidden="true" />
-                        Create user
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={openCreateUser}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      Create user
+                    </button>
                   </div>
                   <div className="grid gap-4 border-t border-slate-100 p-5 dark:border-white/10 md:grid-cols-3">
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
@@ -3735,7 +3725,7 @@ export default function AdminCenterPage() {
                               className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
                             >
                               <Send className="h-4 w-4" aria-hidden="true" />
-                              Notify
+                              Broadcast
                             </button>
                           </div>
                         </td>

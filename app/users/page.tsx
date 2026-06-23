@@ -65,6 +65,10 @@ type UserKycState = DetailState & {
   loaded: boolean;
 };
 
+type UserXpressWalletBalanceState = DetailState & {
+  loaded: boolean;
+};
+
 type WalletStatementFilters = {
   walletType: string;
   fromDate: string;
@@ -214,7 +218,11 @@ const getImageFieldEntries = (record: Record<string, unknown>) =>
       /(image|photo|selfie|passport|address|document|id)/i.test(key),
   );
 
-const getRecordValue = (record: Record<string, unknown>, keys: string[]) => {
+const getRecordValue = (record: Record<string, unknown> | null | undefined, keys: string[]) => {
+  if (!record) {
+    return undefined;
+  }
+
   const foundKey = keys.find((key) => key in record);
   return foundKey ? record[foundKey] : undefined;
 };
@@ -2370,11 +2378,18 @@ function UserDashboardModal({
     loading: true,
     data: null,
     error: "",
-    loaded: false,
-  });
+      loaded: false,
+    });
   const [transactions, setTransactions] = useState<UserTransactionsState>({
     title: "User transactions",
     loading: false,
+    data: null,
+    error: "",
+    loaded: false,
+  });
+  const [xpressWalletBalance, setXpressWalletBalance] = useState<UserXpressWalletBalanceState>({
+    title: "Xpress wallet balance",
+    loading: true,
     data: null,
     error: "",
     loaded: false,
@@ -2385,6 +2400,48 @@ function UserDashboardModal({
   const wallets = getDashboardCollection(dashboard.data, "wallets");
   const loans = getDashboardCollection(dashboard.data, "loans");
   const walletBalance = sumCurrencyRows(wallets, ["balance", "availableBalance", "amount"]);
+  const xpressWalletResponse = useMemo(
+    () => (isRecord(xpressWalletBalance.data) ? xpressWalletBalance.data : null),
+    [xpressWalletBalance.data],
+  );
+  const xpressWalletPayload = useMemo(() => unwrapPayload(xpressWalletBalance.data), [xpressWalletBalance.data]);
+  const xpressWalletRecord = useMemo(
+    () => (isRecord(xpressWalletPayload) ? xpressWalletPayload : null),
+    [xpressWalletPayload],
+  );
+  const xpressWallet = useMemo(
+    () => (isRecord(xpressWalletRecord?.wallet) ? xpressWalletRecord.wallet : null),
+    [xpressWalletRecord],
+  );
+  const xpressProviderResponse = useMemo(
+    () => (isRecord(xpressWalletRecord?.providerResponse) ? xpressWalletRecord.providerResponse : null),
+    [xpressWalletRecord],
+  );
+  const xpressWalletItems = useMemo(
+    () => [
+      { label: "User ID", value: getRecordValue(xpressWalletRecord, ["userId"]) },
+      { label: "Customer ID", value: getRecordValue(xpressWalletRecord, ["customerId"]) },
+      { label: "Wallet ID", value: getRecordValue(xpressWallet, ["id"]) },
+      { label: "Wallet type", value: getRecordValue(xpressWallet, ["type"]) },
+      { label: "Tier", value: getRecordValue(xpressWallet, ["tier"]) },
+      { label: "Status", value: getRecordValue(xpressWallet, ["status"]) },
+      { label: "Account name", value: getRecordValue(xpressWallet, ["accountName"]) },
+      { label: "Account number", value: getRecordValue(xpressWallet, ["accountNumber"]) },
+      { label: "Bank name", value: getRecordValue(xpressWallet, ["bankName"]) },
+      { label: "Bank code", value: getRecordValue(xpressWallet, ["bankCode"]) },
+      { label: "Email", value: getRecordValue(xpressWallet, ["email"]) },
+      { label: "Phone number", value: getRecordValue(xpressWallet, ["phoneNumber"]) },
+      { label: "First name", value: getRecordValue(xpressWallet, ["firstName"]) },
+      { label: "Last name", value: getRecordValue(xpressWallet, ["lastName"]) },
+      { label: "Booked balance", value: getRecordValue(xpressWallet, ["bookedBalance"]) },
+      { label: "Available balance", value: getRecordValue(xpressWallet, ["availableBalance"]) },
+      { label: "Min limit", value: getRecordValue(xpressWallet, ["minLimit"]) },
+      { label: "Max limit", value: getRecordValue(xpressWallet, ["maxLimit"]) },
+      { label: "Created at", value: getRecordValue(xpressWallet, ["createdAt"]) },
+      { label: "Updated at", value: getRecordValue(xpressWallet, ["updatedAt"]) },
+    ].filter((item) => item.value !== undefined && item.value !== null && item.value !== ""),
+    [xpressWallet, xpressWalletRecord],
+  );
   const kycRows = useMemo(() => extractRowsOrRecord(kyc.data), [kyc.data]);
   const kycPayload = useMemo(() => unwrapPayload(kyc.data), [kyc.data]);
   const kycSummaryItems = useMemo(() => {
@@ -2433,6 +2490,33 @@ function UserDashboardModal({
     }
   };
 
+  const loadUserXpressWalletBalance = async () => {
+    setXpressWalletBalance((current) => ({
+      ...current,
+      loading: true,
+      error: "",
+    }));
+
+    try {
+      const data = await adminService.getUserXpressWalletBalance(dashboard.userId);
+      setXpressWalletBalance({
+        title: "Xpress wallet balance",
+        loading: false,
+        data,
+        error: "",
+        loaded: true,
+      });
+    } catch (error) {
+      setXpressWalletBalance({
+        title: "Xpress wallet balance",
+        loading: false,
+        data: null,
+        error: getErrorMessage(error),
+        loaded: true,
+      });
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -2466,6 +2550,51 @@ function UserDashboardModal({
 
         setKyc({
           title: "User KYC",
+          loading: false,
+          data: null,
+          error: getErrorMessage(error),
+          loaded: true,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboard.userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setXpressWalletBalance({
+      title: "Xpress wallet balance",
+      loading: true,
+      data: null,
+      error: "",
+      loaded: false,
+    });
+
+    void adminService
+      .getUserXpressWalletBalance(dashboard.userId)
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+
+        setXpressWalletBalance({
+          title: "Xpress wallet balance",
+          loading: false,
+          data,
+          error: "",
+          loaded: true,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setXpressWalletBalance({
+          title: "Xpress wallet balance",
           loading: false,
           data: null,
           error: getErrorMessage(error),
@@ -2823,6 +2952,115 @@ function UserDashboardModal({
                         </div>
                       ))}
                       {!loans.length && <EmptyPanel label="No loan records returned." />}
+                    </div>
+                  </section>
+
+                  <section className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF]">Xpress wallet</p>
+                        <h3 className="mt-1 font-bold text-slate-950 dark:text-white">Live provider balance snapshot</h3>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                          Pulls the customer&apos;s Xpress profile and wallet balance directly from the provider.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void loadUserXpressWalletBalance()}
+                        disabled={xpressWalletBalance.loading}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${xpressWalletBalance.loading ? "animate-spin" : ""}`} aria-hidden="true" />
+                        Refresh balance
+                      </button>
+                    </div>
+
+                    <div className="grid gap-4 p-4">
+                      {xpressWalletBalance.loading && !xpressWalletBalance.data ? (
+                        <div className="flex min-h-40 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                          Loading Xpress wallet balance
+                        </div>
+                      ) : null}
+
+                      {xpressWalletBalance.error ? (
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                          {xpressWalletBalance.error}
+                        </div>
+                      ) : null}
+
+                      {!xpressWalletBalance.loading && !xpressWalletBalance.error ? (
+                        xpressWallet ? (
+                          <>
+                            <div className="grid gap-4 md:grid-cols-3">
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Available balance</p>
+                                <p className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">
+                                  {formatCurrency(getRecordValue(xpressWallet, ["availableBalance"]))}
+                                </p>
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Booked balance</p>
+                                <p className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">
+                                  {formatCurrency(getRecordValue(xpressWallet, ["bookedBalance"]))}
+                                </p>
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Profile status</p>
+                                <div className="mt-2">
+                                  <StatusBadge status={getRecordValue(xpressWallet, ["status"]) ?? "inactive"} />
+                                </div>
+                              </div>
+                            </div>
+
+                            <DetailGrid
+                              title="Wallet snapshot"
+                              items={xpressWalletItems.map((item) => ({
+                                label: item.label,
+                                value:
+                                  item.label === "Account number" || item.label === "Phone number"
+                                    ? safeText(item.value) || "Not available"
+                                    : formatFieldValue(item.label, item.value),
+                              }))}
+                            />
+
+                            <details className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                              <summary className="cursor-pointer text-sm font-bold text-slate-900 dark:text-white">Provider response</summary>
+                              <pre className="mt-4 overflow-x-auto rounded-lg bg-slate-950 p-4 text-xs leading-6 text-slate-100">
+                                {JSON.stringify(xpressProviderResponse ?? xpressWalletRecord, null, 2)}
+                              </pre>
+                            </details>
+                          </>
+                        ) : (
+                          <div className="grid gap-4">
+                            <EmptyPanel
+                              label={
+                                safeText(getRecordValue(xpressWalletResponse, ["message"])) ||
+                                "User does not have an Xpress customer profile."
+                              }
+                            />
+                            {xpressWalletRecord ? (
+                              <DetailGrid
+                                title="Resolved Xpress references"
+                                items={[
+                                  {
+                                    label: "User ID",
+                                    value: formatFieldValue("User ID", getRecordValue(xpressWalletRecord, ["userId"])),
+                                  },
+                                  {
+                                    label: "Customer ID",
+                                    value: formatFieldValue("Customer ID", getRecordValue(xpressWalletRecord, ["xpressCustomerId", "customerId"])),
+                                  },
+                                  {
+                                    label: "Wallet ID",
+                                    value: formatFieldValue("Wallet ID", getRecordValue(xpressWalletRecord, ["xpressWalletId"])),
+                                  },
+                                ]}
+                              />
+                            ) : null}
+                          </div>
+                        )
+                      ) : null}
                     </div>
                   </section>
 
