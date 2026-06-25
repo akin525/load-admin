@@ -19,6 +19,7 @@ import {
   Loader2,
   LogOut, Mail, MapPin,
   Moon, Phone,
+  PencilLine,
   Plus,
   RefreshCw,
   Send,
@@ -2244,6 +2245,7 @@ function OtpChallengeModal({
           </div>
         </div>
       </div>
+
     </div>
   );
 }
@@ -2394,6 +2396,7 @@ function UserDashboardModal({
     error: "",
     loaded: false,
   });
+  const [xpressCustomerAction, setXpressCustomerAction] = useState<FormAction | null>(null);
   const [statementAction, setStatementAction] = useState<"" | "download" | "email">("");
 
   const virtualAccounts = getDashboardCollection(dashboard.data, "virtualAccounts");
@@ -2515,6 +2518,85 @@ function UserDashboardModal({
         loaded: true,
       });
     }
+  };
+
+  const openEditXpressCustomer = () => {
+    setXpressCustomerAction({
+      eyebrow: "Xpress wallet",
+      title: `Edit Xpress customer for ${dashboard.userName}`,
+      description: "Update the customer's Xpress profile and sync supported local user fields when they are provided.",
+      submitLabel: "Update Xpress customer",
+      initialValues: {
+        firstName: safeText(getRecordValue(xpressWallet, ["firstName"])),
+        lastName: safeText(getRecordValue(xpressWallet, ["lastName"])),
+        address: safeText(getRecordValue(xpressWallet, ["address"])),
+        phoneNumber: safeText(getRecordValue(xpressWallet, ["phoneNumber"])),
+        tier: safeText(getRecordValue(xpressWallet, ["tier"])),
+        metadata: "{}",
+      },
+      fields: [
+        { name: "firstName", label: "First name", placeholder: "Updated" },
+        { name: "lastName", label: "Last name", placeholder: "James" },
+        { name: "address", label: "Address", type: "textarea", placeholder: "No 10, Adewale street" },
+        { name: "phoneNumber", label: "Phone number", type: "tel", placeholder: "08048584833" },
+        { name: "tier", label: "Tier", placeholder: "TIER_1", helper: "Examples: TIER_1, TIER_2, TIER_3." },
+        {
+          name: "metadata",
+          label: "Metadata JSON",
+          type: "textarea",
+          placeholder: "{\"others\":\"anything\"}",
+          helper: "Provide a JSON object. Leave as {} when no extra metadata is needed.",
+        },
+      ],
+      onSubmit: async (values) => {
+        const metadataInput = values.metadata.trim();
+        let metadata: Record<string, unknown> | undefined;
+
+        if (metadataInput && metadataInput !== "{}") {
+          try {
+            const parsed = JSON.parse(metadataInput);
+
+            if (!isRecord(parsed)) {
+              throw new Error("Metadata must be a JSON object.");
+            }
+
+            metadata = parsed;
+          } catch (error) {
+            if (error instanceof Error && error.message === "Metadata must be a JSON object.") {
+              throw error;
+            }
+
+            throw new Error("Metadata must be valid JSON.");
+          }
+        }
+
+        const payload = Object.fromEntries(
+          Object.entries({
+            firstName: values.firstName.trim(),
+            lastName: values.lastName.trim(),
+            address: values.address.trim(),
+            phoneNumber: values.phoneNumber.trim(),
+            tier: values.tier.trim(),
+            metadata,
+          }).filter(([, value]) => {
+            if (value === undefined || value === null) {
+              return false;
+            }
+
+            if (typeof value === "string") {
+              return value.trim().length > 0;
+            }
+
+            return true;
+          }),
+        );
+
+        const response = await adminService.updateUserXpressWalletCustomer(dashboard.userId, payload);
+        await loadUserXpressWalletBalance();
+        setXpressCustomerAction(null);
+        showToast(response, `Xpress customer updated for ${dashboard.userName}`, "success");
+      },
+    });
   };
 
   useEffect(() => {
@@ -2964,15 +3046,25 @@ function UserDashboardModal({
                           Pulls the customer&apos;s Xpress profile and wallet balance directly from the provider.
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void loadUserXpressWalletBalance()}
-                        disabled={xpressWalletBalance.loading}
-                        className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                      >
-                        <RefreshCw className={`h-4 w-4 ${xpressWalletBalance.loading ? "animate-spin" : ""}`} aria-hidden="true" />
-                        Refresh balance
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={openEditXpressCustomer}
+                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#069AFF] px-4 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0] dark:text-white"
+                        >
+                          <PencilLine className="h-4 w-4" aria-hidden="true" />
+                          Edit customer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void loadUserXpressWalletBalance()}
+                          disabled={xpressWalletBalance.loading}
+                          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${xpressWalletBalance.loading ? "animate-spin" : ""}`} aria-hidden="true" />
+                          Refresh balance
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid gap-4 p-4">
@@ -3486,6 +3578,14 @@ function UserDashboardModal({
           )}
         </div>
       </div>
+
+      {xpressCustomerAction && (
+        <ActionModal
+          action={xpressCustomerAction}
+          onClose={() => setXpressCustomerAction(null)}
+          showToast={showToast}
+        />
+      )}
     </div>
   );
 }

@@ -265,6 +265,12 @@ export const adminService = {
         return response.data;
     },
 
+    // PUT /admin/users/:userId/xpress-wallet/customer
+    updateUserXpressWalletCustomer: async (userId: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.put(`/admin/users/${userId}/xpress-wallet/customer`, payload);
+        return response.data;
+    },
+
     // GET /admin/users/:userId/bills
     getUserBills: async (userId: string): Promise<unknown> => {
         const response = await api.get(`/admin/users/${userId}/bills`);
