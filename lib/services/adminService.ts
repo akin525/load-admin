@@ -811,6 +811,36 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/reports/bill-profit
+    getBillProfitReport: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reports/bill-profit', { params });
+        return response.data;
+    },
+
+    // GET /admin/reports/payin-payout-profit
+    getPayinPayoutProfitReport: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/reports/payin-payout-profit', { params });
+        return response.data;
+    },
+
+    // GET /admin/general-ledger/bills
+    getGeneralLedgerBills: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/general-ledger/bills', { params });
+        return response.data;
+    },
+
+    // GET /admin/general-ledger/bills/summary
+    getGeneralLedgerBillsSummary: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/general-ledger/bills/summary', { params });
+        return response.data;
+    },
+
+    // POST /admin/general-ledger/bills/backfill
+    backfillGeneralLedgerBills: async (payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/general-ledger/bills/backfill', payload ?? {});
+        return response.data;
+    },
+
     // GET /admin/audit-logs
     getAuditLogs: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/audit-logs', { params });
@@ -931,6 +961,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/fees/bill-pricing
+    getBillPricingFees: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/fees/bill-pricing', { params });
+        return response.data;
+    },
+
     // POST /admin/fees/default
     setDefaultFee: async (payload: AdminPayload): Promise<unknown> => {
         const response = await api.post('/admin/fees/default', payload);
@@ -940,6 +976,36 @@ export const adminService = {
     // POST /admin/users/:userId/fees
     setUserFee: async (userId: string, payload: AdminPayload): Promise<unknown> => {
         const response = await api.post(`/admin/users/${userId}/fees`, payload);
+        return response.data;
+    },
+
+    // POST /admin/fees/bill-pricing
+    createBillPricingFee: async (payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/fees/bill-pricing', payload);
+        return response.data;
+    },
+
+    // PATCH /admin/fees/bill-pricing/:id
+    updateBillPricingFee: async (id: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.patch(`/admin/fees/bill-pricing/${id}`, payload);
+        return response.data;
+    },
+
+    // POST /admin/fees/bill-pricing/calculate
+    calculateBillPricingFee: async (payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/fees/bill-pricing/calculate', payload);
+        return response.data;
+    },
+
+    // GET /admin/fees/resolve
+    resolveFee: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/fees/resolve', { params });
+        return response.data;
+    },
+
+    // POST /fees/calculate
+    calculateFee: async (payload: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/fees/calculate', payload);
         return response.data;
     },
 

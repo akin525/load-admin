@@ -64,6 +64,7 @@ const navGroups: NavGroup[] = [
     title: "Finance Operations",
     items: [
       { href: "/bills", label: "Bills", icon: FileText },
+      { href: "/general-ledger-bills", label: "Bill Ledger", icon: WalletCards },
       { href: "/deposits", label: "Deposits", icon: Landmark },
       { href: "/fees", label: "Fees", icon: Landmark },
       { href: "/wallet-transactions", label: "Wallet Ledger", icon: WalletCards },

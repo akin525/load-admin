@@ -34,8 +34,9 @@ type RouteKey =
     | "/admin"
     | "/action-requests"
     | "/bills"
-  | "/deposits"
-  | "/users"
+    | "/general-ledger-bills"
+    | "/deposits"
+    | "/users"
   | "/loans"
   | "/reconciliation"
   | "/reports"
@@ -348,6 +349,7 @@ const scopeMatchers: Record<string, string[][]> = {
   ],
   actionRequests: [["action", "request"], ["approval"], ["approve"], ["maker"], ["checker"], ["admin"]],
   bills: [["view", "bill"], ["bill"], ["billing"], ["vtpass"]],
+  generalLedgerBills: [["general", "ledger"], ["ledger", "bill"], ["bill", "profit"], ["bill"], ["report"]],
   deposits: [["view", "deposit"], ["deposit"], ["funding"], ["payin"], ["wallet"]],
   loans: [
     ["view", "loan"],
@@ -390,6 +392,7 @@ const routeScopeMap: Record<RouteKey, string> = {
   "/admin": "admin",
   "/action-requests": "actionRequests",
   "/bills": "bills",
+  "/general-ledger-bills": "generalLedgerBills",
   "/deposits": "deposits",
   "/users": "users",
   "/loans": "loans",

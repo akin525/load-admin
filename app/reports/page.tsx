@@ -26,11 +26,12 @@ import { useRouteAccess } from "@/lib/admin-access";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 
-type ReportKey = "financial" | "loanPerformance" | "profitLoss" | "revenue";
+type ReportKey = "billProfit" | "financial" | "loanPerformance" | "payinPayoutProfit" | "profitLoss" | "revenue";
 
 type ReportFilters = {
   fromDate: string;
   toDate: string;
+  groupBy: "daily" | "weekly" | "monthly";
 };
 
 type ReportState = {
@@ -48,15 +49,19 @@ type ReportCenterState = {
 
 type ReportExportType =
   | "dashboard-summary"
+  | "bill-profit"
   | "reconciliation-overview"
   | "financial"
   | "loan-performance"
+  | "payin-payout-profit"
   | "profit-loss"
   | "revenue";
 
 const reportRequests: Array<[ReportKey, (params: Record<string, string>) => Promise<unknown>]> = [
+  ["billProfit", adminService.getBillProfitReport],
   ["financial", adminService.getFinancialReport],
   ["loanPerformance", adminService.getLoanPerformanceReport],
+  ["payinPayoutProfit", adminService.getPayinPayoutProfitReport],
   ["profitLoss", adminService.getProfitLossReport],
   ["revenue", adminService.getRevenueReport],
 ];
@@ -73,6 +78,15 @@ const unwrapPayload = (payload: unknown): unknown => {
   }
 
   return payload;
+};
+
+const getRecordValue = (record: Record<string, unknown> | null | undefined, keys: string[]) => {
+  if (!record) {
+    return undefined;
+  }
+
+  const foundKey = keys.find((key) => key in record);
+  return foundKey ? record[foundKey] : undefined;
 };
 
 const extractRows = (payload: unknown): Record<string, unknown>[] => {
@@ -164,6 +178,7 @@ const getDefaultReportFilters = (): ReportFilters => {
   return {
     fromDate: toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1)),
     toDate: toDateInputValue(now),
+    groupBy: "daily",
   };
 };
 
@@ -307,6 +322,10 @@ const fetchReports = async (filters: ReportFilters): Promise<ReportState> => {
     params.toDate = filters.toDate;
   }
 
+  if (filters.groupBy) {
+    params.groupBy = filters.groupBy;
+  }
+
   const results = await Promise.allSettled(reportRequests.map(([, request]) => request(params)));
   const data: Partial<Record<ReportKey, unknown>> = {};
   const errors: Partial<Record<ReportKey, string>> = {};
@@ -342,6 +361,10 @@ const fetchReportCenter = async (filters: ReportFilters): Promise<ReportCenterSt
     params.toDate = filters.toDate;
   }
 
+  if (filters.groupBy) {
+    params.groupBy = filters.groupBy;
+  }
+
   try {
     const payload = await adminService.getReportCenter(params);
 
@@ -362,10 +385,12 @@ const fetchReportCenter = async (filters: ReportFilters): Promise<ReportCenterSt
 function SummaryCard({
   label,
   value,
+  detail,
   icon: Icon,
 }: {
   label: string;
   value: string;
+  detail?: string;
   icon: typeof ShieldCheck;
 }) {
   return (
@@ -375,6 +400,7 @@ function SummaryCard({
       </div>
       <p className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white">{value}</p>
       <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</p>
+      {detail && <p className="mt-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">{detail}</p>}
     </div>
   );
 }
@@ -495,6 +521,528 @@ function ReportPanel({
   );
 }
 
+function getPayinPayoutProfitSection(
+  payload: unknown,
+  sectionKey: "payin" | "payout" | "combined",
+): { summary: Record<string, unknown> | null; timeline: Record<string, unknown>[] } {
+  const data = unwrapPayload(payload);
+  if (!isRecord(data)) {
+    return { summary: null, timeline: [] };
+  }
+
+  const section = getRecordValue(data, [sectionKey]);
+  if (!isRecord(section)) {
+    return { summary: null, timeline: [] };
+  }
+
+  const summary = getRecordValue(section, ["summary"]);
+  const timeline = getRecordValue(section, ["timeline"]);
+
+  return {
+    summary: isRecord(summary) ? summary : null,
+    timeline: Array.isArray(timeline) ? timeline.filter(isRecord) : [],
+  };
+}
+
+function getPayinPayoutPeriod(payload: unknown) {
+  const data = unwrapPayload(payload);
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  const period = getRecordValue(data, ["period"]);
+  return isRecord(period) ? period : null;
+}
+
+function PayinPayoutProfitPanel({
+  payload,
+  error,
+}: {
+  payload: unknown;
+  error?: string;
+}) {
+  const period = getPayinPayoutPeriod(payload);
+  const payin = getPayinPayoutProfitSection(payload, "payin");
+  const payout = getPayinPayoutProfitSection(payload, "payout");
+  const combined = getPayinPayoutProfitSection(payload, "combined");
+
+  const sections = [
+    { key: "payin", title: "Payin", data: payin, icon: WalletCards },
+    { key: "payout", title: "Payout", data: payout, icon: CreditCard },
+    { key: "combined", title: "Combined", data: combined, icon: BarChart3 },
+  ] as const;
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30 xl:col-span-2">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#069AFF]">Payin / Payout Profit</p>
+          <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-950 dark:text-white">Customer fee, provider fee, and profit by flow</h3>
+          {period && (
+            <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+              {String(getRecordValue(period, ["fromDate"]) ?? "N/A")} to {String(getRecordValue(period, ["toDate"]) ?? "N/A")} / {String(getRecordValue(period, ["groupBy"]) ?? "daily")}
+            </p>
+          )}
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
+          <BarChart3 className="h-5 w-5" aria-hidden="true" />
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5">
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+            {error}
+          </div>
+        )}
+
+        {!error && sections.map((section) => (
+          <div key={section.key} className="rounded-lg border border-slate-200 dark:border-white/10">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-white/10">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
+                <section.icon className="h-4 w-4" aria-hidden="true" />
+              </div>
+              <h4 className="font-bold text-slate-950 dark:text-white">{section.title}</h4>
+            </div>
+
+            <div className="grid gap-4 p-4">
+              {section.data.summary ? (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                  {(["count", "totalAmount", "totalCustomerFee", "totalProviderFee", "totalProfit"] as const).map((key) => (
+                    <div key={key} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{formatLabel(key)}</p>
+                      <p className="mt-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+                        {/(amount|fee|profit)/i.test(key)
+                          ? formatCurrency(getRecordValue(section.data.summary, [key]))
+                          : formatValue(getRecordValue(section.data.summary, [key]))}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyPanel label={`No ${section.title.toLowerCase()} summary returned for this period.`} />
+              )}
+
+              {section.data.timeline.length > 0 ? (
+                <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[900px] text-left text-sm">
+                      <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
+                        <tr>
+                          {["Period", "Count", "Amount", "Customer Fee", "Provider Fee", "Profit"].map((column) => (
+                            <th key={column} className="px-4 py-3">{column}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                        {section.data.timeline.map((row, index) => (
+                          <tr key={`${section.key}-${index}`} className="text-slate-700 dark:text-slate-300">
+                            <td className="px-4 py-3 font-medium">
+                              {String(getRecordValue(row, ["period", "date", "label", "bucket"]) ?? "Not available")}
+                            </td>
+                            <td className="px-4 py-3">{formatValue(getRecordValue(row, ["count"]))}</td>
+                            <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalAmount", "amount"]))}</td>
+                            <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalCustomerFee", "customerFeeAmount"]))}</td>
+                            <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalProviderFee", "providerFeeAmount"]))}</td>
+                            <td className="px-4 py-3 font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["totalProfit", "expectedProfitAmount", "profitAmount"]))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <EmptyPanel label={`No ${section.title.toLowerCase()} timeline returned for this period.`} />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function getBillProfitData(payload: unknown) {
+  const data = unwrapPayload(payload);
+  if (!isRecord(data)) {
+    return {
+      period: null as Record<string, unknown> | null,
+      totals: null as Record<string, unknown> | null,
+      byServiceType: [] as Record<string, unknown>[],
+      entries: [] as Record<string, unknown>[],
+    };
+  }
+
+  return {
+    period: isRecord(getRecordValue(data, ["period"])) ? (getRecordValue(data, ["period"]) as Record<string, unknown>) : null,
+    totals: isRecord(getRecordValue(data, ["totals"])) ? (getRecordValue(data, ["totals"]) as Record<string, unknown>) : null,
+    byServiceType: Array.isArray(getRecordValue(data, ["byServiceType"])) ? (getRecordValue(data, ["byServiceType"]) as unknown[]).filter(isRecord) : [],
+    entries: Array.isArray(getRecordValue(data, ["entries"])) ? (getRecordValue(data, ["entries"]) as unknown[]).filter(isRecord) : [],
+  };
+}
+
+function getFinancialReportData(payload: unknown) {
+  const data = unwrapPayload(payload);
+  if (!isRecord(data)) {
+    return {
+      period: null as Record<string, unknown> | null,
+      appLoans: null as Record<string, unknown> | null,
+      walletTransactions: [] as Record<string, unknown>[],
+      bills: [] as Record<string, unknown>[],
+      walletBalances: [] as Record<string, unknown>[],
+      billLedger: null as Record<string, unknown> | null,
+    };
+  }
+
+  return {
+    period: isRecord(getRecordValue(data, ["period"])) ? (getRecordValue(data, ["period"]) as Record<string, unknown>) : null,
+    appLoans: isRecord(getRecordValue(data, ["appLoans"])) ? (getRecordValue(data, ["appLoans"]) as Record<string, unknown>) : null,
+    walletTransactions: Array.isArray(getRecordValue(data, ["walletTransactions"])) ? (getRecordValue(data, ["walletTransactions"]) as unknown[]).filter(isRecord) : [],
+    bills: Array.isArray(getRecordValue(data, ["bills"])) ? (getRecordValue(data, ["bills"]) as unknown[]).filter(isRecord) : [],
+    walletBalances: Array.isArray(getRecordValue(data, ["walletBalances"])) ? (getRecordValue(data, ["walletBalances"]) as unknown[]).filter(isRecord) : [],
+    billLedger: isRecord(getRecordValue(data, ["billLedger"])) ? (getRecordValue(data, ["billLedger"]) as Record<string, unknown>) : null,
+  };
+}
+
+function CompactMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="mt-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{value}</p>
+    </div>
+  );
+}
+
+function BillProfitPanel({
+  payload,
+  error,
+}: {
+  payload: unknown;
+  error?: string;
+}) {
+  const report = getBillProfitData(payload);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(8);
+  const paginatedEntries = paginateItems(report.entries, currentPage, pageSize);
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30 xl:col-span-2">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#069AFF]">Bill profit</p>
+          <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-950 dark:text-white">Provider commission, realized revenue, and bill-level profit</h3>
+          {report.period && (
+            <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+              {String(getRecordValue(report.period, ["fromDate"]) ?? "N/A")} to {String(getRecordValue(report.period, ["toDate"]) ?? "N/A")}
+            </p>
+          )}
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
+          <FileText className="h-5 w-5" aria-hidden="true" />
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5">
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+            {error}
+          </div>
+        )}
+
+        {!error && report.totals && (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <CompactMetric label="Entries" value={formatValue(getRecordValue(report.totals, ["totalEntries"]))} />
+            <CompactMetric label="Successful" value={formatValue(getRecordValue(report.totals, ["successfulEntries"]))} />
+            <CompactMetric label="Bill Amount" value={formatCurrency(getRecordValue(report.totals, ["totalBillAmount"]))} />
+            <CompactMetric label="Provider Margin" value={formatCurrency(getRecordValue(report.totals, ["totalProviderMargin"]))} />
+            <CompactMetric label="Total Profit" value={formatCurrency(getRecordValue(report.totals, ["totalProfit"]))} />
+          </div>
+        )}
+
+        {!error && report.byServiceType.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+            <div className="border-b border-slate-100 px-4 py-3 dark:border-white/10">
+              <h4 className="font-bold text-slate-950 dark:text-white">By service type</h4>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1100px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
+                  <tr>
+                    {["Service", "Entries", "Success", "Failed", "Bill Amount", "Provider Cost", "Provider Margin", "Revenue", "Profit"].map((column) => (
+                      <th key={column} className="px-4 py-3">{column}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                  {report.byServiceType.map((row, index) => (
+                    <tr key={`${String(getRecordValue(row, ["serviceType"]) ?? "service")}-${index}`} className="text-slate-700 dark:text-slate-300">
+                      <td className="px-4 py-3 font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["serviceType"]) ?? "Not available")}</td>
+                      <td className="px-4 py-3">{formatValue(getRecordValue(row, ["totalEntries"]))}</td>
+                      <td className="px-4 py-3">{formatValue(getRecordValue(row, ["successfulEntries"]))}</td>
+                      <td className="px-4 py-3">{formatValue(getRecordValue(row, ["failedEntries"]))}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalBillAmount"]))}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalProviderCost"]))}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalProviderMargin"]))}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalRevenue"]))}</td>
+                      <td className="px-4 py-3 font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["totalProfit"]))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {!error && report.entries.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+            <div className="border-b border-slate-100 px-4 py-3 dark:border-white/10">
+              <h4 className="font-bold text-slate-950 dark:text-white">Ledger entries</h4>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1200px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
+                  <tr>
+                    {["Reference", "Service", "Status", "Bill Amount", "Provider Commission", "Provider Cost", "Profit", "Created"].map((column) => (
+                      <th key={column} className="px-4 py-3">{column}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                  {paginatedEntries.map((row, index) => (
+                    <tr key={`${String(getRecordValue(row, ["_id", "reference"]) ?? "entry")}-${index}`} className="text-slate-700 dark:text-slate-300">
+                      <td className="px-4 py-3 font-semibold text-slate-950 dark:text-white">{String(getRecordValue(row, ["reference"]) ?? "Not available")}</td>
+                      <td className="px-4 py-3">{String(getRecordValue(row, ["serviceType"]) ?? "Not available")}</td>
+                      <td className="px-4 py-3">{String(getRecordValue(row, ["status"]) ?? "Not available")}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["billAmount", "grossAmount"]))}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["providerCommissionAmount"]))}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["providerCostAmount"]))}</td>
+                      <td className="px-4 py-3 font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["realizedProfitAmount"]))}</td>
+                      <td className="px-4 py-3">{formatDate(getRecordValue(row, ["createdAt"]))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <TablePagination
+              totalItems={report.entries.length}
+              currentPage={currentPage}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(next) => {
+                setPageSize(next);
+                setCurrentPage(1);
+              }}
+              label="entries"
+            />
+          </div>
+        )}
+
+        {!error && !report.totals && !report.byServiceType.length && !report.entries.length && (
+          <EmptyPanel label="No bill-profit data returned for this period." />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function FinancialReportPanel({
+  payload,
+  error,
+}: {
+  payload: unknown;
+  error?: string;
+}) {
+  const report = getFinancialReportData(payload);
+  const billLedgerTotals = report.billLedger && isRecord(getRecordValue(report.billLedger, ["totals"])) ? (getRecordValue(report.billLedger, ["totals"]) as Record<string, unknown>) : null;
+  const billLedgerByServiceType = report.billLedger && Array.isArray(getRecordValue(report.billLedger, ["byServiceType"]))
+    ? (getRecordValue(report.billLedger, ["byServiceType"]) as unknown[]).filter(isRecord)
+    : [];
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30 xl:col-span-2">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#069AFF]">Financial report</p>
+          <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-950 dark:text-white">Loans, balances, bill outcomes, and embedded bill-ledger profit</h3>
+          {report.period && (
+            <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+              {String(getRecordValue(report.period, ["fromDate"]) ?? "N/A")} to {String(getRecordValue(report.period, ["toDate"]) ?? "N/A")}
+            </p>
+          )}
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
+          <Landmark className="h-5 w-5" aria-hidden="true" />
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5">
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+            {error}
+          </div>
+        )}
+
+        {!error && (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <CompactMetric label="App Loans" value={formatValue(getRecordValue(report.appLoans, ["totalAppLoans"]))} />
+            <CompactMetric label="App Loan Amount" value={formatCurrency(getRecordValue(report.appLoans, ["totalAppLoanAmount"]))} />
+            <CompactMetric label="App Loan Repaid" value={formatCurrency(getRecordValue(report.appLoans, ["totalAppLoanRepaid"]))} />
+            <CompactMetric label="Outstanding" value={formatCurrency(getRecordValue(report.appLoans, ["totalAppLoanOutstanding"]))} />
+            <CompactMetric label="Bill Ledger Profit" value={formatCurrency(getRecordValue(billLedgerTotals, ["totalProfit"]))} />
+          </div>
+        )}
+
+        {!error && (
+          <div className="grid gap-5 xl:grid-cols-3">
+            <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+              <div className="border-b border-slate-100 px-4 py-3 dark:border-white/10">
+                <h4 className="font-bold text-slate-950 dark:text-white">Wallet transactions</h4>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[320px] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Count</th>
+                      <th className="px-4 py-3">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                    {report.walletTransactions.map((row, index) => (
+                      <tr key={`${String(getRecordValue(row, ["_id"]) ?? "txn")}-${index}`}>
+                        <td className="px-4 py-3 font-semibold text-slate-950 dark:text-white">{String(getRecordValue(row, ["_id"]) ?? "Not available")}</td>
+                        <td className="px-4 py-3">{formatValue(getRecordValue(row, ["count"]))}</td>
+                        <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalAmount"]))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+              <div className="border-b border-slate-100 px-4 py-3 dark:border-white/10">
+                <h4 className="font-bold text-slate-950 dark:text-white">Bills by status</h4>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[320px] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Count</th>
+                      <th className="px-4 py-3">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                    {report.bills.map((row, index) => (
+                      <tr key={`${String(getRecordValue(row, ["_id"]) ?? "bill")}-${index}`}>
+                        <td className="px-4 py-3 font-semibold text-slate-950 dark:text-white">{String(getRecordValue(row, ["_id"]) ?? "unspecified")}</td>
+                        <td className="px-4 py-3">{formatValue(getRecordValue(row, ["count"]))}</td>
+                        <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalAmount"]))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+              <div className="border-b border-slate-100 px-4 py-3 dark:border-white/10">
+                <h4 className="font-bold text-slate-950 dark:text-white">Wallet balances</h4>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[320px] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">Wallet</th>
+                      <th className="px-4 py-3">Count</th>
+                      <th className="px-4 py-3">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                    {report.walletBalances.map((row, index) => (
+                      <tr key={`${String(getRecordValue(row, ["_id"]) ?? "wallet")}-${index}`}>
+                        <td className="px-4 py-3 font-semibold text-slate-950 dark:text-white">{String(getRecordValue(row, ["_id"]) ?? "Not available")}</td>
+                        <td className="px-4 py-3">{formatValue(getRecordValue(row, ["count"]))}</td>
+                        <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalBalance"]))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!error && billLedgerByServiceType.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+            <div className="border-b border-slate-100 px-4 py-3 dark:border-white/10">
+              <h4 className="font-bold text-slate-950 dark:text-white">Embedded bill-ledger profit</h4>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1000px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-950/60 dark:text-slate-400">
+                  <tr>
+                    {["Service", "Entries", "Success", "Failed", "Bill Amount", "Provider Cost", "Provider Margin", "Profit"].map((column) => (
+                      <th key={column} className="px-4 py-3">{column}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                  {billLedgerByServiceType.map((row, index) => (
+                    <tr key={`${String(getRecordValue(row, ["serviceType"]) ?? "embedded")}-${index}`}>
+                      <td className="px-4 py-3 font-semibold text-slate-950 dark:text-white">{String(getRecordValue(row, ["serviceType"]) ?? "Not available")}</td>
+                      <td className="px-4 py-3">{formatValue(getRecordValue(row, ["totalEntries"]))}</td>
+                      <td className="px-4 py-3">{formatValue(getRecordValue(row, ["successfulEntries"]))}</td>
+                      <td className="px-4 py-3">{formatValue(getRecordValue(row, ["failedEntries"]))}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalBillAmount"]))}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalProviderCost"]))}</td>
+                      <td className="px-4 py-3">{formatCurrency(getRecordValue(row, ["totalProviderMargin"]))}</td>
+                      <td className="px-4 py-3 font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["totalProfit"]))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {!error &&
+          !report.appLoans &&
+          !report.walletTransactions.length &&
+          !report.bills.length &&
+          !report.walletBalances.length &&
+          !billLedgerByServiceType.length && <EmptyPanel label="No financial report data returned for this period." />}
+      </div>
+    </section>
+  );
+}
+
+function buildCardDetail(count: unknown, amount: unknown, countLabel = "entries") {
+  const hasCount = isNumericLike(count);
+  const hasAmount = isNumericLike(amount);
+
+  if (hasCount && hasAmount) {
+    return `${formatValue(count)} ${countLabel} / ${formatCurrency(amount)} total value`;
+  }
+
+  if (hasCount) {
+    return `${formatValue(count)} ${countLabel}`;
+  }
+
+  if (hasAmount) {
+    return `${formatCurrency(amount)} total value`;
+  }
+
+  return undefined;
+}
+
 function LoadingReports() {
   return (
     <div className="grid gap-5">
@@ -567,9 +1115,64 @@ export default function ReportsPage() {
   };
 
   const financialLead = useMemo(() => getReportLead(reports.data.financial), [reports.data.financial]);
+  const billProfitTotals = useMemo(() => getBillProfitData(reports.data.billProfit).totals, [reports.data.billProfit]);
+  const billProfitLead = useMemo(() => {
+    if (billProfitTotals) {
+      return {
+        label: "Total Profit",
+        value: formatCurrency(getRecordValue(billProfitTotals, ["totalProfit"])),
+      };
+    }
+
+    return getReportLead(reports.data.billProfit);
+  }, [billProfitTotals, reports.data.billProfit]);
   const loanPerformanceLead = useMemo(() => getReportLead(reports.data.loanPerformance), [reports.data.loanPerformance]);
+  const payinPayoutLead = useMemo(() => {
+    const combined = getPayinPayoutProfitSection(reports.data.payinPayoutProfit, "combined").summary;
+    if (combined) {
+      return {
+        label: "Combined Total Profit",
+        value: formatCurrency(getRecordValue(combined, ["totalProfit"])),
+      };
+    }
+
+    return getReportLead(reports.data.payinPayoutProfit);
+  }, [reports.data.payinPayoutProfit]);
+  const payinPayoutCombined = useMemo(() => getPayinPayoutProfitSection(reports.data.payinPayoutProfit, "combined").summary, [reports.data.payinPayoutProfit]);
+  const financialData = useMemo(() => getFinancialReportData(reports.data.financial), [reports.data.financial]);
+  const combinedOperationalProfit = useMemo(() => {
+    const billProfitValue = Number(getRecordValue(billProfitTotals, ["totalProfit"]) ?? 0);
+    const payinPayoutValue = Number(getRecordValue(payinPayoutCombined, ["totalProfit"]) ?? 0);
+    return formatCurrency((Number.isNaN(billProfitValue) ? 0 : billProfitValue) + (Number.isNaN(payinPayoutValue) ? 0 : payinPayoutValue));
+  }, [billProfitTotals, payinPayoutCombined]);
   const profitLossLead = useMemo(() => getReportLead(reports.data.profitLoss), [reports.data.profitLoss]);
   const revenueLead = useMemo(() => getReportLead(reports.data.revenue), [reports.data.revenue]);
+  const combinedOperationalDetail = useMemo(() => {
+    const totalCount =
+      Number(getRecordValue(billProfitTotals, ["totalEntries"]) ?? 0) +
+      Number(getRecordValue(payinPayoutCombined, ["count"]) ?? 0);
+    const totalAmount =
+      Number(getRecordValue(billProfitTotals, ["totalBillAmount"]) ?? 0) +
+      Number(getRecordValue(payinPayoutCombined, ["totalAmount"]) ?? 0);
+    return buildCardDetail(totalCount, totalAmount, "entries");
+  }, [billProfitTotals, payinPayoutCombined]);
+  const billProfitDetail = useMemo(
+    () => buildCardDetail(getRecordValue(billProfitTotals, ["totalEntries"]), getRecordValue(billProfitTotals, ["totalBillAmount"]), "entries"),
+    [billProfitTotals],
+  );
+  const payinPayoutDetail = useMemo(
+    () => buildCardDetail(getRecordValue(payinPayoutCombined, ["count"]), getRecordValue(payinPayoutCombined, ["totalAmount"]), "transactions"),
+    [payinPayoutCombined],
+  );
+  const financialDetail = useMemo(
+    () =>
+      buildCardDetail(
+        getRecordValue(financialData.appLoans, ["totalAppLoans"]),
+        getRecordValue(financialData.appLoans, ["totalAppLoanAmount"]),
+        "loans",
+      ),
+    [financialData],
+  );
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -649,7 +1252,7 @@ export default function ReportsPage() {
                     Standalone financial reporting for management review, audit visibility, and portfolio control.
                   </h2>
                   <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
-                    Review financial, revenue, loan performance, and profit-and-loss reports from a dedicated workspace instead of loading them inside the admin operations page.
+                    Review financial, revenue, loan performance, bill-profit, and profit-and-loss reports from a dedicated workspace instead of loading them inside the admin operations page.
                   </p>
                 </div>
 
@@ -672,6 +1275,18 @@ export default function ReportsPage() {
                         onChange={(event) => setReportFilters((current) => ({ ...current, toDate: event.target.value }))}
                         className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white outline-none transition focus:border-white/40"
                       />
+                    </label>
+                    <label className="sm:col-span-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-sky-100">Group by</span>
+                      <select
+                        value={reportFilters.groupBy}
+                        onChange={(event) => setReportFilters((current) => ({ ...current, groupBy: event.target.value as "daily" | "weekly" | "monthly" }))}
+                        className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white outline-none transition focus:border-white/40"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
                     </label>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -725,14 +1340,16 @@ export default function ReportsPage() {
                       </div>
                     )}
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {[
-                        { key: "dashboard-summary", label: "Dashboard summary" },
-                        { key: "reconciliation-overview", label: "Reconciliation overview" },
-                        { key: "financial", label: "Financial" },
-                        { key: "loan-performance", label: "Loan performance" },
-                        { key: "profit-loss", label: "Profit & loss" },
-                        { key: "revenue", label: "Revenue" },
-                      ].map((item) => (
+                        {[
+                          { key: "dashboard-summary", label: "Dashboard summary" },
+                          { key: "bill-profit", label: "Bill profit" },
+                          { key: "reconciliation-overview", label: "Reconciliation overview" },
+                          { key: "financial", label: "Financial" },
+                          { key: "loan-performance", label: "Loan performance" },
+                          { key: "payin-payout-profit", label: "Payin / payout profit" },
+                          { key: "profit-loss", label: "Profit & loss" },
+                          { key: "revenue", label: "Revenue" },
+                        ].map((item) => (
                         <button
                           key={item.key}
                           type="button"
@@ -757,20 +1374,19 @@ export default function ReportsPage() {
             </section>
 
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-              <SummaryCard label={`Financial - ${financialLead.label}`} value={financialLead.value} icon={Landmark} />
-              <SummaryCard label={`Loan Performance - ${loanPerformanceLead.label}`} value={loanPerformanceLead.value} icon={CreditCard} />
-              <SummaryCard label={`Profit & Loss - ${profitLossLead.label}`} value={profitLossLead.value} icon={BriefcaseBusiness} />
-              <SummaryCard label={`Revenue - ${revenueLead.label}`} value={revenueLead.value} icon={WalletCards} />
+              <SummaryCard label="Combined Operational Profit" value={combinedOperationalProfit} detail={combinedOperationalDetail} icon={BarChart3} />
+              <SummaryCard label={`Bill Profit - ${billProfitLead.label}`} value={billProfitLead.value} detail={billProfitDetail} icon={FileText} />
+              <SummaryCard label={`Payin / Payout - ${payinPayoutLead.label}`} value={payinPayoutLead.value} detail={payinPayoutDetail} icon={BarChart3} />
+              <SummaryCard label={`Financial - ${financialLead.label}`} value={financialLead.value} detail={financialDetail} icon={Landmark} />
             </section>
 
             <div className="grid gap-6 xl:grid-cols-2">
-              <ReportPanel
-                title="Financial report"
-                description="Balance, movement, and operating figures"
-                payload={reports.data.financial}
-                error={reports.errors.financial}
-                icon={Landmark}
+              <PayinPayoutProfitPanel
+                payload={reports.data.payinPayoutProfit}
+                error={reports.errors.payinPayoutProfit}
               />
+              <BillProfitPanel payload={reports.data.billProfit} error={reports.errors.billProfit} />
+              <FinancialReportPanel payload={reports.data.financial} error={reports.errors.financial} />
               <ReportPanel
                 title="Loan performance"
                 description="Portfolio quality, repayments, and exposure"

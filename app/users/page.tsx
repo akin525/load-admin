@@ -109,6 +109,13 @@ type UsersState = {
   error: string;
 };
 
+type UsersFilters = {
+  search: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+};
+
 type FormField = {
   name: string;
   label: string;
@@ -505,6 +512,13 @@ const getDefaultWalletStatementFilters = (): WalletStatementFilters => ({
   email: "",
 });
 
+const getDefaultUsersFilters = (): UsersFilters => ({
+  search: "",
+  first_name: "",
+  last_name: "",
+  email: "",
+});
+
 const downloadBlob = (blob: Blob, filename: string) => {
   const objectUrl = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -516,9 +530,19 @@ const downloadBlob = (blob: Blob, filename: string) => {
   window.URL.revokeObjectURL(objectUrl);
 };
 
-const fetchUsers = async (): Promise<UsersState> => {
+const fetchUsers = async (filters?: UsersFilters): Promise<UsersState> => {
   try {
-    const payload = await adminService.getUsers();
+    const params = Object.entries(filters ?? {}).reduce<Record<string, string>>((accumulator, [key, value]) => {
+      const normalized = value.trim();
+
+      if (normalized) {
+        accumulator[key] = normalized;
+      }
+
+      return accumulator;
+    }, {});
+
+    const payload = await adminService.getUsers(params);
 
     return {
       payload,
@@ -3666,6 +3690,7 @@ export default function UsersPage() {
     error: "",
   });
   const [refreshing, setRefreshing] = useState(false);
+  const [filters, setFilters] = useState<UsersFilters>(() => getDefaultUsersFilters());
   const [detail, setDetail] = useState<DetailState | null>(null);
   const [userDashboard, setUserDashboard] = useState<UserDashboardState | null>(null);
   const [userControls, setUserControls] = useState<UserControlsTarget | null>(null);
@@ -3686,7 +3711,7 @@ export default function UsersPage() {
       return;
     }
 
-    void fetchUsers().then((result) => {
+    void fetchUsers(filters).then((result) => {
       if (!cancelled) {
         setUsersState(result);
       }
@@ -3695,12 +3720,13 @@ export default function UsersPage() {
     return () => {
       cancelled = true;
     };
-  }, [canOpenUsers, router]);
+  }, [canOpenUsers, filters, router]);
 
-  const refreshUsers = async () => {
+  const refreshUsers = async (nextFilters?: UsersFilters) => {
+    const activeFilters = nextFilters ?? filters;
     setRefreshing(true);
     setUsersState((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchUsers();
+    const result = await fetchUsers(activeFilters);
     setUsersState(result);
     setRefreshing(false);
   };
@@ -4046,6 +4072,90 @@ export default function UsersPage() {
                   ))}
                 </div>
               </div>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF]">Directory filters</p>
+                  <h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">Search customer records</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Server-side filters for `/admin/user/list` using `search`, `first_name`, `last_name`, and `email`.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 px-4 py-3 text-xs font-semibold text-slate-600 dark:border-[#069AFF]/25 dark:bg-[#069AFF]/10 dark:text-slate-300">
+                  <p>Results loaded: {formatValue(rows.length)}</p>
+                  <p className="mt-1">Filters apply to the backend query, not just the visible table.</p>
+                </div>
+              </div>
+
+              <form
+                className="grid items-end gap-3 p-4 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto_auto]"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void refreshUsers();
+                }}
+              >
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Search</span>
+                  <input
+                    type="text"
+                    value={filters.search}
+                    onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+                    placeholder="john"
+                    className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">First name</span>
+                  <input
+                    type="text"
+                    value={filters.first_name}
+                    onChange={(event) => setFilters((current) => ({ ...current, first_name: event.target.value }))}
+                    placeholder="john"
+                    className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Last name</span>
+                  <input
+                    type="text"
+                    value={filters.last_name}
+                    onChange={(event) => setFilters((current) => ({ ...current, last_name: event.target.value }))}
+                    placeholder="doe"
+                    className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Email</span>
+                  <input
+                    type="email"
+                    value={filters.email}
+                    onChange={(event) => setFilters((current) => ({ ...current, email: event.target.value }))}
+                    placeholder="john@gmail.com"
+                    className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaults = getDefaultUsersFilters();
+                    setFilters(defaults);
+                    void refreshUsers(defaults);
+                  }}
+                  className="h-11 self-end rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                >
+                  Reset
+                </button>
+                <button
+                  type="submit"
+                  disabled={refreshing}
+                  className="inline-flex h-11 self-end items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0] disabled:opacity-60"
+                >
+                  {refreshing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                  Apply filters
+                </button>
+              </form>
             </section>
 
             {usersState.error && (
