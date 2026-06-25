@@ -783,6 +783,7 @@ export default function DepositsPage() {
                       <th className="px-5 py-3">Account / Customer</th>
                       <th className="px-5 py-3">Reference</th>
                       <th className="px-5 py-3">Amount</th>
+                      <th className="px-5 py-3">Fee</th>
                       <th className="px-5 py-3">Provider / Source</th>
                       <th className="px-5 py-3">Status</th>
                       <th className="px-5 py-3">Date</th>
@@ -805,6 +806,14 @@ export default function DepositsPage() {
                           </td>
                           <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{String(reference)}</td>
                           <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{formatCurrency(getAmount(row))}</td>
+                          <td className="px-5 py-4">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-slate-950 dark:text-white">{formatCurrency(Number(getRecordValue(row, ["feeAmount"]) ?? 0))}</span>
+                              <span className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                Gross {formatCurrency(Number(getRecordValue(row, ["grossAmount", "amount"]) ?? getAmount(row)))}
+                              </span>
+                            </div>
+                          </td>
                           <td className="px-5 py-4">
                             <p className="font-semibold text-slate-800 dark:text-slate-200">{provider}</p>
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{source}</p>

@@ -659,6 +659,7 @@ export default function TransfersPage() {
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Recipient</th>
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Initiated By</th>
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Amount</th>
+                  <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Fee</th>
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th>
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Date</th>
                   <th className="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400"></th>
@@ -667,7 +668,7 @@ export default function TransfersPage() {
               <tbody className="divide-y divide-slate-100 dark:divide-white/[0.04]">
                 {state.loading ? (
                   <tr>
-                    <td colSpan={7} className="py-24 text-center">
+                    <td colSpan={8} className="py-24 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <Loader2 className="h-10 w-10 animate-spin text-[#069AFF]" />
                         <p className="text-sm font-bold text-slate-500">Retrieving transfers...</p>
@@ -708,6 +709,12 @@ export default function TransfersPage() {
                         <span className="text-sm font-black text-[#069AFF]">{formatAmount(row.amount)}</span>
                       </td>
                       <td className="px-6 py-5">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-black text-slate-900 dark:text-white">{formatAmount(row.feeAmount)}</span>
+                          <span className="text-[10px] font-bold text-slate-400">Total debit {formatAmount(row.totalDebitAmount)}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
                         {row.status && (
                           <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${STATUS_VARIANTS[row.status]?.className || ""}`}>
                             {(() => {
@@ -743,7 +750,7 @@ export default function TransfersPage() {
                   )})
                 ) : (
                   <tr>
-                    <td colSpan={7} className="py-24 text-center">
+                    <td colSpan={8} className="py-24 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-white/5">
                           <Send className="h-8 w-8 text-slate-300" />
