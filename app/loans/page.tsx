@@ -68,9 +68,10 @@ type FormField = {
   name: string;
   label: string;
   placeholder?: string;
-  type?: "email" | "tel" | "text" | "textarea";
+  type?: "email" | "tel" | "text" | "textarea" | "select";
   required?: boolean;
   helper?: string;
+  options?: Array<{ label: string; value: string }>;
 };
 
 type FormAction = {
@@ -308,6 +309,31 @@ const parseDurations = (value: string) => {
   } catch {
     return [];
   }
+};
+
+const formatRepaymentFrequency = (value: unknown) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
+const describeDurationConfig = (value: unknown) => {
+  if (!isRecord(value)) {
+    return "Invalid duration config";
+  }
+
+  const label = String(value.label ?? `${String(value.days ?? "0")} days`);
+  const frequency = formatRepaymentFrequency(value.repaymentFrequency);
+  const installments = Number(value.installmentCount ?? 0);
+  const interest = value.interestRate !== undefined ? `${formatValue(value.interestRate)}% interest` : "0% interest";
+  const topUpAllowed = value.topUpAllowed === true ? "Top-up on" : value.topUpAllowed === false ? "Top-up off" : "";
+
+  return [label, frequency, installments > 0 ? `${installments} installments` : "", interest, topUpAllowed]
+    .filter(Boolean)
+    .join(" • ");
 };
 
 const fetchLoansWorkspace = async (): Promise<LoansWorkspaceData> => {
@@ -592,6 +618,20 @@ function ActionModal({ action, onClose }: { action: FormAction; onClose: () => v
                       rows={4}
                       className={`${sharedClassName} resize-none`}
                     />
+                  ) : field.type === "select" ? (
+                    <select
+                      required={field.required}
+                      value={fieldValue}
+                      onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                      className={sharedClassName}
+                    >
+                      <option value="">Select {field.label.toLowerCase()}</option>
+                      {(field.options ?? []).map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
                     <input
                       required={field.required}
@@ -1891,7 +1931,7 @@ export default function LoansPage() {
   };
 
   const summaryCards = [
-    { label: "BankOne loans", value: formatValue(loans.length), icon: CreditCard },
+    { label: "Personal loans", value: formatValue(loans.length), icon: CreditCard },
     { label: "App Loans", value: formatValue(appLoans.length), icon: WalletCards },
     { label: "Loan types", value: formatValue(loanTypes.length), icon: BriefcaseBusiness },
     { label: "Loan packages", value: formatValue(loanPackages.length), icon: CheckCircle2 },
@@ -1927,7 +1967,7 @@ export default function LoansPage() {
     setFormAction({
       eyebrow: "Loan type",
       title: "Create loan type",
-      description: "Create a loan product type. Durations must be a JSON array matching the backend schema.",
+      description: "Create a loan product type. Durations must be a JSON array matching the backend schema, including repaymentFrequency where needed.",
       submitLabel: "Create loan type",
       fields: [
         { name: "name", label: "Name", required: true, placeholder: "Salary Loan" },
@@ -1937,13 +1977,29 @@ export default function LoansPage() {
         { name: "minAmount", label: "Minimum amount", required: true, placeholder: "10000" },
         { name: "maxAmount", label: "Maximum amount", required: true, placeholder: "500000" },
         { name: "currency", label: "Currency", required: true, placeholder: "NGN" },
+        {
+          name: "status",
+          label: "Status",
+          type: "select",
+          required: true,
+          options: [
+            { label: "Active", value: "active" },
+            { label: "Inactive", value: "inactive" },
+            { label: "Draft", value: "draft" },
+          ],
+        },
         { name: "requirements", label: "Requirements", placeholder: "BVN, Employment letter" },
         {
           name: "durations",
           label: "Durations JSON",
           type: "textarea",
           required: true,
-          placeholder: `[{"days":30,"label":"30 days","interestRate":5,"installmentCount":1,"topUpAllowed":true}]`,
+          placeholder:
+            `[` +
+            `{"days":28,"label":"4 Weeks","interestRate":8,"installmentCount":4,"repaymentFrequency":"weekly","topUpAllowed":true},` +
+            `{"days":90,"label":"3 Months","interestRate":12,"installmentCount":3,"repaymentFrequency":"monthly","topUpAllowed":true}` +
+            `]`,
+          helper: "Use repaymentFrequency directly for weekly or monthly repayment plans.",
         },
       ],
       onSubmit: (values) =>
@@ -1974,6 +2030,7 @@ export default function LoansPage() {
         minAmount: String(getRecordValue(row, ["minAmount"]) ?? ""),
         maxAmount: String(getRecordValue(row, ["maxAmount"]) ?? ""),
         currency: String(getRecordValue(row, ["currency"]) ?? "NGN"),
+        status: String(getRecordValue(row, ["status"]) ?? "active"),
         requirements: Array.isArray(row.requirements) ? row.requirements.join(", ") : "",
         durations: JSON.stringify(Array.isArray(row.durations) ? row.durations : [], null, 2),
       },
@@ -1985,8 +2042,25 @@ export default function LoansPage() {
         { name: "minAmount", label: "Minimum amount", required: true },
         { name: "maxAmount", label: "Maximum amount", required: true },
         { name: "currency", label: "Currency", required: true },
+        {
+          name: "status",
+          label: "Status",
+          type: "select",
+          required: true,
+          options: [
+            { label: "Active", value: "active" },
+            { label: "Inactive", value: "inactive" },
+            { label: "Draft", value: "draft" },
+          ],
+        },
         { name: "requirements", label: "Requirements" },
-        { name: "durations", label: "Durations JSON", type: "textarea", required: true },
+        {
+          name: "durations",
+          label: "Durations JSON",
+          type: "textarea",
+          required: true,
+          helper: "Include repaymentFrequency for plans such as weekly or monthly schedules.",
+        },
       ],
       onSubmit: (values) =>
         submitAndRefresh(() =>
@@ -2533,7 +2607,7 @@ export default function LoansPage() {
 
                 <div className="grid gap-3 rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 p-4 shadow-lg shadow-[#069AFF]/10">
                   {[
-                    ["BankOne loans", loans.length],
+                    ["Personal loans", loans.length],
                     ["App Loans", appLoans.length],
                     ["Loan types", loanTypes.length],
                   ].map(([label, value]) => (
@@ -2583,7 +2657,27 @@ export default function LoansPage() {
                     {formatCurrency(getRecordValue(row, ["minAmount"]))} - {formatCurrency(getRecordValue(row, ["maxAmount"]))}
                   </td>
                   <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "active"} /></td>
-                  <td className="px-5 py-4">{formatValue(Array.isArray(row.durations) ? row.durations.length : 0)}</td>
+                  <td className="px-5 py-4">
+                    <div className="space-y-1">
+                      <p className="font-semibold text-slate-950 dark:text-white">
+                        {formatValue(Array.isArray(row.durations) ? row.durations.length : 0)} options
+                      </p>
+                      {Array.isArray(row.durations) && row.durations.length > 0 ? (
+                        <div className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
+                          {row.durations.slice(0, 2).map((duration, durationIndex) => (
+                            <p key={`${getId(row)}-duration-${durationIndex}`}>{describeDurationConfig(duration)}</p>
+                          ))}
+                          {row.durations.length > 2 && (
+                            <p className="font-medium text-slate-400 dark:text-slate-500">
+                              +{row.durations.length - 2} more duration options
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">No durations configured</p>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-5 py-4">
                     <button
                       type="button"
@@ -2818,7 +2912,7 @@ export default function LoansPage() {
               }}
             </ManagementTable>
 
-            <ManagementTable title="BankOne loans" rows={loans} columns={["Customer", "Amount", "Status", "Created", "Action"]}>
+            <ManagementTable title="Personal loans" rows={loans} columns={["Customer", "Amount", "Status", "Created", "Action"]}>
               {(row, index) => {
                 const id = getId(row);
                 const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();
