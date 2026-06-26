@@ -36,6 +36,7 @@ type RouteKey =
     | "/bills"
     | "/general-ledger-bills"
     | "/deposits"
+    | "/xpress-merchant-wallet"
     | "/users"
   | "/loans"
   | "/reconciliation"
@@ -351,6 +352,7 @@ const scopeMatchers: Record<string, string[][]> = {
   bills: [["view", "bill"], ["bill"], ["billing"], ["vtpass"]],
   generalLedgerBills: [["general", "ledger"], ["ledger", "bill"], ["bill", "profit"], ["bill"], ["report"]],
   deposits: [["view", "deposit"], ["deposit"], ["funding"], ["payin"], ["wallet"]],
+  xpressMerchant: [["xpress"], ["merchant", "wallet"], ["wallet", "balance"], ["merchant"]],
   loans: [
     ["view", "loan"],
     ["view", "loans"],
@@ -394,6 +396,7 @@ const routeScopeMap: Record<RouteKey, string> = {
   "/bills": "bills",
   "/general-ledger-bills": "generalLedgerBills",
   "/deposits": "deposits",
+  "/xpress-merchant-wallet": "xpressMerchant",
   "/users": "users",
   "/loans": "loans",
   "/reconciliation": "reconciliation",
