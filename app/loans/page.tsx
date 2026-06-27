@@ -84,8 +84,68 @@ type FormAction = {
   onSubmit: (values: Record<string, string>) => Promise<void>;
 };
 
+const sortRecordsByLatest = (rows: Record<string, unknown>[], keys: string[]) =>
+  [...rows].sort((left, right) => {
+    const leftValue = keys.map((key) => getRecordValue(left, [key])).find((value) => value !== undefined && value !== null);
+    const rightValue = keys.map((key) => getRecordValue(right, [key])).find((value) => value !== undefined && value !== null);
+
+    const leftTime = new Date(String(leftValue ?? "")).getTime();
+    const rightTime = new Date(String(rightValue ?? "")).getTime();
+
+    if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+      return 0;
+    }
+
+    if (Number.isNaN(leftTime)) {
+      return 1;
+    }
+
+    if (Number.isNaN(rightTime)) {
+      return -1;
+    }
+
+    return rightTime - leftTime;
+  });
+
+const fetchAllLoansList = async (): Promise<unknown> => {
+  const batchSize = 100;
+  let skip = 0;
+  let total = 0;
+  const rows: Record<string, unknown>[] = [];
+  let firstPayload: unknown = null;
+
+  while (true) {
+    const payload = await adminService.getLoansList({ limit: batchSize, skip });
+    if (firstPayload === null) {
+      firstPayload = payload;
+    }
+
+    const data = unwrapPayload(payload);
+    const record = isRecord(data) ? data : null;
+    const batchRows = extractRows(payload);
+
+    rows.push(...batchRows);
+    total = Number(getRecordValue(record ?? {}, ["total"]) ?? rows.length);
+
+    if (!batchRows.length || rows.length >= total || batchRows.length < batchSize) {
+      return {
+        ...(isRecord(firstPayload) ? firstPayload : {}),
+        data: {
+          ...(record ?? {}),
+          total: total || rows.length,
+          limit: batchSize,
+          skip: 0,
+          data: rows,
+        },
+      };
+    }
+
+    skip += batchSize;
+  }
+};
+
 const endpoints: Array<[DataKey, () => Promise<unknown>]> = [
-  ["loans", () => adminService.getLoansList()],
+  ["loans", fetchAllLoansList],
   ["loanPackages", adminService.getLoanPackages],
   ["loanTypes", adminService.getLoanTypes],
   ["appLoans", () => adminService.getAppLoans()],
@@ -1866,7 +1926,10 @@ export default function LoansPage() {
     };
   }, [canOpenLoans, router]);
 
-  const loans = useMemo(() => extractRows(workspaceData?.loans), [workspaceData]);
+  const loans = useMemo(
+    () => sortRecordsByLatest(extractRows(workspaceData?.loans), ["applicationDate", "createdAt", "updatedAt"]),
+    [workspaceData],
+  );
   const loanPackages = useMemo(() => extractRows(workspaceData?.loanPackages), [workspaceData]);
   const loanTypes = useMemo(() => extractRows(workspaceData?.loanTypes), [workspaceData]);
   const appLoans = useMemo(() => extractRows(workspaceData?.appLoans), [workspaceData]);

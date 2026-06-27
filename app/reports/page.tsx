@@ -1252,6 +1252,7 @@ export default function ReportsPage() {
                     Standalone financial reporting for management review, audit visibility, and portfolio control.
                   </h2>
                   <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300">
+                    Review financial, revenue, loan performance, and profit-and-loss reports from a dedicated workspace instead of loading them inside the admin operations page.
                     Review financial, revenue, loan performance, bill-profit, and profit-and-loss reports from a dedicated workspace instead of loading them inside the admin operations page.
                   </p>
                 </div>
