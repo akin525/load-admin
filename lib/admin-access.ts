@@ -350,7 +350,6 @@ const scopeMatchers: Record<string, string[][]> = {
   ],
   actionRequests: [["action", "request"], ["approval"], ["approve"], ["maker"], ["checker"], ["admin"]],
   bills: [["view", "bill"], ["bill"], ["billing"], ["vtpass"]],
-  generalLedgerBills: [["general", "ledger"], ["ledger", "bill"], ["bill", "profit"], ["bill"], ["report"]],
   deposits: [["view", "deposit"], ["deposit"], ["funding"], ["payin"], ["wallet"]],
   xpressMerchant: [["xpress"], ["merchant", "wallet"], ["wallet", "balance"], ["merchant"]],
   loans: [

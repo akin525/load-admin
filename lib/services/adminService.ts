@@ -295,6 +295,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/users/:userId/referral
+    getUserReferral: async (userId: string): Promise<unknown> => {
+        const response = await api.get(`/admin/users/${userId}/referral`);
+        return response.data;
+    },
+
     // POST /admin/users/:userId/notifications/send
     sendUserNotification: async (userId: string, payload: AdminPayload): Promise<unknown> => {
         const response = await api.post(`/admin/users/${userId}/notifications/send`, payload);
@@ -844,6 +850,18 @@ export const adminService = {
     // POST /admin/general-ledger/bills/backfill
     backfillGeneralLedgerBills: async (payload?: AdminPayload): Promise<unknown> => {
         const response = await api.post('/admin/general-ledger/bills/backfill', payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/referrals/backfill
+    queueReferralBackfill: async (payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/referrals/backfill', payload ?? {});
+        return response.data;
+    },
+
+    // GET /admin/referrals/backfill-jobs/:id
+    getReferralBackfillJob: async (id: string): Promise<unknown> => {
+        const response = await api.get(`/admin/referrals/backfill-jobs/${id}`);
         return response.data;
     },
 

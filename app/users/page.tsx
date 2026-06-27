@@ -56,6 +56,7 @@ type UserDashboardState = DetailState & {
   userId: string;
   userName: string;
   userEmail: string;
+  userReferralCode: string;
 };
 
 type UserTransactionsState = DetailState & {
@@ -63,6 +64,10 @@ type UserTransactionsState = DetailState & {
 };
 
 type UserKycState = DetailState & {
+  loaded: boolean;
+};
+
+type UserReferralState = DetailState & {
   loaded: boolean;
 };
 
@@ -1316,6 +1321,13 @@ function ProfileInfoTile({
 }
 function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => void }) {
   const [copiedKey, setCopiedKey] = useState("");
+  const [referral, setReferral] = useState<UserReferralState>({
+    title: "User referral",
+    loading: true,
+    data: null,
+    error: "",
+    loaded: false,
+  });
 
   const data = unwrapPayload(detail.data);
   const record = isRecord(data) ? data : {};
@@ -1374,6 +1386,11 @@ function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => 
       label: "Tier",
       value: `Tier ${safeText(record.tier, "0")}`,
       icon: ShieldCheck,
+    },
+    {
+      label: "Referral code",
+      value: safeText(getRecordValue(record, ["referralCode"])),
+      icon: Fingerprint,
     },
   ];
 
@@ -1484,6 +1501,67 @@ function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => 
     },
   ];
 
+  const referralPayload = useMemo(() => unwrapPayload(referral.data), [referral.data]);
+  const referralRecord = useMemo(() => (isRecord(referralPayload) ? referralPayload : null), [referralPayload]);
+  const referrer = useMemo(() => (isRecord(referralRecord?.referrer) ? referralRecord.referrer : null), [referralRecord]);
+
+  useEffect(() => {
+    const targetUserId = safeText(getRecordValue(record, ["_id", "id"]), "");
+
+    if (!targetUserId) {
+      setReferral({
+        title: "User referral",
+        loading: false,
+        data: null,
+        error: "",
+        loaded: true,
+      });
+      return;
+    }
+
+    let cancelled = false;
+    setReferral({
+      title: "User referral",
+      loading: true,
+      data: null,
+      error: "",
+      loaded: false,
+    });
+
+    void adminService
+      .getUserReferral(targetUserId)
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+
+        setReferral({
+          title: "User referral",
+          loading: false,
+          data: response,
+          error: "",
+          loaded: true,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setReferral({
+          title: "User referral",
+          loading: false,
+          data: null,
+          error: getErrorMessage(error),
+          loaded: true,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [record]);
+
   const sanitizedRecord = sanitizeProfileRecord(record);
 
   return (
@@ -1523,6 +1601,12 @@ function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => 
                     <ShieldCheck className="h-3.5 w-3.5" />
                     Tier {safeText(record.tier, "0")}
                   </span>
+                  {safeText(getRecordValue(record, ["referralCode"])) !== "Not available" ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-white">
+                      <Fingerprint className="h-3.5 w-3.5" />
+                      {safeText(getRecordValue(record, ["referralCode"]))}
+                    </span>
+                  ) : null}
                   </div>
                 </div>
               </div>
@@ -1628,6 +1712,49 @@ function DetailModal({ detail, onClose }: { detail: DetailState; onClose: () => 
                               />
                           ))}
                         </div>
+                      </ProfileSection>
+
+                      <ProfileSection
+                        title="Referral relationship"
+                        description="Who referred this customer and the upstream code resolved by the referral endpoint."
+                      >
+                        {referral.loading ? (
+                          <div className="flex min-h-24 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            Loading referral data
+                          </div>
+                        ) : referral.error ? (
+                          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                            {referral.error}
+                          </div>
+                        ) : referralRecord ? (
+                          <div className="grid gap-4">
+                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                              <ProfileInfoTile label="Referred by code" value={safeText(getRecordValue(referralRecord, ["referredByCode"]))} icon={Fingerprint} />
+                              <ProfileInfoTile
+                                label="Referrer user ID"
+                                value={safeText(getRecordValue(referralRecord, ["referredByUserId"]))}
+                                icon={Database}
+                                copyValue={safeText(getRecordValue(referralRecord, ["referredByUserId"]))}
+                                copied={copiedKey === "referrerUserId"}
+                                onCopy={() => void copyText("referrerUserId", safeText(getRecordValue(referralRecord, ["referredByUserId"])))}
+                              />
+                              <ProfileInfoTile label="Lookup user ID" value={safeText(getRecordValue(referralRecord, ["userId"]))} icon={UserRound} />
+                            </div>
+                            {referrer ? (
+                              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                <ProfileInfoTile label="Referrer first name" value={safeText(getRecordValue(referrer, ["first_name", "firstName"]))} icon={UserRound} />
+                                <ProfileInfoTile label="Referrer last name" value={safeText(getRecordValue(referrer, ["last_name", "lastName"]))} icon={UserRound} />
+                                <ProfileInfoTile label="Referrer email" value={safeText(getRecordValue(referrer, ["email"]))} icon={Mail} />
+                                <ProfileInfoTile label="Referrer phone" value={safeText(getRecordValue(referrer, ["phone"]))} icon={Phone} />
+                              </div>
+                            ) : (
+                              <EmptyPanel label="No referrer profile returned." />
+                            )}
+                          </div>
+                        ) : (
+                          <EmptyPanel label="No referral relationship returned." />
+                        )}
                       </ProfileSection>
                     </div>
 
@@ -2406,6 +2533,13 @@ function UserDashboardModal({
     error: "",
       loaded: false,
     });
+  const [referral, setReferral] = useState<UserReferralState>({
+    title: "User referral",
+    loading: true,
+    data: null,
+    error: "",
+    loaded: false,
+  });
   const [transactions, setTransactions] = useState<UserTransactionsState>({
     title: "User transactions",
     loading: false,
@@ -2471,6 +2605,9 @@ function UserDashboardModal({
   );
   const kycRows = useMemo(() => extractRowsOrRecord(kyc.data), [kyc.data]);
   const kycPayload = useMemo(() => unwrapPayload(kyc.data), [kyc.data]);
+  const referralPayload = useMemo(() => unwrapPayload(referral.data), [referral.data]);
+  const referralRecord = useMemo(() => (isRecord(referralPayload) ? referralPayload : null), [referralPayload]);
+  const referrer = useMemo(() => (isRecord(referralRecord?.referrer) ? referralRecord.referrer : null), [referralRecord]);
   const kycSummaryItems = useMemo(() => {
     if (!isRecord(kycPayload)) {
       return [];
@@ -2488,7 +2625,19 @@ function UserDashboardModal({
     { label: "Virtual accounts", value: formatValue(getDashboardTotal(dashboard.data, "virtualAccounts")), icon: Landmark },
     { label: "Wallet balance", value: formatCurrency(walletBalance), icon: WalletCards },
     { label: "Loan records", value: formatValue(getDashboardTotal(dashboard.data, "loans")), icon: CreditCard },
+    { label: "Referral code", value: dashboard.userReferralCode || "Not set", icon: Fingerprint },
   ];
+
+  const referralItems = useMemo(
+    () => [
+      { label: "Referred by code", value: getRecordValue(referralRecord, ["referredByCode"]) },
+      { label: "Referrer user ID", value: getRecordValue(referralRecord, ["referredByUserId"]) },
+      { label: "Referrer name", value: referrer ? getPersonName(referrer) : undefined },
+      { label: "Referrer email", value: getRecordValue(referrer, ["email"]) },
+      { label: "Referrer phone", value: getRecordValue(referrer, ["phone"]) },
+    ].filter((item) => item.value !== undefined && item.value !== null && item.value !== ""),
+    [referralRecord, referrer],
+  );
 
   const loadUserKyc = async () => {
     setKyc((current) => ({
@@ -2656,6 +2805,51 @@ function UserDashboardModal({
 
         setKyc({
           title: "User KYC",
+          loading: false,
+          data: null,
+          error: getErrorMessage(error),
+          loaded: true,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboard.userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setReferral({
+      title: "User referral",
+      loading: true,
+      data: null,
+      error: "",
+      loaded: false,
+    });
+
+    void adminService
+      .getUserReferral(dashboard.userId)
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+
+        setReferral({
+          title: "User referral",
+          loading: false,
+          data,
+          error: "",
+          loaded: true,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setReferral({
+          title: "User referral",
           loading: false,
           data: null,
           error: getErrorMessage(error),
@@ -2892,8 +3086,16 @@ function UserDashboardModal({
             <p className="mt-2 text-sm leading-6 text-slate-300">
               Full customer operations view covering core balances, lending position, and account transaction history.
             </p>
-            <div className="mt-3 inline-flex rounded-md border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold tracking-[0.14em] text-sky-100">
-              {dashboard.userId}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <div className="inline-flex rounded-md border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold tracking-[0.14em] text-sky-100">
+                {dashboard.userId}
+              </div>
+              {dashboard.userReferralCode ? (
+                <div className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold tracking-[0.14em] text-sky-100">
+                  <Fingerprint className="h-3.5 w-3.5" aria-hidden="true" />
+                  {dashboard.userReferralCode}
+                </div>
+              ) : null}
             </div>
           </div>
           <button
@@ -3037,6 +3239,31 @@ function UserDashboardModal({
                         ))}
                         {!wallets.length && <EmptyPanel label="No wallets returned." />}
                       </div>
+                    </div>
+                  </section>
+
+                  <section className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
+                    <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                      <h3 className="font-bold text-slate-950 dark:text-white">Referral relationship</h3>
+                    </div>
+                    <div className="grid gap-4 p-4">
+                      {referral.loading ? (
+                        <div className="flex min-h-24 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          Loading referral relationship
+                        </div>
+                      ) : referral.error ? (
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                          {referral.error}
+                        </div>
+                      ) : referralItems.length ? (
+                        <>
+                          <DetailGrid title="Referral chain" items={referralItems.map((item) => ({ label: item.label, value: formatFieldValue(item.label, item.value) }))} />
+                          <JsonInspector label="Referral payload" value={referralRecord} />
+                        </>
+                      ) : (
+                        <EmptyPanel label="No referral relationship returned." />
+                      )}
                     </div>
                   </section>
 
@@ -3905,6 +4132,69 @@ export default function UsersPage() {
     });
   };
 
+  const openReferralBackfill = () => {
+    setFormAction({
+      eyebrow: "Referral operations",
+      title: "Queue referral backfill job",
+      description: "Queue a background job to generate referral codes for old users who do not yet have one.",
+      submitLabel: "Queue backfill",
+      initialValues: {
+        limit: "500",
+      },
+      fields: [
+        {
+          name: "limit",
+          label: "Limit",
+          placeholder: "500",
+          helper: "Optional. Maximum number of users to process in this queued job.",
+        },
+      ],
+      onSubmit: async (values) => {
+        const rawLimit = values.limit.trim();
+        const payload = rawLimit ? { limit: Number(rawLimit) } : {};
+        const response = await adminService.queueReferralBackfill(payload);
+        const responseData = unwrapPayload(response);
+        setFormAction(null);
+        setDetail({
+          title: "Referral backfill job queued",
+          loading: false,
+          data: response,
+          error: "",
+        });
+        showServerToast(response, "Referral backfill job queued", "success");
+        if (isRecord(responseData) && getRecordValue(responseData, ["jobId"])) {
+          void refreshUsers();
+        }
+      },
+    });
+  };
+
+  const openReferralBackfillJobLookup = () => {
+    setFormAction({
+      eyebrow: "Referral operations",
+      title: "Check referral backfill job",
+      description: "Inspect a queued referral backfill job by job ID.",
+      submitLabel: "Check job status",
+      fields: [
+        {
+          name: "jobId",
+          label: "Job ID",
+          required: true,
+          placeholder: "6860f1c2a4b7d8e9f0123456",
+        },
+      ],
+      onSubmit: async (values) => {
+        const jobId = values.jobId.trim();
+        if (!jobId) {
+          throw new Error("Job ID is required.");
+        }
+
+        setFormAction(null);
+        openDetail("Referral backfill job status", () => adminService.getReferralBackfillJob(jobId));
+      },
+    });
+  };
+
   const openRevokeUserSessions = (userId: string, userName: string) => {
     setFormAction({
       eyebrow: "Security response",
@@ -3935,7 +4225,7 @@ export default function UsersPage() {
     });
   };
 
-  const openUserDashboard = (userId: string, userName: string, userEmail: string) => {
+  const openUserDashboard = (userId: string, userName: string, userEmail: string, userReferralCode: string) => {
     setUserDashboard({
       title: "Customer dashboard",
       loading: true,
@@ -3944,6 +4234,7 @@ export default function UsersPage() {
       userId,
       userName,
       userEmail,
+      userReferralCode,
     });
 
     void adminService
@@ -3957,6 +4248,7 @@ export default function UsersPage() {
           userId,
           userName,
           userEmail,
+          userReferralCode,
         }),
       )
       .catch((error) =>
@@ -3968,6 +4260,7 @@ export default function UsersPage() {
           userId,
           userName,
           userEmail,
+          userReferralCode,
         }),
       );
   };
@@ -4006,6 +4299,22 @@ export default function UsersPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={openReferralBackfill}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              <Database className="h-4 w-4" aria-hidden="true" />
+              Backfill referrals
+            </button>
+            <button
+              type="button"
+              onClick={openReferralBackfillJobLookup}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+            >
+              <Activity className="h-4 w-4" aria-hidden="true" />
+              Check backfill job
+            </button>
             <button
               type="button"
               onClick={openBroadcastAllActive}
@@ -4187,6 +4496,7 @@ export default function UsersPage() {
                 const email = String(getRecordValue(row, ["email"]) ?? "Not available");
                 const phone = String(getRecordValue(row, ["phone", "phone_number"]) ?? "Not available");
                 const status = String(getRecordValue(row, ["status"]) ?? "active");
+                const referralCode = String(getRecordValue(row, ["referralCode"]) ?? "").trim();
 
                 return (
                   <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
@@ -4198,6 +4508,11 @@ export default function UsersPage() {
                         <div>
                           <p className="font-bold text-slate-950 dark:text-white">{name}</p>
                           <p className="mt-1 break-all text-xs font-medium text-slate-500 dark:text-slate-400">{id || `User ${index + 1}`}</p>
+                          {referralCode ? (
+                            <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#069AFF] dark:text-sky-200">
+                              Referral: {referralCode}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                     </td>
@@ -4212,7 +4527,7 @@ export default function UsersPage() {
                         <button
                           type="button"
                           disabled={!id}
-                          onClick={() => openUserDashboard(id, name, email === "Not available" ? "" : email)}
+                          onClick={() => openUserDashboard(id, name, email === "Not available" ? "" : email, referralCode)}
                           className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
                         >
                           <Eye className="h-4 w-4" aria-hidden="true" />
