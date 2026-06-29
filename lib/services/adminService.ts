@@ -32,6 +32,16 @@ type ChangePasswordPayload = {
     newPassword: string;
 };
 
+type ForgotPasswordRequestPayload = {
+    email: string;
+};
+
+type ResetPasswordWithCodePayload = {
+    email: string;
+    code: string;
+    password: string;
+};
+
 type AdminPayload = Record<string, unknown>;
 type QueryParams = Record<string, string | number | boolean | undefined>;
 
@@ -100,6 +110,18 @@ export const adminService = {
     // PUT /admin/change-password
     changePassword: async (payload: ChangePasswordPayload): Promise<unknown> => {
         const response = await api.put('/admin/change-password', payload);
+        return response.data;
+    },
+
+    // POST /admin/forgot-password
+    requestAdminPasswordResetCode: async (payload: ForgotPasswordRequestPayload): Promise<unknown> => {
+        const response = await api.post('/admin/forgot-password', payload);
+        return response.data;
+    },
+
+    // PUT /admin/forgot-password
+    resetAdminPasswordWithCode: async (payload: ResetPasswordWithCodePayload): Promise<unknown> => {
+        const response = await api.put('/admin/forgot-password', payload);
         return response.data;
     },
 
@@ -976,6 +998,12 @@ export const adminService = {
     // GET /admin/push-notification-logs
     getPushNotificationLogs: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/push-notification-logs', { params });
+        return response.data;
+    },
+
+    // GET /admin/prembly-logs
+    getPremblyLogs: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/prembly-logs', { params });
         return response.data;
     },
 

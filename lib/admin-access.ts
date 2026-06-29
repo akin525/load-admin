@@ -49,6 +49,7 @@ type RouteKey =
     | "/email-logs"
     | "/push-notification-logs"
     | "/security-events"
+    | "/prembly-logs"
     | "/faqs"
     | "/xpress-webhook-logs"
     | "/vtpass-webhook-logs";
@@ -408,6 +409,7 @@ const routeScopeMap: Record<RouteKey, string> = {
     "/email-logs": "emailLogs",
     "/push-notification-logs": "pushNotificationLogs",
     "/security-events": "securityEvents",
+    "/prembly-logs": "securityEvents",
     "/faqs": "content",
     "/xpress-webhook-logs": "webhookLogs",
     "/vtpass-webhook-logs": "webhookLogs",

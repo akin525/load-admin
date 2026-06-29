@@ -20,8 +20,6 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
-import { useRouteAccess } from "@/lib/admin-access";
-import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type LedgerFilters = {
@@ -345,7 +343,6 @@ function BackfillModal({
 export default function GeneralLedgerBillsPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
-  const { allowed: canOpenGeneralLedgerBills } = useRouteAccess("/general-ledger-bills");
   const [filters, setFilters] = useState<LedgerFilters>(() => getDefaultFilters());
   const [appliedFilters, setAppliedFilters] = useState<LedgerFilters>(() => getDefaultFilters());
   const [ledgerState, setLedgerState] = useState<LedgerState>({
@@ -394,10 +391,6 @@ export default function GeneralLedgerBillsPage() {
       return;
     }
 
-    if (!canOpenGeneralLedgerBills) {
-      return;
-    }
-
     void Promise.all([
       adminService.getGeneralLedgerBills(queryParams),
       adminService.getGeneralLedgerBillsSummary(queryParams),
@@ -442,7 +435,7 @@ export default function GeneralLedgerBillsPage() {
     return () => {
       cancelled = true;
     };
-  }, [canOpenGeneralLedgerBills, queryParams, router]);
+  }, [queryParams, router]);
 
   const refresh = async (nextFilters = appliedFilters) => {
     const params = Object.entries(nextFilters).reduce<Record<string, string>>((accumulator, [key, value]) => {
@@ -550,15 +543,6 @@ export default function GeneralLedgerBillsPage() {
     localStorage.removeItem("token");
     router.replace("/auth/login");
   };
-
-  if (!canOpenGeneralLedgerBills) {
-    return (
-      <AccessDeniedState
-        title="Bill ledger access denied"
-        description="Your current admin role does not include permission to view bill general-ledger records."
-      />
-    );
-  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

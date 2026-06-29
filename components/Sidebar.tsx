@@ -85,6 +85,7 @@ const navGroups: NavGroup[] = [
       { href: "/email-logs", label: "Email Logs", icon: FileText },
       { href: "/push-notification-logs", label: "Push Logs", icon: Bell },
       { href: "/security-events", label: "Security Events", icon: ShieldAlert },
+      { href: "/prembly-logs", label: "Prembly Logs", icon: Search },
       { href: "/audit-logs", label: "Audit Logs", icon: FileText },
       { href: "/reconciliation", label: "Reconciliation", icon: FileSearch, badge: "New" },
     ],

@@ -166,9 +166,7 @@ const getRecordValue = (record: Record<string, unknown>, keys: string[]) => {
 };
 
 const getId = (record: Record<string, unknown>) => String(getRecordValue(record, ["_id", "id", "feeId"]) ?? "");
-
-const getBillPricingId = (record: Record<string, unknown>) =>
-  String(getRecordValue(record, ["_id", "id", "pricingId", "reference"]) ?? "");
+const getBillPricingId = (record: Record<string, unknown>) => String(getRecordValue(record, ["_id", "id", "pricingId", "feeId"]) ?? "");
 
 const getPersonName = (record: Record<string, unknown>) => {
   const joined = [record.firstName, record.lastName].filter((value) => typeof value === "string" && value.trim()).join(" ");
@@ -207,11 +205,13 @@ const formatCurrency = (value: unknown): string => {
   }).format(numeric);
 };
 
-const formatLabel = (key: string) =>
-  key
-    .replace(/[_-]/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+const formatLabel = (value: string) =>
+  value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 
 const getProviderCommissionModel = (row: Record<string, unknown>) =>
   String(getRecordValue(row, ["providerCommissionModel", "providerPricingModel"]) ?? "commission_percentage");
@@ -351,26 +351,6 @@ const fetchFees = async (filters: FeeFilters): Promise<FeeState> => {
   }
 };
 
-const fetchUsers = async (): Promise<UserState> => {
-  try {
-    const payload = await adminService.getUsers();
-
-    return {
-      rows: extractRows(payload),
-      loading: false,
-      loaded: true,
-      error: "",
-    };
-  } catch (error) {
-    return {
-      rows: [],
-      loading: false,
-      loaded: true,
-      error: getErrorMessage(error),
-    };
-  }
-};
-
 const fetchBillPricing = async (filters: BillPricingFilters): Promise<BillPricingState> => {
   try {
     const payload = await adminService.getBillPricingFees(buildBillPricingParams(filters));
@@ -385,6 +365,26 @@ const fetchBillPricing = async (filters: BillPricingFilters): Promise<BillPricin
   } catch (error) {
     return {
       payload: null,
+      rows: [],
+      loading: false,
+      loaded: true,
+      error: getErrorMessage(error),
+    };
+  }
+};
+
+const fetchUsers = async (): Promise<UserState> => {
+  try {
+    const payload = await adminService.getUsers();
+
+    return {
+      rows: extractRows(payload),
+      loading: false,
+      loaded: true,
+      error: "",
+    };
+  } catch (error) {
+    return {
       rows: [],
       loading: false,
       loaded: true,

@@ -75,6 +75,10 @@ type UserXpressWalletBalanceState = DetailState & {
   loaded: boolean;
 };
 
+type UserVirtualAccountsState = DetailState & {
+  loaded: boolean;
+};
+
 type WalletStatementFilters = {
   walletType: string;
   fromDate: string;
@@ -2547,6 +2551,13 @@ function UserDashboardModal({
     error: "",
     loaded: false,
   });
+  const [virtualAccountsState, setVirtualAccountsState] = useState<UserVirtualAccountsState>({
+    title: "User virtual accounts",
+    loading: true,
+    data: null,
+    error: "",
+    loaded: false,
+  });
   const [xpressWalletBalance, setXpressWalletBalance] = useState<UserXpressWalletBalanceState>({
     title: "Xpress wallet balance",
     loading: true,
@@ -2557,10 +2568,14 @@ function UserDashboardModal({
   const [xpressCustomerAction, setXpressCustomerAction] = useState<FormAction | null>(null);
   const [statementAction, setStatementAction] = useState<"" | "download" | "email">("");
 
-  const virtualAccounts = getDashboardCollection(dashboard.data, "virtualAccounts");
+  const dashboardVirtualAccounts = getDashboardCollection(dashboard.data, "virtualAccounts");
   const wallets = getDashboardCollection(dashboard.data, "wallets");
   const loans = getDashboardCollection(dashboard.data, "loans");
   const walletBalance = sumCurrencyRows(wallets, ["balance", "availableBalance", "amount"]);
+  const virtualAccounts = useMemo(() => {
+    const fetchedRows = extractRowsOrRecord(virtualAccountsState.data);
+    return fetchedRows.length ? fetchedRows : dashboardVirtualAccounts;
+  }, [dashboardVirtualAccounts, virtualAccountsState.data]);
   const xpressWalletResponse = useMemo(
     () => (isRecord(xpressWalletBalance.data) ? xpressWalletBalance.data : null),
     [xpressWalletBalance.data],
@@ -2622,7 +2637,7 @@ function UserDashboardModal({
   }, [kycPayload, kycRows.length]);
 
   const summary = [
-    { label: "Virtual accounts", value: formatValue(getDashboardTotal(dashboard.data, "virtualAccounts")), icon: Landmark },
+    { label: "Virtual accounts", value: formatValue(virtualAccounts.length || getDashboardTotal(dashboard.data, "virtualAccounts")), icon: Landmark },
     { label: "Wallet balance", value: formatCurrency(walletBalance), icon: WalletCards },
     { label: "Loan records", value: formatValue(getDashboardTotal(dashboard.data, "loans")), icon: CreditCard },
     { label: "Referral code", value: dashboard.userReferralCode || "Not set", icon: Fingerprint },
@@ -2685,6 +2700,33 @@ function UserDashboardModal({
     } catch (error) {
       setXpressWalletBalance({
         title: "Xpress wallet balance",
+        loading: false,
+        data: null,
+        error: getErrorMessage(error),
+        loaded: true,
+      });
+    }
+  };
+
+  const loadUserVirtualAccounts = async () => {
+    setVirtualAccountsState((current) => ({
+      ...current,
+      loading: true,
+      error: "",
+    }));
+
+    try {
+      const data = await adminService.getUserVirtualAccounts(dashboard.userId);
+      setVirtualAccountsState({
+        title: "User virtual accounts",
+        loading: false,
+        data,
+        error: "",
+        loaded: true,
+      });
+    } catch (error) {
+      setVirtualAccountsState({
+        title: "User virtual accounts",
         loading: false,
         data: null,
         error: getErrorMessage(error),
@@ -2850,6 +2892,51 @@ function UserDashboardModal({
 
         setReferral({
           title: "User referral",
+          loading: false,
+          data: null,
+          error: getErrorMessage(error),
+          loaded: true,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboard.userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setVirtualAccountsState({
+      title: "User virtual accounts",
+      loading: true,
+      data: null,
+      error: "",
+      loaded: false,
+    });
+
+    void adminService
+      .getUserVirtualAccounts(dashboard.userId)
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+
+        setVirtualAccountsState({
+          title: "User virtual accounts",
+          loading: false,
+          data,
+          error: "",
+          loaded: true,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setVirtualAccountsState({
+          title: "User virtual accounts",
           loading: false,
           data: null,
           error: getErrorMessage(error),
@@ -3185,10 +3272,37 @@ function UserDashboardModal({
 
                   <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
                     <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]">
-                      <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
-                        <h3 className="font-bold text-slate-950 dark:text-white">Virtual accounts</h3>
+                      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                        <div>
+                          <h3 className="font-bold text-slate-950 dark:text-white">Virtual accounts</h3>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            Pulled from the dedicated admin virtual-account endpoint and used as the primary source when returned.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void loadUserVirtualAccounts()}
+                          disabled={virtualAccountsState.loading}
+                          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${virtualAccountsState.loading ? "animate-spin" : ""}`} aria-hidden="true" />
+                          Refresh accounts
+                        </button>
                       </div>
                       <div className="grid gap-3 p-4">
+                        {virtualAccountsState.loading && !virtualAccountsState.data ? (
+                          <div className="flex min-h-28 items-center justify-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                            Loading virtual accounts
+                          </div>
+                        ) : null}
+
+                        {virtualAccountsState.error ? (
+                          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                            {virtualAccountsState.error}
+                          </div>
+                        ) : null}
+
                         {virtualAccounts.map((account, index) => (
                           <div key={getId(account) || index} className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 p-4">
                             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3214,7 +3328,7 @@ function UserDashboardModal({
                             </div>
                           </div>
                         ))}
-                        {!virtualAccounts.length && <EmptyPanel label="No virtual accounts returned." />}
+                        {!virtualAccountsState.loading && !virtualAccounts.length && <EmptyPanel label="No virtual accounts returned." />}
                       </div>
                     </div>
 

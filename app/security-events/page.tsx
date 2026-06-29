@@ -13,8 +13,6 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
-import { useRouteAccess } from "@/lib/admin-access";
-import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type SecurityEventFilters = {
@@ -406,7 +404,6 @@ function DetailModal({
 
 export default function SecurityEventsPage() {
   const router = useRouter();
-  const { allowed: canOpenSecurityEvents } = useRouteAccess("/security-events");
   const [filters, setFilters] = useState<SecurityEventFilters>(() => getDefaultFilters());
   const [eventsState, setEventsState] = useState<SecurityEventsState>({
     payload: null,
@@ -427,10 +424,6 @@ export default function SecurityEventsPage() {
       return;
     }
 
-    if (!canOpenSecurityEvents) {
-      return;
-    }
-
     void fetchSecurityEvents(getDefaultFilters()).then((result) => {
       if (!cancelled) {
         setEventsState(result);
@@ -440,7 +433,7 @@ export default function SecurityEventsPage() {
     return () => {
       cancelled = true;
     };
-  }, [canOpenSecurityEvents, router]);
+  }, [router]);
 
   const refreshEvents = async (nextFilters = filters) => {
     setRefreshing(true);
@@ -471,15 +464,6 @@ export default function SecurityEventsPage() {
       { label: "Admin subjects", value: formatValue(adminCount), icon: ShieldCheck },
     ];
   }, [rows]);
-
-  if (!canOpenSecurityEvents) {
-    return (
-      <AccessDeniedState
-        title="Security events access denied"
-        description="Your current admin role does not include permission to inspect security events."
-      />
-    );
-  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">
