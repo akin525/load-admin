@@ -404,6 +404,12 @@ export const adminService = {
         return response.data;
     },
 
+    // POST /admin/users/:userId/reset-pin
+    resetUserPin: async (userId: string, payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post(`/admin/users/${userId}/reset-pin`, payload ?? {});
+        return response.data;
+    },
+
     // POST /admin/users/:userId/lock
     lockUser: async (userId: string): Promise<unknown> => {
         const response = await api.post(`/admin/users/${userId}/lock`, {});
@@ -437,6 +443,12 @@ export const adminService = {
     // POST /admin/users/:userId/reset-password/approve
     approveResetUserPassword: async (userId: string, payload?: AdminPayload): Promise<LoginResponse> => {
         const response = await api.post(`/admin/users/${userId}/reset-password/approve`, payload ?? {});
+        return response.data;
+    },
+
+    // POST /admin/users/:userId/reset-pin/approve
+    approveResetUserPin: async (userId: string, payload?: AdminPayload): Promise<LoginResponse> => {
+        const response = await api.post(`/admin/users/${userId}/reset-pin/approve`, payload ?? {});
         return response.data;
     },
 

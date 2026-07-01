@@ -391,6 +391,10 @@ const deriveApprovalTarget = (record: Record<string, unknown>): ApprovalTarget |
     return { label: "Approve password reset", submit: (payload) => adminService.approveResetUserPassword(userId, withRequestId(payload)) };
   }
 
+  if (signature.includes("reset") && signature.includes("pin") && userId) {
+    return { label: "Approve PIN reset", submit: (payload) => adminService.approveResetUserPin(userId, withRequestId(payload)) };
+  }
+
   if (signature.includes("fund") && signature.includes("wallet") && userId) {
     return { label: "Approve wallet funding", submit: (payload) => adminService.approveFundUserWallet(userId, withRequestId(payload)) };
   }

@@ -129,9 +129,13 @@ type FormField = {
   name: string;
   label: string;
   placeholder?: string;
-  type?: "email" | "tel" | "text" | "textarea";
+  type?: "email" | "tel" | "text" | "textarea" | "select";
   required?: boolean;
   helper?: string;
+  options?: Array<{
+    label: string;
+    value: string;
+  }>;
 };
 
 type FormAction = {
@@ -446,6 +450,20 @@ const toIsoDateTime = (value: string) => {
 
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toISOString();
+};
+
+const parseBooleanValue = (value: string, fallback = true) => {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "true") {
+    return true;
+  }
+
+  if (normalized === "false") {
+    return false;
+  }
+
+  return fallback;
 };
 
 const getCollectionRows = (payload: unknown, key: string) => {
@@ -1854,6 +1872,7 @@ function UserControlsModal({
   showToast: (payload: unknown, fallback: string, tone: ToastTone) => void;
 }) {
   const [loadingAction, setLoadingAction] = useState("");
+  const [pinResetAction, setPinResetAction] = useState<FormAction | null>(null);
   const [walletValues, setWalletValues] = useState({
     amount: "",
     walletType: "wallet",
@@ -2020,6 +2039,66 @@ function UserControlsModal({
     }
   };
 
+  const openResetPinAction = () => {
+    setPinResetAction({
+      eyebrow: "Security",
+      title: `Reset PIN for ${target.userName}`,
+      description: "Create a maker-checker PIN reset request. Leave the new PIN blank to let the backend generate a temporary 4-digit PIN.",
+      submitLabel: "Submit PIN reset",
+      initialValues: {
+        newPin: "",
+        sendEmail: "true",
+      },
+      fields: [
+        {
+          name: "newPin",
+          label: "New PIN",
+          placeholder: "1234",
+          helper: "Optional. Must be exactly 4 digits when provided.",
+        },
+        {
+          name: "sendEmail",
+          label: "Send email",
+          type: "select",
+          options: [
+            { label: "Yes", value: "true" },
+            { label: "No", value: "false" },
+          ],
+          helper: "If enabled, the user receives the temporary PIN by email after approval.",
+        },
+      ],
+      onSubmit: async (values) => {
+        const newPin = values.newPin?.trim() ?? "";
+
+        if (newPin && !/^\d{4}$/.test(newPin)) {
+          throw new Error("New PIN must be exactly 4 digits.");
+        }
+
+        const response = await adminService.resetUserPin(target.userId, {
+          ...(newPin ? { newPin } : {}),
+          sendEmail: parseBooleanValue(values.sendEmail, true),
+        });
+
+        if (isPendingApprovalResponse(response)) {
+          const requestId = getPendingRequestId(response);
+          setPinResetAction(null);
+          showToast(
+            response,
+            requestId
+              ? `PIN reset submitted for approval. Request ID: ${requestId}`
+              : `PIN reset submitted for approval for ${target.userName}`,
+            "warning",
+          );
+          return;
+        }
+
+        await onRefresh();
+        setPinResetAction(null);
+        showToast(response, `PIN reset completed for ${target.userName}`, "success");
+      },
+    });
+  };
+
   const actionCards = [
     {
       key: "reset-password",
@@ -2035,6 +2114,16 @@ function UserControlsModal({
           () => adminService.resetUserPassword(target.userId),
           `Password reset submitted for approval for ${target.userName}`,
         ),
+    },
+    {
+      key: "reset-pin",
+      eyebrow: "Security",
+      title: "Reset PIN",
+      description: "Queue a customer PIN reset request. You can provide a 4-digit replacement PIN or let the backend generate a temporary one.",
+      actionLabel: "Reset PIN",
+      icon: CreditCard,
+      tone: "border-amber-200 bg-amber-50/80 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100",
+      onClick: openResetPinAction,
     },
     {
       key: "lock-user",
@@ -2315,6 +2404,14 @@ function UserControlsModal({
           submitting={loadingAction === "fund-wallet-otp"}
         />
       )}
+
+      {pinResetAction && (
+        <ActionModal
+          action={pinResetAction}
+          onClose={() => setPinResetAction(null)}
+          showToast={showToast}
+        />
+      )}
     </div>
   );
 }
@@ -2478,6 +2575,19 @@ function ActionModal({
                       rows={4}
                       className={`${sharedClassName} resize-none`}
                     />
+                  ) : field.type === "select" ? (
+                    <select
+                      required={field.required}
+                      value={fieldValue}
+                      onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                      className={sharedClassName}
+                    >
+                      {(field.options ?? []).map((option) => (
+                        <option key={option.value} value={option.value} className="text-slate-950">
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
                     <input
                       required={field.required}
