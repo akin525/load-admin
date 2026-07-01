@@ -60,6 +60,12 @@ type BulkSettingRow = {
   description: string;
 };
 
+type MixpanelTestValues = {
+  eventName: string;
+  distinctId: string;
+  properties: string;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -586,6 +592,118 @@ function BulkUpsertModal({
   );
 }
 
+function MixpanelTestModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (values: MixpanelTestValues) => Promise<void>;
+}) {
+  const [values, setValues] = useState<MixpanelTestValues>({
+    eventName: "admin_mixpanel_test",
+    distinctId: "admin:test",
+    properties: '{\n  "source": "manual_check"\n}',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
+
+    try {
+      await onSubmit(values);
+    } catch (submitError) {
+      setError(getErrorMessage(submitError));
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-3xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-slate-100 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Live verification</p>
+            <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">Send Mixpanel test event</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Calls the deployed admin test endpoint so you can verify end-to-end event delivery after deployment and service restart.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
+            aria-label="Close Mixpanel test modal"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="grid gap-4 p-5">
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              {error}
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label>
+              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Event name</span>
+              <input
+                value={values.eventName}
+                onChange={(event) => setValues((current) => ({ ...current, eventName: event.target.value }))}
+                placeholder="admin_mixpanel_test"
+                className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              />
+            </label>
+
+            <label>
+              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Distinct ID</span>
+              <input
+                value={values.distinctId}
+                onChange={(event) => setValues((current) => ({ ...current, distinctId: event.target.value }))}
+                placeholder="admin:test"
+                className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              />
+            </label>
+
+            <label className="sm:col-span-2">
+              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Properties JSON</span>
+              <textarea
+                value={values.properties}
+                onChange={(event) => setValues((current) => ({ ...current, properties: event.target.value }))}
+                rows={8}
+                placeholder='{"source":"manual_check"}'
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 font-mono text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              />
+            </label>
+          </div>
+
+          <div className="mt-2 flex flex-col-reverse gap-3 border-t border-slate-100 pt-4 dark:border-white/10 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />}
+              Send test event
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function SystemSettingsPage() {
   const router = useRouter();
   const { allowed: canOpenSystemSettings } = useRouteAccess("/system-settings");
@@ -606,6 +724,7 @@ export default function SystemSettingsPage() {
   const [lookupError, setLookupError] = useState("");
   const [modalConfig, setModalConfig] = useState<SettingModalConfig | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [mixpanelTestOpen, setMixpanelTestOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -771,6 +890,54 @@ export default function SystemSettingsPage() {
     await refreshSettings();
   };
 
+  const handleMixpanelTestSubmit = async (values: MixpanelTestValues) => {
+    let parsedProperties: Record<string, unknown> | undefined;
+    const propertiesInput = values.properties.trim();
+
+    if (propertiesInput) {
+      try {
+        const parsed = JSON.parse(propertiesInput);
+
+        if (!isRecord(parsed)) {
+          throw new Error("Properties must be a JSON object.");
+        }
+
+        parsedProperties = parsed;
+      } catch (error) {
+        if (error instanceof Error && error.message === "Properties must be a JSON object.") {
+          throw error;
+        }
+
+        throw new Error("Properties must be valid JSON.");
+      }
+    }
+
+    const payload = Object.fromEntries(
+      Object.entries({
+        eventName: values.eventName.trim(),
+        distinctId: values.distinctId.trim(),
+        properties: parsedProperties,
+      }).filter(([, value]) => {
+        if (value === undefined || value === null) {
+          return false;
+        }
+
+        if (typeof value === "string") {
+          return value.trim().length > 0;
+        }
+
+        return true;
+      }),
+    );
+
+    const response = await adminService.sendMixpanelTestEvent(payload);
+    setFeedback({
+      tone: "success",
+      text: getResponseMessage(response, "Mixpanel test event sent successfully."),
+    });
+    setMixpanelTestOpen(false);
+  };
+
   const handleDelete = async (name: string) => {
     if (!window.confirm(`Delete setting "${name}"?`)) {
       return;
@@ -893,6 +1060,14 @@ export default function SystemSettingsPage() {
                     >
                       <ShieldAlert className="h-4 w-4" />
                       Admin IP Allowlist
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMixpanelTestOpen(true)}
+                      className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Mixpanel test
                     </button>
                   </div>
                 </div>
@@ -1116,6 +1291,13 @@ export default function SystemSettingsPage() {
         <BulkUpsertModal
           onClose={() => setBulkOpen(false)}
           onSubmit={handleBulkSubmit}
+        />
+      )}
+
+      {mixpanelTestOpen && (
+        <MixpanelTestModal
+          onClose={() => setMixpanelTestOpen(false)}
+          onSubmit={handleMixpanelTestSubmit}
         />
       )}
     </main>

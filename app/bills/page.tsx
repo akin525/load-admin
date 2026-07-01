@@ -193,25 +193,14 @@ const getUserDisplayNameFromPayload = (payload: unknown): string => {
   return combined;
 };
 
-const toDateInputValue = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const getDefaultFilters = (): BillFilters => {
-  const now = new Date();
-
-  return {
-    search: "",
-    serviceType: "",
-    providerType: "",
-    status: "",
-    fromDate: toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1)),
-    toDate: toDateInputValue(now),
-  };
-};
+const getDefaultFilters = (): BillFilters => ({
+  search: "",
+  serviceType: "",
+  providerType: "",
+  status: "",
+  fromDate: "",
+  toDate: "",
+});
 
 const getDefaultWebhookPayload = () =>
   JSON.stringify(

@@ -1007,6 +1007,18 @@ export const adminService = {
         return response.data;
     },
 
+    // POST /admin/mixpanel/test-event
+    sendMixpanelTestEvent: async (payload?: AdminPayload): Promise<unknown> => {
+        const response = await api.post('/admin/mixpanel/test-event', payload ?? {});
+        return response.data;
+    },
+
+    // GET /admin/mixpanel-logs
+    getMixpanelLogs: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/mixpanel-logs', { params });
+        return response.data;
+    },
+
     // GET /admin/fees
     getFees: async (params?: QueryParams): Promise<unknown> => {
         const response = await api.get('/admin/fees', { params });
