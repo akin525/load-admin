@@ -11,8 +11,10 @@ import {
   ArrowUpRight,
   BarChart3,
   CreditCard,
+  Download,
   Eye,
   FileText,
+  FileSpreadsheet,
   Landmark,
   Loader2,
   LogOut,
@@ -26,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { exportTableRows } from "@/lib/export/table";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
@@ -655,6 +658,7 @@ export default function WalletTransactionsPage() {
   const [selectedTransaction, setSelectedTransaction] = useState<Record<string, unknown> | null>(null);
   const [notice, setNotice] = useState<ActionNotice | null>(null);
   const [reversingId, setReversingId] = useState("");
+  const [exportingFormat, setExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -685,6 +689,45 @@ export default function WalletTransactionsPage() {
     setTransactions((current) => ({ ...current, loading: true, error: "" }));
     const result = await fetchWalletTransactions(nextFilters);
     setTransactions(result);
+  };
+
+  const handleExport = async (format: "csv" | "xlsx") => {
+    setExportingFormat(format);
+
+    try {
+      await exportTableRows({
+        filenameBase: "wallet-ledger",
+        sheetName: "Wallet Ledger",
+        format,
+        rows,
+        columns: [
+          { key: "reference", label: "Reference", value: (row) => getRecordValue(row, ["reference", "_id", "id"]) },
+          { key: "userName", label: "Customer", value: (row) => getRecordValue(row, ["userName", "customerName", "userId", "user_id"]) },
+          { key: "userId", label: "User ID", value: (row) => getRecordValue(row, ["userId", "user_id", "customerId"]) },
+          { key: "direction", label: "Movement", value: (row) => getDirection(row) },
+          { key: "category", label: "Category", value: (row) => getRecordValue(row, ["category", "type"]) },
+          { key: "transactionType", label: "Transaction Type", value: (row) => getRecordValue(row, ["transactionType"]) },
+          { key: "amount", label: "Amount", value: (row) => getAmount(row) },
+          { key: "status", label: "Status", value: (row) => getRecordValue(row, ["status"]) },
+          { key: "source", label: "Source", value: (row) => getRecordValue(row, ["source"]) },
+          { key: "provider", label: "Provider", value: (row) => getRecordValue(row, ["provider"]) },
+          { key: "walletId", label: "Wallet ID", value: (row) => getRecordValue(row, ["walletId", "accountNumber", "customerId"]) },
+          { key: "createdAt", label: "Created At", value: (row) => getRecordValue(row, ["createdAt", "updatedAt", "date", "transactionDate"]) },
+          { key: "note", label: "Note", value: (row) => getRecordValue(row, ["note"]) },
+        ],
+      });
+      setNotice({
+        tone: "success",
+        message: `Wallet ledger exported as ${format.toUpperCase()}.`,
+      });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        message: getErrorMessage(error),
+      });
+    } finally {
+      setExportingFormat("");
+    }
   };
 
   const rows = transactions.rows;
@@ -988,6 +1031,24 @@ export default function WalletTransactionsPage() {
                   <span className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-300">
                     Range: {appliedFilters.fromDate || "N/A"} to {appliedFilters.toDate || "N/A"}
                   </span>
+                  <button
+                    type="button"
+                    disabled={!rows.length || Boolean(exportingFormat)}
+                    onClick={() => void handleExport("csv")}
+                    className="inline-flex rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-200"
+                  >
+                    {exportingFormat === "csv" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="mr-2 h-4 w-4" aria-hidden="true" />}
+                    Export CSV
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!rows.length || Boolean(exportingFormat)}
+                    onClick={() => void handleExport("xlsx")}
+                    className="inline-flex rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 py-2 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                  >
+                    {exportingFormat === "xlsx" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <FileSpreadsheet className="mr-2 h-4 w-4" aria-hidden="true" />}
+                    Export Excel
+                  </button>
                 </div>
               </div>
               <div className="overflow-x-auto">

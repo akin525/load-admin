@@ -13,8 +13,9 @@ import {
   BarChart3, CalendarDays,
   CheckCircle2, Clock3, Copy,
   CreditCard, Database,
+  Download,
   Eye,
-  FileText, Fingerprint, Globe2, KeyRound,
+  FileSpreadsheet, FileText, Fingerprint, Globe2, KeyRound,
   Landmark,
   Loader2,
   LogOut, Mail, MapPin,
@@ -31,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { exportTableRows } from "@/lib/export/table";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
@@ -224,6 +226,67 @@ const parseJsonObjectInput = (value: string, fallback: Record<string, unknown> =
   }
 };
 
+const getAccountUpgradeStatus = (row: Record<string, unknown>) => {
+  const direct = getRecordValue(row, [
+    "accountUpgradeStatus",
+    "account_upgrade_status",
+    "upgradeStatus",
+    "upgrade_status",
+    "upgradeRequestStatus",
+    "accountUpgradeRequestStatus",
+    "kycUpgradeStatus",
+  ]);
+
+  if (typeof direct === "string" && direct.trim()) {
+    return direct.trim();
+  }
+
+  const nested = [
+    getRecordValue(row, ["accountUpgrade"]),
+    getRecordValue(row, ["upgrade"]),
+    getRecordValue(row, ["upgradeRequest"]),
+    getRecordValue(row, ["accountUpgradeRequest"]),
+  ].find(isRecord);
+
+  if (!nested) {
+    return "";
+  }
+
+  const nestedStatus = getRecordValue(nested, ["status", "state", "decision", "label"]);
+  return typeof nestedStatus === "string" && nestedStatus.trim() ? nestedStatus.trim() : "";
+};
+
+const resolveKycSubmissionStatus = (payload: unknown) => {
+  const rows = extractRows(payload);
+
+  if (!rows.length) {
+    return "No submission";
+  }
+
+  const pickTimestamp = (row: Record<string, unknown>) => {
+    const value = getRecordValue(row, ["updatedAt", "createdAt", "approvedAt", "rejectedAt"]);
+    const time = new Date(String(value ?? "")).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  };
+
+  const normalizedRows = [...rows].sort((left, right) => pickTimestamp(right) - pickTimestamp(left));
+  const pendingRow = normalizedRows.find((row) => {
+    const status = String(getRecordValue(row, ["status", "verificationStatus", "approvalStatus", "state"]) ?? "").toLowerCase();
+    return status === "pending";
+  });
+
+  const targetRow = pendingRow ?? normalizedRows[0];
+  const status = String(getRecordValue(targetRow, ["status", "verificationStatus", "approvalStatus", "state"]) ?? "").trim();
+  const tier = getRecordValue(targetRow, ["tier", "level"]);
+  const tierLabel = typeof tier === "number" || (typeof tier === "string" && tier.trim()) ? `Tier ${tier}` : "";
+
+  if (!status) {
+    return tierLabel || "Submitted";
+  }
+
+  return tierLabel ? `${status} · ${tierLabel}` : status;
+};
+
 const getPrimitiveRecordItems = (record: Record<string, unknown>) =>
   Object.entries(record)
     .filter(([, value]) => !isRecord(value) && !Array.isArray(value))
@@ -238,6 +301,29 @@ const getImageFieldEntries = (record: Record<string, unknown>) =>
       isHttpUrl(value) &&
       /(image|photo|selfie|passport|address|document|id)/i.test(key),
   );
+
+const sortRecordsByLatest = (rows: Record<string, unknown>[], keys: string[]) =>
+  [...rows].sort((left, right) => {
+    const leftValue = keys.map((key) => getRecordValue(left, [key])).find((value) => value !== undefined && value !== null);
+    const rightValue = keys.map((key) => getRecordValue(right, [key])).find((value) => value !== undefined && value !== null);
+
+    const leftTime = new Date(String(leftValue ?? "")).getTime();
+    const rightTime = new Date(String(rightValue ?? "")).getTime();
+
+    if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+      return 0;
+    }
+
+    if (Number.isNaN(leftTime)) {
+      return 1;
+    }
+
+    if (Number.isNaN(rightTime)) {
+      return -1;
+    }
+
+    return rightTime - leftTime;
+  });
 
 const getRecordValue = (record: Record<string, unknown> | null | undefined, keys: string[]) => {
   if (!record) {
@@ -601,6 +687,24 @@ function StatusBadge({ status }: { status: unknown }) {
   return (
     <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-bold uppercase tracking-[0.14em] ${tone}`}>
       {String(status ?? "pending")}
+    </span>
+  );
+}
+
+function AccountUpgradeBadge({ status }: { status: string }) {
+  const normalized = status.trim().toLowerCase();
+  const tone =
+    !normalized || normalized === "no submission" || normalized === "not available"
+      ? "border-slate-200 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300"
+      : ["approved", "completed", "upgraded", "success", "active"].includes(normalized)
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
+        : ["rejected", "failed", "declined", "disabled"].includes(normalized)
+          ? "border-red-200 bg-red-50 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+          : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100";
+
+  return (
+    <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-bold uppercase tracking-[0.14em] ${tone}`}>
+      {status || "No submission"}
     </span>
   );
 }
@@ -2677,6 +2781,7 @@ function UserDashboardModal({
   });
   const [xpressCustomerAction, setXpressCustomerAction] = useState<FormAction | null>(null);
   const [statementAction, setStatementAction] = useState<"" | "download" | "email">("");
+  const [transactionExportingFormat, setTransactionExportingFormat] = useState<"" | "csv" | "xlsx">("");
 
   const dashboardVirtualAccounts = getDashboardCollection(dashboard.data, "virtualAccounts");
   const wallets = getDashboardCollection(dashboard.data, "wallets");
@@ -3273,6 +3378,65 @@ function UserDashboardModal({
     };
   }, [transactions.data]);
 
+  const transactionExportRows = useMemo(() => {
+    const rows: Array<Record<string, unknown>> = [];
+    const toExportRow = (source: string, row: Record<string, unknown>) => {
+      const payload = isRecord(row.data) ? row.data : row;
+
+      rows.push({
+        source,
+        userId: dashboard.userId,
+        reference: getRecordValue(payload, ["reference", "requestId", "transactionId", "_id", "id"]),
+        transactionType: getRecordValue(payload, ["transactionType", "serviceType", "type", "event"]),
+        category: getRecordValue(payload, ["category", "billId", "providerType"]),
+        amount: getRecordValue(payload, ["amount", "billAmount", "total", "totalAmount"]),
+        status: getRecordValue(payload, ["status", "paymentStatus", "billStatus"]),
+        provider: getRecordValue(payload, ["provider", "providerType", "source"]),
+        recipient: getRecordValue(payload, ["recipient", "customerAccountNo", "accountNumber", "accountName"]),
+        note: getRecordValue(payload, ["note", "narration", "purpose"]),
+        createdAt: getRecordValue(row, ["createdAt", "date", "transactionDate", "updatedAt"]) ?? getRecordValue(payload, ["createdAt", "date", "transactionDate", "updatedAt"]),
+      });
+    };
+
+    transactionSnapshot.walletTransactions.forEach((row) => toExportRow("wallet_transaction", row));
+    transactionSnapshot.deposits.forEach((row) => toExportRow("deposit", row));
+    transactionSnapshot.bills.forEach((row) => toExportRow("bill", row));
+    transactionSnapshot.payouts.forEach((row) => toExportRow("payout_transfer", row));
+
+    return sortRecordsByLatest(rows, ["createdAt"]);
+  }, [dashboard.userId, transactionSnapshot]);
+
+  const handleTransactionExport = async (format: "csv" | "xlsx") => {
+    setTransactionExportingFormat(format);
+
+    try {
+      await exportTableRows({
+        filenameBase: `customer-transaction-history-${dashboard.userId}`,
+        sheetName: "Customer Transactions",
+        format,
+        rows: transactionExportRows,
+        columns: [
+          { key: "source", label: "Source" },
+          { key: "userId", label: "User ID" },
+          { key: "reference", label: "Reference" },
+          { key: "transactionType", label: "Transaction Type" },
+          { key: "category", label: "Category" },
+          { key: "amount", label: "Amount" },
+          { key: "status", label: "Status" },
+          { key: "provider", label: "Provider" },
+          { key: "recipient", label: "Recipient / Account" },
+          { key: "note", label: "Note" },
+          { key: "createdAt", label: "Created At" },
+        ],
+      });
+      showToast({ message: `Transaction history exported as ${format.toUpperCase()}.` }, "Transaction history exported", "success");
+    } catch (error) {
+      showToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Transaction export failed", "error");
+    } finally {
+      setTransactionExportingFormat("");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-3 py-4 backdrop-blur-sm sm:px-4 sm:py-6">
       <div className="h-[92vh] w-full max-w-[92rem] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
@@ -3784,6 +3948,24 @@ function UserDashboardModal({
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
+                      onClick={() => void handleTransactionExport("csv")}
+                      disabled={transactions.loading || !transactionExportRows.length || Boolean(transactionExportingFormat)}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                    >
+                      {transactionExportingFormat === "csv" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+                      Export CSV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleTransactionExport("xlsx")}
+                      disabled={transactions.loading || !transactionExportRows.length || Boolean(transactionExportingFormat)}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 px-4 text-sm font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                    >
+                      {transactionExportingFormat === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />}
+                      Export Excel
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => void loadUserTransactions(transactionFilters)}
                       disabled={transactions.loading}
                       className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
@@ -4070,12 +4252,14 @@ function ManagementTable({
   rows,
   columns,
   action,
+  onVisibleRowsChange,
   children,
 }: {
   title: string;
   rows: Record<string, unknown>[];
   columns: string[];
   action?: ReactNode;
+  onVisibleRowsChange?: (rows: Record<string, unknown>[]) => void;
   children: (row: Record<string, unknown>, index: number) => ReactNode;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
@@ -4088,6 +4272,10 @@ function ManagementTable({
       setCurrentPage(totalPages);
     }
   }, [currentPage, pageSize, rows.length]);
+
+  useEffect(() => {
+    onVisibleRowsChange?.(paginatedRows);
+  }, [onVisibleRowsChange, paginatedRows]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30">
@@ -4147,6 +4335,9 @@ export default function UsersPage() {
   const [userControls, setUserControls] = useState<UserControlsTarget | null>(null);
   const [formAction, setFormAction] = useState<FormAction | null>(null);
   const [toasts, setToasts] = useState<ToastNotice[]>([]);
+  const [visibleRows, setVisibleRows] = useState<Record<string, unknown>[]>([]);
+  const [accountUpgradeStatuses, setAccountUpgradeStatuses] = useState<Record<string, string>>({});
+  const [customerExportingFormat, setCustomerExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -4183,6 +4374,49 @@ export default function UsersPage() {
   };
 
   const rows = usersState.rows;
+
+  useEffect(() => {
+    const visibleUserIds = Array.from(
+      new Set(
+        visibleRows
+          .map((row) => getId(row))
+          .filter(Boolean),
+      ),
+    ).filter((userId) => !accountUpgradeStatuses[userId]);
+
+    if (!visibleUserIds.length) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.all(
+      visibleUserIds.map(async (userId) => {
+        try {
+          const payload = await adminService.getUserKyc(userId);
+          return [userId, resolveKycSubmissionStatus(payload)] as const;
+        } catch {
+          return [userId, "No submission"] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) {
+        return;
+      }
+
+      setAccountUpgradeStatuses((current) => {
+        const next = { ...current };
+        entries.forEach(([userId, status]) => {
+          next[userId] = status;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountUpgradeStatuses, visibleRows]);
 
   const summaryCards = useMemo(
     () => [
@@ -4489,6 +4723,76 @@ export default function UsersPage() {
       );
   };
 
+  const resolveCustomerUpgradeStatuses = async (targetRows: Record<string, unknown>[]) => {
+    const missingUserIds = Array.from(
+      new Set(
+        targetRows
+          .map((row) => getId(row))
+          .filter(Boolean),
+      ),
+    ).filter((userId) => !accountUpgradeStatuses[userId]);
+
+    if (!missingUserIds.length) {
+      return accountUpgradeStatuses;
+    }
+
+    const entries = await Promise.all(
+      missingUserIds.map(async (userId) => {
+        try {
+          const payload = await adminService.getUserKyc(userId);
+          return [userId, resolveKycSubmissionStatus(payload)] as const;
+        } catch {
+          return [userId, "No submission"] as const;
+        }
+      }),
+    );
+
+    const next = { ...accountUpgradeStatuses };
+    entries.forEach(([userId, status]) => {
+      next[userId] = status;
+    });
+    setAccountUpgradeStatuses(next);
+    return next;
+  };
+
+  const handleCustomerExport = async (format: "csv" | "xlsx") => {
+    setCustomerExportingFormat(format);
+
+    try {
+      const upgradeMap = await resolveCustomerUpgradeStatuses(rows);
+
+      await exportTableRows({
+        filenameBase: "customer-directory",
+        sheetName: "Customers",
+        format,
+        rows,
+        columns: [
+          { key: "name", label: "Customer", value: (row) => getPersonName(row) },
+          { key: "_id", label: "User ID", value: (row) => getId(row) },
+          { key: "email", label: "Email", value: (row) => getRecordValue(row, ["email"]) },
+          { key: "phone", label: "Phone", value: (row) => getRecordValue(row, ["phone", "phone_number"]) },
+          { key: "status", label: "Status", value: (row) => getRecordValue(row, ["status"]) },
+          {
+            key: "accountUpgradeStatus",
+            label: "Account Upgrade",
+            value: (row) => {
+              const userId = getId(row);
+              return upgradeMap[userId] || getAccountUpgradeStatus(row) || "No submission";
+            },
+          },
+          { key: "referralCode", label: "Referral Code", value: (row) => getRecordValue(row, ["referralCode"]) },
+          { key: "createdAt", label: "Created At", value: (row) => getRecordValue(row, ["createdAt", "updatedAt"]) },
+        ],
+      });
+
+      showServerToast({ message: `Customer directory exported as ${format.toUpperCase()}.` }, "Customer directory exported", "success");
+    } catch (error) {
+      showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Customer export failed", "error");
+    } finally {
+      setCustomerExportingFormat("");
+    }
+  };
+
   const openUserControls = (userId: string, userName: string, status: string) => {
     setUserControls({
       userId,
@@ -4706,12 +5010,33 @@ export default function UsersPage() {
             <ManagementTable
               title="Customer directory"
               rows={rows}
-              columns={["Customer", "Contact", "Status", "Created", "Action"]}
+              columns={["Customer", "Contact", "Status", "Account Upgrade", "Created", "Action"]}
+              onVisibleRowsChange={setVisibleRows}
               action={
-                <button type="button" onClick={openCreateUser} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white">
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  Create user
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={!rows.length || Boolean(customerExportingFormat)}
+                    onClick={() => void handleCustomerExport("csv")}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                  >
+                    {customerExportingFormat === "csv" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+                    CSV
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!rows.length || Boolean(customerExportingFormat)}
+                    onClick={() => void handleCustomerExport("xlsx")}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                  >
+                    {customerExportingFormat === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />}
+                    Excel
+                  </button>
+                  <button type="button" onClick={openCreateUser} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white">
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    Create user
+                  </button>
+                </div>
               }
             >
               {(row, index) => {
@@ -4721,6 +5046,10 @@ export default function UsersPage() {
                 const phone = String(getRecordValue(row, ["phone", "phone_number"]) ?? "Not available");
                 const status = String(getRecordValue(row, ["status"]) ?? "active");
                 const referralCode = String(getRecordValue(row, ["referralCode"]) ?? "").trim();
+                const upgradeStatus =
+                  accountUpgradeStatuses[id] ||
+                  getAccountUpgradeStatus(row) ||
+                  "Checking";
 
                 return (
                   <tr key={`${id}-${index}`} className="text-slate-700 dark:text-slate-300">
@@ -4745,6 +5074,9 @@ export default function UsersPage() {
                       <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{phone}</p>
                     </td>
                     <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "active"} /></td>
+                    <td className="px-5 py-4">
+                      <AccountUpgradeBadge status={upgradeStatus} />
+                    </td>
                     <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
                     <td className="px-5 py-4">
                       <div className="flex flex-wrap gap-2">

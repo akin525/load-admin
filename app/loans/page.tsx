@@ -10,10 +10,13 @@ import {
   AlertCircle,
   BarChart3,
   BriefcaseBusiness,
+  CalendarDays,
   CheckCircle2,
   CreditCard,
+  Download,
   Eye,
   FileText,
+  FileSpreadsheet,
   Landmark,
   Loader2,
   LogOut,
@@ -27,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { exportTableRows } from "@/lib/export/table";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
@@ -82,6 +86,11 @@ type FormAction = {
   fields: FormField[];
   initialValues?: Record<string, string>;
   onSubmit: (values: Record<string, string>) => Promise<void>;
+};
+
+type LoanListFilters = {
+  fromDate: string;
+  toDate: string;
 };
 
 const sortRecordsByLatest = (rows: Record<string, unknown>[], keys: string[]) =>
@@ -245,6 +254,48 @@ const formatDate = (value: unknown): string => {
     minute: "2-digit",
   }).format(date);
 };
+
+const getLoanRowDate = (row: Record<string, unknown>) => {
+  const value = getRecordValue(row, ["applicationDate", "createdAt", "updatedAt"]);
+
+  if (typeof value !== "string" && typeof value !== "number") {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const matchesLoanDateRange = (row: Record<string, unknown>, fromDate: string, toDate: string) => {
+  const rowDate = getLoanRowDate(row);
+
+  if (!rowDate) {
+    return !fromDate && !toDate;
+  }
+
+  if (fromDate) {
+    const start = new Date(fromDate);
+    start.setHours(0, 0, 0, 0);
+    if (rowDate < start) {
+      return false;
+    }
+  }
+
+  if (toDate) {
+    const end = new Date(toDate);
+    end.setHours(23, 59, 59, 999);
+    if (rowDate > end) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const getDefaultLoanListFilters = (): LoanListFilters => ({
+  fromDate: "",
+  toDate: "",
+});
 
 const getInitials = (value: unknown) => {
   const text = String(value ?? "").trim();
@@ -1900,6 +1951,10 @@ export default function LoansPage() {
   const [bankoneSyncResult, setBankoneSyncResult] = useState<BankoneSyncResultState | null>(null);
   const [creditScoreResult, setCreditScoreResult] = useState<CreditScoreResultState | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [loanFilters, setLoanFilters] = useState<LoanListFilters>(() => getDefaultLoanListFilters());
+  const [appliedLoanFilters, setAppliedLoanFilters] = useState<LoanListFilters>(() => getDefaultLoanListFilters());
+  const [personalLoanExportingFormat, setPersonalLoanExportingFormat] = useState<"" | "csv" | "xlsx">("");
+  const [appLoanExportingFormat, setAppLoanExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -1932,8 +1987,19 @@ export default function LoansPage() {
   );
   const loanPackages = useMemo(() => extractRows(workspaceData?.loanPackages), [workspaceData]);
   const loanTypes = useMemo(() => extractRows(workspaceData?.loanTypes), [workspaceData]);
-  const appLoans = useMemo(() => extractRows(workspaceData?.appLoans), [workspaceData]);
+  const appLoans = useMemo(
+    () => sortRecordsByLatest(extractRows(workspaceData?.appLoans), ["applicationDate", "createdAt", "updatedAt"]),
+    [workspaceData],
+  );
   const endpointErrors = workspaceData ? Object.entries(workspaceData.errors) : [];
+  const filteredLoans = useMemo(
+    () =>
+      sortRecordsByLatest(
+        loans.filter((row) => matchesLoanDateRange(row, appliedLoanFilters.fromDate, appliedLoanFilters.toDate)),
+        ["applicationDate", "createdAt", "updatedAt"],
+      ),
+    [appliedLoanFilters.fromDate, appliedLoanFilters.toDate, loans],
+  );
 
   const refreshData = async () => {
     setRefreshing(true);
@@ -1999,6 +2065,74 @@ export default function LoansPage() {
     { label: "Loan types", value: formatValue(loanTypes.length), icon: BriefcaseBusiness },
     { label: "Loan packages", value: formatValue(loanPackages.length), icon: CheckCircle2 },
   ];
+
+  const handleExportAppLoans = async (format: "csv" | "xlsx") => {
+    setAppLoanExportingFormat(format);
+
+    try {
+      await exportTableRows({
+        filenameBase: "app-loans",
+        sheetName: "App Loans",
+        format,
+        rows: appLoans,
+        columns: [
+          { key: "customerName", label: "Applicant", value: (row) => getRecordValue(row, ["customerName", "userName", "userId"]) },
+          { key: "loanTypeName", label: "Loan Type", value: (row) => getRecordValue(row, ["loanTypeName"]) },
+          { key: "amount", label: "Requested Amount", value: (row) => getRecordValue(row, ["amount"]) },
+          { key: "totalPayable", label: "Total Payable", value: (row) => getRecordValue(row, ["totalPayable"]) },
+          { key: "outstandingAmount", label: "Outstanding Amount", value: (row) => getRecordValue(row, ["outstandingAmount"]) },
+          { key: "paidAmount", label: "Paid Amount", value: (row) => getRecordValue(row, ["paidAmount"]) },
+          { key: "status", label: "Status", value: (row) => getRecordValue(row, ["status"]) },
+          { key: "durationLabel", label: "Duration", value: (row) => getRecordValue(row, ["durationLabel"]) },
+          { key: "installmentCount", label: "Installments", value: (row) => getRecordValue(row, ["installmentCount"]) },
+          { key: "purposeText", label: "Purpose", value: (row) => getRecordValue(row, ["purposeText", "purposeId"]) },
+          { key: "applicationDate", label: "Application Date", value: (row) => getRecordValue(row, ["applicationDate", "createdAt"]) },
+          { key: "_id", label: "App Loan ID", value: (row) => getRecordValue(row, ["_id"]) },
+          { key: "coreLoanId", label: "Core Loan ID", value: (row) => getRecordValue(row, ["coreLoanId"]) },
+        ],
+      });
+      showServerToast({ message: `App loans exported as ${format.toUpperCase()}.` }, "App loans exported", "success");
+    } catch (error) {
+      showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "App loan export failed", "error");
+    } finally {
+      setAppLoanExportingFormat("");
+    }
+  };
+
+  const handleExportPersonalLoans = async (format: "csv" | "xlsx") => {
+    setPersonalLoanExportingFormat(format);
+
+    try {
+      await exportTableRows({
+        filenameBase: "personal-loans",
+        sheetName: "Personal Loans",
+        format,
+        rows: filteredLoans,
+        columns: [
+          { key: "userName", label: "Customer", value: (row) => getRecordValue(row, ["customerName", "userName", "userId", "email"]) },
+          { key: "userId", label: "User ID", value: (row) => getRecordValue(row, ["userId"]) },
+          { key: "amount", label: "Loan Amount", value: (row) => getRecordValue(row, ["amount", "loanAmount", "principal"]) },
+          { key: "paidAmount", label: "Paid Amount", value: (row) => getRecordValue(row, ["paidAmount"]) },
+          { key: "outstandingAmount", label: "Outstanding Amount", value: (row) => getRecordValue(row, ["outstandingAmount"]) },
+          { key: "interestRate", label: "Interest Rate", value: (row) => getRecordValue(row, ["interestRate"]) },
+          { key: "term", label: "Term", value: (row) => getRecordValue(row, ["term"]) },
+          { key: "purpose", label: "Purpose", value: (row) => getRecordValue(row, ["purpose"]) },
+          { key: "status", label: "Status", value: (row) => getRecordValue(row, ["status"]) },
+          { key: "applicationDate", label: "Application Date", value: (row) => getRecordValue(row, ["applicationDate", "createdAt"]) },
+          { key: "bankoneLoanTrackingRef", label: "Tracking Ref", value: (row) => getRecordValue(row, ["bankoneLoanTrackingRef"]) },
+          { key: "bankoneLoanAccountNumber", label: "Loan Account Number", value: (row) => getRecordValue(row, ["bankoneLoanAccountNumber"]) },
+          { key: "reviewedAt", label: "Reviewed At", value: (row) => getRecordValue(row, ["reviewedAt"]) },
+          { key: "approvalDate", label: "Approved At", value: (row) => getRecordValue(row, ["approvalDate"]) },
+          { key: "rejectionReason", label: "Rejection Reason", value: (row) => getRecordValue(row, ["rejectionReason"]) },
+        ],
+      });
+      showServerToast({ message: `Personal loans exported as ${format.toUpperCase()}.` }, "Personal loans exported", "success");
+    } catch (error) {
+      showServerToast(getErrorPayload(error) ?? { message: getErrorMessage(error) }, "Personal loan export failed", "error");
+    } finally {
+      setPersonalLoanExportingFormat("");
+    }
+  };
 
   const runLoanMaintenanceAction = async (id: string, action: string, request: () => Promise<unknown>) => {
     setBusyAction(`loan-${id}-${action}`);
@@ -2755,7 +2889,33 @@ export default function LoansPage() {
               )}
             </ManagementTable>
 
-            <ManagementTable title="App Loans" rows={appLoans} columns={["Applicant", "Loan", "Exposure", "Status", "Action"]}>
+            <ManagementTable
+              title="App Loans"
+              rows={appLoans}
+              columns={["Applicant", "Loan", "Exposure", "Status", "Action"]}
+              action={
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={!appLoans.length || Boolean(appLoanExportingFormat)}
+                    onClick={() => void handleExportAppLoans("csv")}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                  >
+                    {appLoanExportingFormat === "csv" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+                    CSV
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!appLoans.length || Boolean(appLoanExportingFormat)}
+                    onClick={() => void handleExportAppLoans("xlsx")}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                  >
+                    {appLoanExportingFormat === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />}
+                    Excel
+                  </button>
+                </div>
+              }
+            >
               {(row, index) => {
                 const id = getId(row);
                 const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();
@@ -2975,7 +3135,85 @@ export default function LoansPage() {
               }}
             </ManagementTable>
 
-            <ManagementTable title="Personal loans" rows={loans} columns={["Customer", "Amount", "Status", "Created", "Action"]}>
+            <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#069AFF]">Loan list controls</p>
+                  <h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">Personal loan filters and export</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Filter by submitted date and export the exact filtered list. Personal loans are sorted newest first.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  Showing {formatValue(filteredLoans.length)} of {formatValue(loans.length)}
+                </span>
+              </div>
+              <form
+                className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto_auto]"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setAppliedLoanFilters(loanFilters);
+                }}
+              >
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">From date</span>
+                  <input
+                    type="date"
+                    value={loanFilters.fromDate}
+                    onChange={(event) => setLoanFilters((current) => ({ ...current, fromDate: event.target.value }))}
+                    className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">To date</span>
+                  <input
+                    type="date"
+                    value={loanFilters.toDate}
+                    onChange={(event) => setLoanFilters((current) => ({ ...current, toDate: event.target.value }))}
+                    className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-slate-950/50 dark:text-white"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaults = getDefaultLoanListFilters();
+                    setLoanFilters(defaults);
+                    setAppliedLoanFilters(defaults);
+                  }}
+                  className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                >
+                  Reset
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-4 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0]"
+                >
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  Apply range
+                </button>
+                <button
+                  type="button"
+                  disabled={!filteredLoans.length || Boolean(personalLoanExportingFormat)}
+                  onClick={() => void handleExportPersonalLoans("csv")}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                >
+                  {personalLoanExportingFormat === "csv" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+                  CSV
+                </button>
+                <button
+                  type="button"
+                  disabled={!filteredLoans.length || Boolean(personalLoanExportingFormat)}
+                  onClick={() => void handleExportPersonalLoans("xlsx")}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 px-4 text-sm font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                >
+                  {personalLoanExportingFormat === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />}
+                  Excel
+                </button>
+              </form>
+            </section>
+
+            <ManagementTable title="Personal loans" rows={filteredLoans} columns={["Customer", "Amount", "Status", "Created", "Action"]}>
               {(row, index) => {
                 const id = getId(row);
                 const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();
@@ -3003,7 +3241,7 @@ export default function LoansPage() {
                     </td>
                     <td className="px-5 py-4 font-bold text-slate-950 dark:text-white">{formatCurrency(getRecordValue(row, ["amount", "loanAmount", "principal"]))}</td>
                     <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "pending"} /></td>
-                    <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
+                    <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["applicationDate", "createdAt", "updatedAt"]))}</td>
                     <td className="px-5 py-4">
                       <div className="flex flex-wrap gap-2">
                         <button

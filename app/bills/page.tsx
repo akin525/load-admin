@@ -7,8 +7,10 @@ import { useTheme } from "next-themes";
 import {
   AlertCircle,
   CheckCircle2,
+  Download,
   Eye,
   FileText,
+  FileSpreadsheet,
   Landmark,
   Loader2,
   LogOut,
@@ -21,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { exportTableRows } from "@/lib/export/table";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
@@ -657,6 +660,7 @@ export default function BillsPage() {
   const [applyingWebhookId, setApplyingWebhookId] = useState("");
   const [notice, setNotice] = useState<NoticeState>(null);
   const [userLabels, setUserLabels] = useState<UserLabelMap>({});
+  const [exportingFormat, setExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -826,6 +830,56 @@ export default function BillsPage() {
       setSelectedBill({ id, data, loading: false, error: "" });
     } catch (error) {
       setSelectedBill({ id, data: null, loading: false, error: getErrorMessage(error) });
+    }
+  };
+
+  const handleExport = async (format: "csv" | "xlsx") => {
+    setExportingFormat(format);
+
+    try {
+      await exportTableRows({
+        filenameBase: "bill-payment-transactions",
+        sheetName: "Bills",
+        format,
+        rows: filteredRows,
+        columns: [
+          {
+            key: "initiatedBy",
+            label: "Initiated By",
+            value: (row) => {
+              const userId = String(getRecordValue(row, ["userId", "user_id"]) ?? "").trim();
+              if (!userId) {
+                return getRecordValue(row, ["customerName", "name", "fullName", "userName", "recipient", "email"]);
+              }
+
+              return userLabels[userId] ?? userId;
+            },
+          },
+          { key: "userId", label: "User ID", value: (row) => getRecordValue(row, ["userId", "user_id"]) },
+          { key: "reference", label: "Reference", value: (row) => getRecordValue(row, ["reference", "requestId", "transactionId", "billId"]) },
+          { key: "serviceType", label: "Service Type", value: (row) => getRecordValue(row, ["serviceType", "service", "type"]) },
+          { key: "providerType", label: "Provider Type", value: (row) => getRecordValue(row, ["providerType"]) },
+          { key: "amount", label: "Amount", value: (row) => getRecordValue(row, ["amount", "billAmount", "total", "totalAmount"]) },
+          { key: "feeAmount", label: "Fee", value: (row) => getRecordValue(row, ["feeAmount"]) },
+          { key: "customerAccountNo", label: "Customer Account", value: (row) => getRecordValue(row, ["customerAccountNo", "recipient"]) },
+          { key: "recipient", label: "Recipient", value: (row) => getRecordValue(row, ["recipient", "customerName", "email"]) },
+          { key: "status", label: "Status", value: (row) => getRecordValue(row, ["status", "paymentStatus", "billStatus"]) },
+          { key: "createdAt", label: "Created At", value: (row) => getRecordValue(row, ["createdAt", "date", "transactionDate", "updatedAt"]) },
+          { key: "token", label: "Token", value: (row) => getRecordValue(row, ["token"]) },
+          { key: "error", label: "Error", value: (row) => getRecordValue(row, ["error"]) },
+        ],
+      });
+      setNotice({
+        tone: "success",
+        message: `Bill payment transactions exported as ${format.toUpperCase()}.`,
+      });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        message: getErrorMessage(error),
+      });
+    } finally {
+      setExportingFormat("");
     }
   };
 
@@ -1101,6 +1155,24 @@ export default function BillsPage() {
                     <FileText className="h-4 w-4" aria-hidden="true" />
                     Showing {formatValue(paginatedRows.length)} of {formatValue(filteredRows.length)}
                   </span>
+                  <button
+                    type="button"
+                    disabled={!filteredRows.length || Boolean(exportingFormat)}
+                    onClick={() => void handleExport("csv")}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                  >
+                    {exportingFormat === "csv" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+                    Export CSV
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!filteredRows.length || Boolean(exportingFormat)}
+                    onClick={() => void handleExport("xlsx")}
+                    className="inline-flex items-center gap-2 rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 py-2 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                  >
+                    {exportingFormat === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />}
+                    Export Excel
+                  </button>
                 </div>
               </div>
 
