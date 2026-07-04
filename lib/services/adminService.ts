@@ -1019,6 +1019,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/kycs/recent
+    getRecentKycs: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/kycs/recent', { params });
+        return response.data;
+    },
+
     // POST /admin/mixpanel/test-event
     sendMixpanelTestEvent: async (payload?: AdminPayload): Promise<unknown> => {
         const response = await api.post('/admin/mixpanel/test-event', payload ?? {});
