@@ -9,8 +9,10 @@ import {
   AlertCircle,
   ArrowUpRight,
   Calendar,
+  Download,
   Eye,
   FileText,
+  FileSpreadsheet,
   Filter,
   Loader2,
   RefreshCw,
@@ -26,6 +28,7 @@ import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { exportTableRows } from "@/lib/export/table";
 
 type TransferFilters = {
   search: string;
@@ -443,6 +446,7 @@ export default function TransfersPage() {
   const [reversingId, setReversingId] = useState("");
   const [notice, setNotice] = useState<ActionNotice | null>(null);
   const [userLabels, setUserLabels] = useState<UserLabelMap>({});
+  const [exportingFormat, setExportingFormat] = useState<"" | "csv" | "xlsx">("");
 
   const fetchTransfers = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: "" }));
@@ -549,6 +553,60 @@ export default function TransfersPage() {
     }
   };
 
+  const handleExport = async (format: "csv" | "xlsx") => {
+    if (!filteredRows.length) {
+      return;
+    }
+
+    setExportingFormat(format);
+
+    try {
+      await exportTableRows({
+        filenameBase: `transfers-${new Date().toISOString().slice(0, 10)}`,
+        format,
+        sheetName: "Transfers",
+        rows: filteredRows,
+        columns: [
+          {
+            key: "initiatedByName",
+            label: "Initiated By",
+            value: (row) => {
+              const userId = String(row.user_id || row.userId || row.metadata?.userId || "").trim();
+              const embeddedName = typeof row.user?.name === "string" && row.user.name.trim() ? row.user.name : "";
+              return embeddedName || userLabels[userId]?.name || userId || "N/A";
+            },
+          },
+          {
+            key: "initiatedByEmail",
+            label: "Initiator Email",
+            value: (row) => {
+              const userId = String(row.user_id || row.userId || row.metadata?.userId || "").trim();
+              const embeddedEmail = typeof row.user?.email === "string" ? row.user.email : "";
+              return embeddedEmail || userLabels[userId]?.email || "";
+            },
+          },
+          { key: "userId", label: "User ID", value: (row) => row.user_id || row.userId || row.metadata?.userId || "" },
+          { key: "reference", label: "Reference", value: (row) => row.reference },
+          { key: "walletType", label: "Wallet Type", value: (row) => row.walletType },
+          { key: "amount", label: "Amount", value: (row) => row.amount },
+          { key: "feeAmount", label: "Fee Amount", value: (row) => row.feeAmount },
+          { key: "totalDebitAmount", label: "Total Debit Amount", value: (row) => row.totalDebitAmount },
+          { key: "bankName", label: "Bank Name", value: (row) => row.bankName },
+          { key: "sortCode", label: "Sort Code", value: (row) => row.sortCode },
+          { key: "accountName", label: "Recipient Account Name", value: (row) => row.accountName },
+          { key: "accountNumber", label: "Recipient Account Number", value: (row) => row.accountNumber },
+          { key: "narration", label: "Narration", value: (row) => row.narration },
+          { key: "status", label: "Status", value: (row) => row.status },
+          { key: "provider", label: "Provider", value: (row) => row.provider },
+          { key: "createdAt", label: "Created At", value: (row) => formatDate(row.createdAt) },
+          { key: "updatedAt", label: "Updated At", value: (row) => formatDate(row.updatedAt) },
+        ],
+      });
+    } finally {
+      setExportingFormat("");
+    }
+  };
+
   if (!allowed) {
     return <AccessDeniedState />;
   }
@@ -571,6 +629,32 @@ export default function TransfersPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void handleExport("csv")}
+              disabled={!filteredRows.length || exportingFormat !== ""}
+              className="inline-flex h-12 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+            >
+              {exportingFormat === "csv" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExport("xlsx")}
+              disabled={!filteredRows.length || exportingFormat !== ""}
+              className="inline-flex h-12 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+            >
+              {exportingFormat === "xlsx" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="h-4 w-4" />
+              )}
+              Export Excel
+            </button>
             <button
               onClick={() => void fetchTransfers()}
               disabled={state.loading}

@@ -7,8 +7,10 @@ import { useTheme } from "next-themes";
 import {
   AlertCircle,
   CheckCircle2,
+  Download,
   Eye,
   FileText,
+  FileSpreadsheet,
   Landmark,
   Loader2,
   LogOut,
@@ -25,6 +27,7 @@ import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { exportTableRows } from "@/lib/export/table";
 
 type DepositFilters = {
   search: string;
@@ -434,6 +437,7 @@ export default function DepositsPage() {
     error: "",
   });
   const [selectedDeposit, setSelectedDeposit] = useState<Record<string, unknown> | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const isDarkMode = resolvedTheme === "dark";
 
   useEffect(() => {
@@ -562,6 +566,46 @@ export default function DepositsPage() {
   const handleLogout = () => {
     localStorage.removeItem("token");
     router.replace("/auth/login");
+  };
+
+  const handleExport = async (format: "csv" | "xlsx") => {
+    if (!filteredRows.length) {
+      return;
+    }
+
+    setExportingFormat(format);
+
+    try {
+      await exportTableRows({
+        filenameBase: `deposits-${new Date().toISOString().slice(0, 10)}`,
+        format,
+        sheetName: "Deposits",
+        rows: filteredRows,
+        columns: [
+          { key: "reference", label: "Reference", value: (row) => getRecordValue(row, ["reference"]) },
+          { key: "userId", label: "User ID", value: (row) => getRecordValue(row, ["userId"]) },
+          { key: "customerId", label: "Customer ID", value: (row) => getRecordValue(row, ["customerId"]) },
+          { key: "walletId", label: "Wallet ID", value: (row) => getRecordValue(row, ["walletId"]) },
+          { key: "accountName", label: "Originator Account Name", value: (row) => getRecordValue(row, ["accountName"]) },
+          { key: "accountNumber", label: "Originator Account Number", value: (row) => getRecordValue(row, ["accountNumber"]) },
+          { key: "amount", label: "Amount", value: (row) => getRecordValue(row, ["amount"]) },
+          { key: "grossAmount", label: "Gross Amount", value: (row) => getRecordValue(row, ["grossAmount"]) },
+          { key: "feeAmount", label: "Fee Amount", value: (row) => getRecordValue(row, ["feeAmount"]) },
+          { key: "netAmount", label: "Net Amount", value: (row) => getRecordValue(row, ["netAmount"]) },
+          { key: "event", label: "Event", value: (row) => getRecordValue(row, ["event"]) },
+          { key: "sessionID", label: "Session ID", value: (row) => getRecordValue(row, ["sessionID"]) },
+          { key: "channelCode", label: "Channel Code", value: (row) => getRecordValue(row, ["channelCode"]) },
+          { key: "status", label: "Status", value: (row) => getRecordValue(row, ["status"]) },
+          { key: "source", label: "Source", value: (row) => getRecordValue(row, ["source"]) },
+          { key: "provider", label: "Provider", value: (row) => getRecordValue(row, ["provider"]) },
+          { key: "error", label: "Error", value: (row) => getRecordValue(row, ["error"]) },
+          { key: "createdAt", label: "Created At", value: (row) => formatDate(getRecordValue(row, ["createdAt"])) },
+          { key: "updatedAt", label: "Updated At", value: (row) => formatDate(getRecordValue(row, ["updatedAt"])) },
+        ],
+      });
+    } finally {
+      setExportingFormat("");
+    }
   };
 
   if (!canOpenDeposits) {
@@ -755,6 +799,32 @@ export default function DepositsPage() {
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Incoming deposits across customer wallets and payment channels.</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  <button
+                    type="button"
+                    onClick={() => void handleExport("csv")}
+                    disabled={!filteredRows.length || exportingFormat !== ""}
+                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                  >
+                    {exportingFormat === "csv" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Download className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    Export CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleExport("xlsx")}
+                    disabled={!filteredRows.length || exportingFormat !== ""}
+                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                  >
+                    {exportingFormat === "xlsx" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    Export Excel
+                  </button>
                   <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/10 dark:bg-white/5">
                     <Mail className="h-4 w-4" aria-hidden="true" />
                     Reachable records: {formatValue(totals.reachableContacts)}
