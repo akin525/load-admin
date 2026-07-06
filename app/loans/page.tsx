@@ -93,6 +93,42 @@ type LoanListFilters = {
   toDate: string;
 };
 
+type AppLoanFilters = {
+  status: string;
+};
+
+type LoanTypeDurationDraft = {
+  id: string;
+  days: string;
+  label: string;
+  interestRate: string;
+  installmentCount: string;
+  repaymentFrequency: string;
+  topUpAllowed: string;
+};
+
+type LoanTypeEditorValues = {
+  name: string;
+  slug: string;
+  description: string;
+  badgeText: string;
+  minAmount: string;
+  maxAmount: string;
+  currency: string;
+  status: string;
+  requirements: string;
+  durations: LoanTypeDurationDraft[];
+};
+
+type LoanTypeEditorAction = {
+  title: string;
+  eyebrow: string;
+  description: string;
+  submitLabel: string;
+  initialValues: LoanTypeEditorValues;
+  onSubmit: (values: LoanTypeEditorValues) => Promise<void>;
+};
+
 const sortRecordsByLatest = (rows: Record<string, unknown>[], keys: string[]) =>
   [...rows].sort((left, right) => {
     const leftValue = keys.map((key) => getRecordValue(left, [key])).find((value) => value !== undefined && value !== null);
@@ -297,6 +333,10 @@ const getDefaultLoanListFilters = (): LoanListFilters => ({
   toDate: "",
 });
 
+const getDefaultAppLoanFilters = (): AppLoanFilters => ({
+  status: "",
+});
+
 const getInitials = (value: unknown) => {
   const text = String(value ?? "").trim();
 
@@ -413,14 +453,50 @@ const parseCsvList = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-const parseDurations = (value: string) => {
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+const createLoanTypeDurationDraft = (
+  overrides: Partial<LoanTypeDurationDraft> = {},
+): LoanTypeDurationDraft => ({
+  id: overrides.id ?? `duration-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  days: overrides.days ?? "",
+  label: overrides.label ?? "",
+  interestRate: overrides.interestRate ?? "",
+  installmentCount: overrides.installmentCount ?? "",
+  repaymentFrequency: overrides.repaymentFrequency ?? "",
+  topUpAllowed: overrides.topUpAllowed ?? "true",
+});
+
+const mapLoanTypeDurationsToDrafts = (value: unknown): LoanTypeDurationDraft[] => {
+  if (!Array.isArray(value) || !value.length) {
+    return [createLoanTypeDurationDraft()];
   }
+
+  return value.map((item) => {
+    const record = isRecord(item) ? item : {};
+    return createLoanTypeDurationDraft({
+      days: String(getRecordValue(record, ["days"]) ?? ""),
+      label: String(getRecordValue(record, ["label"]) ?? ""),
+      interestRate: String(getRecordValue(record, ["interestRate"]) ?? ""),
+      installmentCount: String(getRecordValue(record, ["installmentCount"]) ?? ""),
+      repaymentFrequency: String(getRecordValue(record, ["repaymentFrequency"]) ?? ""),
+      topUpAllowed:
+        getRecordValue(record, ["topUpAllowed"]) === false
+          ? "false"
+          : getRecordValue(record, ["topUpAllowed"]) === true
+            ? "true"
+            : "true",
+    });
+  });
 };
+
+const serializeLoanTypeDurations = (durations: LoanTypeDurationDraft[]) =>
+  durations.map((duration) => ({
+    days: Number(duration.days),
+    label: duration.label.trim(),
+    interestRate: Number(duration.interestRate),
+    installmentCount: Number(duration.installmentCount),
+    ...(duration.repaymentFrequency.trim() ? { repaymentFrequency: duration.repaymentFrequency.trim() } : {}),
+    topUpAllowed: duration.topUpAllowed === "true",
+  }));
 
 const formatRepaymentFrequency = (value: unknown) => {
   const normalized = String(value ?? "").trim().toLowerCase();
@@ -773,6 +849,307 @@ function ActionModal({ action, onClose }: { action: FormAction; onClose: () => v
               className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+              {action.submitLabel}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function LoanTypeEditorModal({
+  action,
+  onClose,
+}: {
+  action: LoanTypeEditorAction;
+  onClose: () => void;
+}) {
+  const [values, setValues] = useState<LoanTypeEditorValues>(action.initialValues);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const updateField = (name: keyof LoanTypeEditorValues, value: string) => {
+    setValues((current) => ({ ...current, [name]: value }));
+  };
+
+  const updateDuration = (id: string, field: keyof LoanTypeDurationDraft, value: string) => {
+    setValues((current) => ({
+      ...current,
+      durations: current.durations.map((duration) =>
+        duration.id === id ? { ...duration, [field]: value } : duration,
+      ),
+    }));
+  };
+
+  const addDuration = () => {
+    setValues((current) => ({
+      ...current,
+      durations: [...current.durations, createLoanTypeDurationDraft()],
+    }));
+  };
+
+  const removeDuration = (id: string) => {
+    setValues((current) => ({
+      ...current,
+      durations:
+        current.durations.length > 1
+          ? current.durations.filter((duration) => duration.id !== id)
+          : current.durations,
+    }));
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+
+    const invalidDuration = values.durations.find((duration) => {
+      const days = Number(duration.days);
+      const interestRate = Number(duration.interestRate);
+      const installmentCount = Number(duration.installmentCount);
+
+      return (
+        !duration.label.trim() ||
+        Number.isNaN(days) ||
+        days <= 0 ||
+        Number.isNaN(interestRate) ||
+        interestRate < 0 ||
+        Number.isNaN(installmentCount) ||
+        installmentCount <= 0
+      );
+    });
+
+    if (invalidDuration) {
+      setSubmitting(false);
+      setError(
+        "Each duration needs a label, valid days, interest rate, and installment count before it can be saved.",
+      );
+      return;
+    }
+
+    try {
+      await action.onSubmit(values);
+      onClose();
+    } catch (submissionError) {
+      setError(getErrorMessage(submissionError));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-6xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              {action.eyebrow}
+            </p>
+            <h2 className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">{action.title}</h2>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{action.description}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+            aria-label="Close loan type editor"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="max-h-[82vh] overflow-y-auto">
+          <div className="grid gap-5 p-5">
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                {error}
+              </div>
+            )}
+
+            <section className="grid gap-4 sm:grid-cols-2">
+              {[
+                ["name", "Name", "Personal Loan"],
+                ["slug", "Slug", "personal-loan"],
+                ["description", "Description", "Short term personal loan"],
+                ["badgeText", "Badge text", "1-5%"],
+                ["minAmount", "Minimum amount", "10000"],
+                ["maxAmount", "Maximum amount", "1000000"],
+                ["currency", "Currency", "NGN"],
+              ].map(([key, label, placeholder]) => (
+                <label key={key} className={key === "description" ? "sm:col-span-2" : ""}>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
+                  <input
+                    required={["name", "slug", "description", "minAmount", "maxAmount", "currency"].includes(key)}
+                    value={values[key as keyof LoanTypeEditorValues] as string}
+                    placeholder={placeholder}
+                    onChange={(event) =>
+                      updateField(key as keyof LoanTypeEditorValues, event.target.value)
+                    }
+                    className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                  />
+                </label>
+              ))}
+
+              <label>
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Status</span>
+                <select
+                  value={values.status}
+                  onChange={(event) => updateField("status", event.target.value)}
+                  className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="draft">Draft</option>
+                </select>
+              </label>
+
+              <label className="sm:col-span-2">
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Requirements</span>
+                <input
+                  value={values.requirements}
+                  placeholder="Valid ID, Employment letter"
+                  onChange={(event) => updateField("requirements", event.target.value)}
+                  className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                />
+                <p className="mt-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Enter requirements as comma-separated items.
+                </p>
+              </label>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-slate-950 dark:text-white">Repayment options</h3>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Add one row per duration. Weekly and monthly plans can use repayment frequency directly.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addDuration}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#069AFF] px-4 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0]"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Add duration
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-4">
+                {values.durations.map((duration, index) => (
+                  <div
+                    key={duration.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.04]"
+                  >
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-950 dark:text-white">Duration {index + 1}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Configure how this repayment plan should behave.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeDuration(duration.id)}
+                        disabled={values.durations.length <= 1}
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                        Remove
+                      </button>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <label>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Days</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={duration.days}
+                          onChange={(event) => updateDuration(duration.id, "days", event.target.value)}
+                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                        />
+                      </label>
+                      <label>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Label</span>
+                        <input
+                          value={duration.label}
+                          placeholder="4 Weeks"
+                          onChange={(event) => updateDuration(duration.id, "label", event.target.value)}
+                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                        />
+                      </label>
+                      <label>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Interest rate (%)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={duration.interestRate}
+                          onChange={(event) => updateDuration(duration.id, "interestRate", event.target.value)}
+                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                        />
+                      </label>
+                      <label>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Installment count</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={duration.installmentCount}
+                          onChange={(event) => updateDuration(duration.id, "installmentCount", event.target.value)}
+                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                        />
+                      </label>
+                      <label>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Repayment frequency</span>
+                        <select
+                          value={duration.repaymentFrequency}
+                          onChange={(event) => updateDuration(duration.id, "repaymentFrequency", event.target.value)}
+                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                        >
+                          <option value="">Default / not set</option>
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Top-up allowed</span>
+                        <select
+                          value={duration.topUpAllowed}
+                          onChange={(event) => updateDuration(duration.id, "topUpAllowed", event.target.value)}
+                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                        >
+                          <option value="true">Yes</option>
+                          <option value="false">No</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4 dark:border-white/10">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 px-5 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+              )}
               {action.submitLabel}
             </button>
           </div>
@@ -1946,6 +2323,7 @@ export default function LoansPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [toasts, setToasts] = useState<ToastNotice[]>([]);
   const [formAction, setFormAction] = useState<FormAction | null>(null);
+  const [loanTypeEditor, setLoanTypeEditor] = useState<LoanTypeEditorAction | null>(null);
   const [appLoanDetail, setAppLoanDetail] = useState<AppLoanDetailState | null>(null);
   const [coreLoanDetail, setCoreLoanDetail] = useState<CoreLoanDetailState | null>(null);
   const [bankoneSyncResult, setBankoneSyncResult] = useState<BankoneSyncResultState | null>(null);
@@ -1953,6 +2331,7 @@ export default function LoansPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [loanFilters, setLoanFilters] = useState<LoanListFilters>(() => getDefaultLoanListFilters());
   const [appliedLoanFilters, setAppliedLoanFilters] = useState<LoanListFilters>(() => getDefaultLoanListFilters());
+  const [appLoanFilters, setAppLoanFilters] = useState<AppLoanFilters>(() => getDefaultAppLoanFilters());
   const [personalLoanExportingFormat, setPersonalLoanExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const [appLoanExportingFormat, setAppLoanExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const isDarkMode = resolvedTheme === "dark";
@@ -1991,6 +2370,28 @@ export default function LoansPage() {
     () => sortRecordsByLatest(extractRows(workspaceData?.appLoans), ["applicationDate", "createdAt", "updatedAt"]),
     [workspaceData],
   );
+  const availableAppLoanStatuses = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          appLoans
+            .map((row) => String(getRecordValue(row, ["status"]) ?? "").trim())
+            .filter(Boolean),
+        ),
+      ).sort((left, right) => left.localeCompare(right)),
+    [appLoans],
+  );
+  const filteredAppLoans = useMemo(() => {
+    const normalizedStatus = appLoanFilters.status.trim().toLowerCase();
+
+    if (!normalizedStatus) {
+      return appLoans;
+    }
+
+    return appLoans.filter(
+      (row) => String(getRecordValue(row, ["status"]) ?? "").trim().toLowerCase() === normalizedStatus,
+    );
+  }, [appLoanFilters.status, appLoans]);
   const endpointErrors = workspaceData ? Object.entries(workspaceData.errors) : [];
   const filteredLoans = useMemo(
     () =>
@@ -2074,7 +2475,7 @@ export default function LoansPage() {
         filenameBase: "app-loans",
         sheetName: "App Loans",
         format,
-        rows: appLoans,
+        rows: filteredAppLoans,
         columns: [
           { key: "customerName", label: "Applicant", value: (row) => getRecordValue(row, ["customerName", "userName", "userId"]) },
           { key: "loanTypeName", label: "Loan Type", value: (row) => getRecordValue(row, ["loanTypeName"]) },
@@ -2161,52 +2562,36 @@ export default function LoansPage() {
   };
 
   const openCreateLoanType = () => {
-    setFormAction({
+    setLoanTypeEditor({
       eyebrow: "Loan type",
       title: "Create loan type",
-      description: "Create a loan product type. Durations must be a JSON array matching the backend schema, including repaymentFrequency where needed.",
+      description: "Create a loan product type with guided repayment options instead of raw JSON.",
       submitLabel: "Create loan type",
-      fields: [
-        { name: "name", label: "Name", required: true, placeholder: "Salary Loan" },
-        { name: "slug", label: "Slug", required: true, placeholder: "salary-loan" },
-        { name: "description", label: "Description", required: true, placeholder: "Short term salary-backed loan" },
-        { name: "badgeText", label: "Badge text", placeholder: "Popular" },
-        { name: "minAmount", label: "Minimum amount", required: true, placeholder: "10000" },
-        { name: "maxAmount", label: "Maximum amount", required: true, placeholder: "500000" },
-        { name: "currency", label: "Currency", required: true, placeholder: "NGN" },
-        {
-          name: "status",
-          label: "Status",
-          type: "select",
-          required: true,
-          options: [
-            { label: "Active", value: "active" },
-            { label: "Inactive", value: "inactive" },
-            { label: "Draft", value: "draft" },
-          ],
-        },
-        { name: "requirements", label: "Requirements", placeholder: "BVN, Employment letter" },
-        {
-          name: "durations",
-          label: "Durations JSON",
-          type: "textarea",
-          required: true,
-          placeholder:
-            `[` +
-            `{"days":28,"label":"4 Weeks","interestRate":8,"installmentCount":4,"repaymentFrequency":"weekly","topUpAllowed":true},` +
-            `{"days":90,"label":"3 Months","interestRate":12,"installmentCount":3,"repaymentFrequency":"monthly","topUpAllowed":true}` +
-            `]`,
-          helper: "Use repaymentFrequency directly for weekly or monthly repayment plans.",
-        },
-      ],
+      initialValues: {
+        name: "",
+        slug: "",
+        description: "",
+        badgeText: "",
+        minAmount: "",
+        maxAmount: "",
+        currency: "NGN",
+        status: "active",
+        requirements: "",
+        durations: [createLoanTypeDurationDraft()],
+      },
       onSubmit: (values) =>
         submitAndRefresh(() =>
           adminService.createLoanType({
-            ...values,
+            name: values.name,
+            slug: values.slug,
+            description: values.description,
+            badgeText: values.badgeText,
             minAmount: Number(values.minAmount),
             maxAmount: Number(values.maxAmount),
+            currency: values.currency,
+            status: values.status,
             requirements: parseCsvList(values.requirements ?? ""),
-            durations: parseDurations(values.durations ?? "[]"),
+            durations: serializeLoanTypeDurations(values.durations),
           }),
         ),
     });
@@ -2214,7 +2599,7 @@ export default function LoansPage() {
 
   const openEditLoanType = (row: Record<string, unknown>) => {
     const id = getId(row);
-    setFormAction({
+    setLoanTypeEditor({
       eyebrow: "Loan type",
       title: "Update loan type",
       description: "Update loan product settings.",
@@ -2229,44 +2614,21 @@ export default function LoansPage() {
         currency: String(getRecordValue(row, ["currency"]) ?? "NGN"),
         status: String(getRecordValue(row, ["status"]) ?? "active"),
         requirements: Array.isArray(row.requirements) ? row.requirements.join(", ") : "",
-        durations: JSON.stringify(Array.isArray(row.durations) ? row.durations : [], null, 2),
+        durations: mapLoanTypeDurationsToDrafts(row.durations),
       },
-      fields: [
-        { name: "name", label: "Name", required: true },
-        { name: "slug", label: "Slug", required: true },
-        { name: "description", label: "Description", required: true },
-        { name: "badgeText", label: "Badge text" },
-        { name: "minAmount", label: "Minimum amount", required: true },
-        { name: "maxAmount", label: "Maximum amount", required: true },
-        { name: "currency", label: "Currency", required: true },
-        {
-          name: "status",
-          label: "Status",
-          type: "select",
-          required: true,
-          options: [
-            { label: "Active", value: "active" },
-            { label: "Inactive", value: "inactive" },
-            { label: "Draft", value: "draft" },
-          ],
-        },
-        { name: "requirements", label: "Requirements" },
-        {
-          name: "durations",
-          label: "Durations JSON",
-          type: "textarea",
-          required: true,
-          helper: "Include repaymentFrequency for plans such as weekly or monthly schedules.",
-        },
-      ],
       onSubmit: (values) =>
         submitAndRefresh(() =>
           adminService.updateLoanType(id, {
-            ...values,
+            name: values.name,
+            slug: values.slug,
+            description: values.description,
+            badgeText: values.badgeText,
             minAmount: Number(values.minAmount),
             maxAmount: Number(values.maxAmount),
+            currency: values.currency,
+            status: values.status,
             requirements: parseCsvList(values.requirements ?? ""),
-            durations: parseDurations(values.durations ?? "[]"),
+            durations: serializeLoanTypeDurations(values.durations),
           }),
         ),
     });
@@ -2891,13 +3253,31 @@ export default function LoansPage() {
 
             <ManagementTable
               title="App Loans"
-              rows={appLoans}
+              rows={filteredAppLoans}
               columns={["Applicant", "Loan", "Exposure", "Status", "Action"]}
               action={
                 <div className="flex flex-wrap gap-2">
+                  <label className="min-w-[180px]">
+                    <span className="sr-only">Filter app loans by status</span>
+                    <select
+                      value={appLoanFilters.status}
+                      onChange={(event) => setAppLoanFilters({ status: event.target.value })}
+                      className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                    >
+                      <option value="">All statuses</option>
+                      {availableAppLoanStatuses.map((status) => (
+                        <option key={status} value={status}>
+                          {formatLabel(status)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                    {formatValue(filteredAppLoans.length)} of {formatValue(appLoans.length)}
+                  </span>
                   <button
                     type="button"
-                    disabled={!appLoans.length || Boolean(appLoanExportingFormat)}
+                    disabled={!filteredAppLoans.length || Boolean(appLoanExportingFormat)}
                     onClick={() => void handleExportAppLoans("csv")}
                     className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                   >
@@ -2906,7 +3286,7 @@ export default function LoansPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={!appLoans.length || Boolean(appLoanExportingFormat)}
+                    disabled={!filteredAppLoans.length || Boolean(appLoanExportingFormat)}
                     onClick={() => void handleExportAppLoans("xlsx")}
                     className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
                   >
@@ -3320,6 +3700,7 @@ export default function LoansPage() {
       </div>
 
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
+      {loanTypeEditor && <LoanTypeEditorModal action={loanTypeEditor} onClose={() => setLoanTypeEditor(null)} />}
       {appLoanDetail && <AppLoanDetailsModal loan={appLoanDetail} onClose={() => setAppLoanDetail(null)} />}
       {coreLoanDetail && <CoreLoanDetailsModal loan={coreLoanDetail} onClose={() => setCoreLoanDetail(null)} />}
       {creditScoreResult && <CreditScoreResultModal result={creditScoreResult} onClose={() => setCreditScoreResult(null)} />}
