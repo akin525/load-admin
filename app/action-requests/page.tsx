@@ -20,7 +20,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
-import { useRouteAccess } from "@/lib/admin-access";
+import { canAccessPermission, useAdminSession, useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 import { OtpInput } from "@/components/OtpInput";
@@ -441,6 +441,31 @@ const deriveApprovalTarget = (record: Record<string, unknown>): ApprovalTarget |
   return null;
 };
 
+const canApproveActionRequest = (
+  adminSession: ReturnType<typeof useAdminSession>,
+  record: Record<string, unknown>,
+) => {
+  const signature = getActionSignature(record);
+
+  if (signature.includes("reset") && signature.includes("password")) return canAccessPermission(adminSession, "approve_users_reset-password");
+  if (signature.includes("reset") && signature.includes("pin")) return canAccessPermission(adminSession, "approve_users_reset-pin");
+  if (signature.includes("fund") && signature.includes("wallet")) return canAccessPermission(adminSession, "approve_users_fund-wallet");
+  if (signature.includes("unlock")) return canAccessPermission(adminSession, "approve_users_unlock");
+  if (signature.includes("lock")) return canAccessPermission(adminSession, "approve_users_lock");
+  if (signature.includes("disable")) return canAccessPermission(adminSession, "approve_users_disable");
+  if (signature.includes("enable")) return canAccessPermission(adminSession, "approve_users_enable");
+  if (signature.includes("wallet") && signature.includes("reverse")) return canAccessPermission(adminSession, "approve_wallet-transactions_reverse");
+  if (signature.includes("transfer") && signature.includes("reverse")) return canAccessPermission(adminSession, "approve_transfers_reverse");
+  if (signature.includes("reschedule")) return canAccessPermission(adminSession, "approve_app-loans_reschedule");
+  if (signature.includes("app") && signature.includes("loan") && signature.includes("close")) return canAccessPermission(adminSession, "approve_app-loans_close");
+  if (signature.includes("loan") && signature.includes("close")) return canAccessPermission(adminSession, "approve_loans_close");
+
+  return false;
+};
+
+const canRejectActionRequest = (adminSession: ReturnType<typeof useAdminSession>) =>
+  canAccessPermission(adminSession, "reject_action-request");
+
 function SummaryCard({
   label,
   value,
@@ -705,6 +730,7 @@ function OtpModal({
 export default function ActionRequestsPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const adminSession = useAdminSession();
   const { allowed } = useRouteAccess("/action-requests");
   const [queue, setQueue] = useState<QueueState>({ payload: null, rows: [], loading: false, loaded: false, error: "" });
   const [filters, setFilters] = useState<QueueFilters>({ search: "", status: "" });
@@ -805,6 +831,10 @@ export default function ActionRequestsPage() {
   };
 
   const handleReject = async (row: Record<string, unknown>) => {
+    if (!canRejectActionRequest(adminSession)) {
+      return;
+    }
+
     const id = getRequestDisplayId(row);
     setRejectingId(id);
     setNotice(null);
@@ -825,6 +855,10 @@ export default function ActionRequestsPage() {
   };
 
   const handleApprove = async (row: Record<string, unknown>) => {
+    if (!canApproveActionRequest(adminSession, row)) {
+      return;
+    }
+
     const id = getRequestDisplayId(row);
     const target = deriveApprovalTarget(selectedRow ?? row);
 
@@ -1021,6 +1055,8 @@ export default function ActionRequestsPage() {
                   const requestId = getRequestDisplayId(row);
                   const status = getRequestStatus(row);
                   const canApprove = status.toLowerCase().includes("pending");
+                  const canApproveByPermission = canApproveActionRequest(adminSession, row);
+                  const canRejectByPermission = canRejectActionRequest(adminSession);
 
                   return (
                     <tr key={`${requestId}-${index}`} className="text-slate-700 dark:text-slate-300">
@@ -1048,7 +1084,7 @@ export default function ActionRequestsPage() {
                           </button>
                           <button
                             type="button"
-                            disabled={!canApprove || submittingId === requestId}
+                            disabled={!canApprove || !canApproveByPermission || submittingId === requestId}
                             onClick={() => void handleApprove(row)}
                             className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
                           >
@@ -1057,7 +1093,7 @@ export default function ActionRequestsPage() {
                           </button>
                           <button
                             type="button"
-                            disabled={!canApprove || rejectingId === requestId}
+                            disabled={!canApprove || !canRejectByPermission || rejectingId === requestId}
                             onClick={() => void handleReject(row)}
                             className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
                           >

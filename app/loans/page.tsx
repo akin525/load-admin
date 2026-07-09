@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
 import { exportTableRows } from "@/lib/export/table";
-import { useRouteAccess } from "@/lib/admin-access";
+import { canAccessPermission, useAdminSession, useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 import { OtpInput } from "@/components/OtpInput";
@@ -858,26 +858,26 @@ function ActionModal({ action, onClose }: { action: FormAction; onClose: () => v
   );
 }
 
-function LoanTypeEditorModal({
-  action,
-  onClose,
-}: {
-  action: LoanTypeEditorAction;
-  onClose: () => void;
-}) {
-  const [values, setValues] = useState<LoanTypeEditorValues>(action.initialValues);
+function LoanTypeEditorModal({ action, onClose }: { action: LoanTypeEditorAction; onClose: () => void }) {
+  const [values, setValues] = useState<LoanTypeEditorValues>({
+    ...action.initialValues,
+    durations: action.initialValues.durations.map((duration) => createLoanTypeDurationDraft(duration)),
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const updateField = (name: keyof LoanTypeEditorValues, value: string) => {
-    setValues((current) => ({ ...current, [name]: value }));
+  const sharedClassName =
+    "mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:border-[#069AFF] dark:focus:ring-[#069AFF]/15";
+
+  const updateValue = (field: keyof LoanTypeEditorValues, nextValue: string) => {
+    setValues((current) => ({ ...current, [field]: nextValue }));
   };
 
-  const updateDuration = (id: string, field: keyof LoanTypeDurationDraft, value: string) => {
+  const updateDuration = (id: string, field: keyof LoanTypeDurationDraft, nextValue: string) => {
     setValues((current) => ({
       ...current,
       durations: current.durations.map((duration) =>
-        duration.id === id ? { ...duration, [field]: value } : duration,
+        duration.id === id ? { ...duration, [field]: nextValue } : duration,
       ),
     }));
   };
@@ -899,244 +899,205 @@ function LoanTypeEditorModal({
     }));
   };
 
+  const validateDurations = () => {
+    for (const [index, duration] of values.durations.entries()) {
+      if (!duration.days.trim() || Number(duration.days) <= 0) {
+        return `Duration ${index + 1}: enter valid days.`;
+      }
+
+      if (!duration.label.trim()) {
+        return `Duration ${index + 1}: label is required.`;
+      }
+
+      if (!duration.interestRate.trim() || Number.isNaN(Number(duration.interestRate))) {
+        return `Duration ${index + 1}: enter a valid interest rate.`;
+      }
+
+      if (!duration.installmentCount.trim() || Number(duration.installmentCount) <= 0) {
+        return `Duration ${index + 1}: enter a valid installment count.`;
+      }
+    }
+
+    return "";
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSubmitting(true);
-    setError("");
 
-    const invalidDuration = values.durations.find((duration) => {
-      const days = Number(duration.days);
-      const interestRate = Number(duration.interestRate);
-      const installmentCount = Number(duration.installmentCount);
-
-      return (
-        !duration.label.trim() ||
-        Number.isNaN(days) ||
-        days <= 0 ||
-        Number.isNaN(interestRate) ||
-        interestRate < 0 ||
-        Number.isNaN(installmentCount) ||
-        installmentCount <= 0
-      );
-    });
-
-    if (invalidDuration) {
-      setSubmitting(false);
-      setError(
-        "Each duration needs a label, valid days, interest rate, and installment count before it can be saved.",
-      );
+    const durationError = validateDurations();
+    if (durationError) {
+      setError(durationError);
       return;
     }
 
+    setSubmitting(true);
+    setError("");
+
     try {
       await action.onSubmit(values);
-      onClose();
-    } catch (submissionError) {
-      setError(getErrorMessage(submissionError));
-    } finally {
+    } catch (submitError) {
+      setError(getErrorMessage(submitError));
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-6xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 dark:border-white/10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
+      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+        <div className="flex items-start justify-between gap-5 border-b border-slate-100 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-              {action.eyebrow}
-            </p>
-            <h2 className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">{action.title}</h2>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{action.description}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{action.eyebrow}</p>
+            <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{action.title}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">{action.description}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:text-red-200"
             aria-label="Close loan type editor"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="max-h-[82vh] overflow-y-auto">
-          <div className="grid gap-5 p-5">
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
-                {error}
-              </div>
-            )}
-
-            <section className="grid gap-4 sm:grid-cols-2">
-              {[
-                ["name", "Name", "Personal Loan"],
-                ["slug", "Slug", "personal-loan"],
-                ["description", "Description", "Short term personal loan"],
-                ["badgeText", "Badge text", "1-5%"],
-                ["minAmount", "Minimum amount", "10000"],
-                ["maxAmount", "Maximum amount", "1000000"],
-                ["currency", "Currency", "NGN"],
-              ].map(([key, label, placeholder]) => (
-                <label key={key} className={key === "description" ? "sm:col-span-2" : ""}>
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
-                  <input
-                    required={["name", "slug", "description", "minAmount", "maxAmount", "currency"].includes(key)}
-                    value={values[key as keyof LoanTypeEditorValues] as string}
-                    placeholder={placeholder}
-                    onChange={(event) =>
-                      updateField(key as keyof LoanTypeEditorValues, event.target.value)
-                    }
-                    className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                  />
-                </label>
-              ))}
-
-              <label>
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Status</span>
-                <select
-                  value={values.status}
-                  onChange={(event) => updateField("status", event.target.value)}
-                  className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  <option value="draft">Draft</option>
-                </select>
-              </label>
-
-              <label className="sm:col-span-2">
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Requirements</span>
-                <input
-                  value={values.requirements}
-                  placeholder="Valid ID, Employment letter"
-                  onChange={(event) => updateField("requirements", event.target.value)}
-                  className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                />
-                <p className="mt-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Enter requirements as comma-separated items.
-                </p>
-              </label>
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-bold text-slate-950 dark:text-white">Repayment options</h3>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Add one row per duration. Weekly and monthly plans can use repayment frequency directly.
-                  </p>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            <div className="grid gap-4">
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+                  {error}
                 </div>
-                <button
-                  type="button"
-                  onClick={addDuration}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#069AFF] px-4 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0]"
-                >
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  Add duration
-                </button>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Name</span>
+                  <input required value={values.name} onChange={(event) => updateValue("name", event.target.value)} className={sharedClassName} />
+                </label>
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Slug</span>
+                  <input required value={values.slug} onChange={(event) => updateValue("slug", event.target.value)} className={sharedClassName} />
+                </label>
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Description</span>
+                  <input value={values.description} onChange={(event) => updateValue("description", event.target.value)} className={sharedClassName} />
+                </label>
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Badge text</span>
+                  <input value={values.badgeText} onChange={(event) => updateValue("badgeText", event.target.value)} className={sharedClassName} />
+                </label>
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Minimum amount</span>
+                  <input required type="number" min="0" value={values.minAmount} onChange={(event) => updateValue("minAmount", event.target.value)} className={sharedClassName} />
+                </label>
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Maximum amount</span>
+                  <input required type="number" min="0" value={values.maxAmount} onChange={(event) => updateValue("maxAmount", event.target.value)} className={sharedClassName} />
+                </label>
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Currency</span>
+                  <input value={values.currency} onChange={(event) => updateValue("currency", event.target.value)} className={sharedClassName} />
+                </label>
+                <label>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Status</span>
+                  <select value={values.status} onChange={(event) => updateValue("status", event.target.value)} className={sharedClassName}>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </label>
+                <label className="sm:col-span-2">
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Requirements</span>
+                  <input
+                    value={values.requirements}
+                    onChange={(event) => updateValue("requirements", event.target.value)}
+                    placeholder="Valid ID, Bank account, Utility bill"
+                    className={sharedClassName}
+                  />
+                  <span className="mt-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Enter requirements as a comma-separated list.</span>
+                </label>
               </div>
 
-              <div className="mt-4 grid gap-4">
-                {values.durations.map((duration, index) => (
-                  <div
-                    key={duration.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.04]"
-                  >
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-slate-950 dark:text-white">Duration {index + 1}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          Configure how this repayment plan should behave.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeDuration(duration.id)}
-                        disabled={values.durations.length <= 1}
-                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
-                      >
-                        <X className="h-4 w-4" aria-hidden="true" />
-                        Remove
-                      </button>
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <label>
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Days</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={duration.days}
-                          onChange={(event) => updateDuration(duration.id, "days", event.target.value)}
-                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                        />
-                      </label>
-                      <label>
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Label</span>
-                        <input
-                          value={duration.label}
-                          placeholder="4 Weeks"
-                          onChange={(event) => updateDuration(duration.id, "label", event.target.value)}
-                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                        />
-                      </label>
-                      <label>
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Interest rate (%)</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={duration.interestRate}
-                          onChange={(event) => updateDuration(duration.id, "interestRate", event.target.value)}
-                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                        />
-                      </label>
-                      <label>
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Installment count</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={duration.installmentCount}
-                          onChange={(event) => updateDuration(duration.id, "installmentCount", event.target.value)}
-                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                        />
-                      </label>
-                      <label>
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Repayment frequency</span>
-                        <select
-                          value={duration.repaymentFrequency}
-                          onChange={(event) => updateDuration(duration.id, "repaymentFrequency", event.target.value)}
-                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                        >
-                          <option value="">Default / not set</option>
-                          <option value="daily">Daily</option>
-                          <option value="weekly">Weekly</option>
-                          <option value="monthly">Monthly</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Top-up allowed</span>
-                        <select
-                          value={duration.topUpAllowed}
-                          onChange={(event) => updateDuration(duration.id, "topUpAllowed", event.target.value)}
-                          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                        >
-                          <option value="true">Yes</option>
-                          <option value="false">No</option>
-                        </select>
-                      </label>
-                    </div>
+              <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035]">
+                <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-950 dark:text-white">Repayment durations</h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Configure each schedule directly instead of editing raw JSON.</p>
                   </div>
-                ))}
-              </div>
-            </section>
+                  <button
+                    type="button"
+                    onClick={addDuration}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#069AFF]/25 bg-[#069AFF]/10 px-4 text-sm font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white dark:text-sky-200"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    Add duration
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-4">
+                  {values.durations.map((duration, index) => (
+                    <div key={duration.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-950 dark:text-white">Duration {index + 1}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Set timeline, pricing, installments, and repayment pattern.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeDuration(duration.id)}
+                          disabled={values.durations.length <= 1}
+                          className="inline-flex h-9 items-center justify-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <label>
+                          <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Days</span>
+                          <input type="number" min="1" value={duration.days} onChange={(event) => updateDuration(duration.id, "days", event.target.value)} className={sharedClassName} />
+                        </label>
+                        <label>
+                          <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Label</span>
+                          <input value={duration.label} onChange={(event) => updateDuration(duration.id, "label", event.target.value)} className={sharedClassName} />
+                        </label>
+                        <label>
+                          <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Interest rate (%)</span>
+                          <input type="number" min="0" step="0.01" value={duration.interestRate} onChange={(event) => updateDuration(duration.id, "interestRate", event.target.value)} className={sharedClassName} />
+                        </label>
+                        <label>
+                          <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Installment count</span>
+                          <input type="number" min="1" value={duration.installmentCount} onChange={(event) => updateDuration(duration.id, "installmentCount", event.target.value)} className={sharedClassName} />
+                        </label>
+                        <label>
+                          <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Repayment frequency</span>
+                          <select value={duration.repaymentFrequency} onChange={(event) => updateDuration(duration.id, "repaymentFrequency", event.target.value)} className={sharedClassName}>
+                            <option value="">Not set</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Top-up allowed</span>
+                          <select value={duration.topUpAllowed} onChange={(event) => updateDuration(duration.id, "topUpAllowed", event.target.value)} className={sharedClassName}>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4 dark:border-white/10">
+          <div className="mt-2 flex flex-col-reverse gap-3 border-t border-slate-100 p-5 dark:border-white/10 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 px-5 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:text-slate-200"
+              className="h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
             >
               Cancel
             </button>
@@ -1145,11 +1106,7 @@ function LoanTypeEditorModal({
               disabled={submitting}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0] disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-              )}
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
               {action.submitLabel}
             </button>
           </div>
@@ -2317,6 +2274,7 @@ function BankoneSyncResultModal({
 export default function LoansPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const adminSession = useAdminSession();
   const { allowed: canOpenLoans } = useRouteAccess("/loans");
   const toastIdRef = useRef(0);
   const [workspaceData, setWorkspaceData] = useState<LoansWorkspaceData | null>(null);
@@ -2335,6 +2293,28 @@ export default function LoansPage() {
   const [personalLoanExportingFormat, setPersonalLoanExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const [appLoanExportingFormat, setAppLoanExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const isDarkMode = resolvedTheme === "dark";
+  const canCreateLoanType = canAccessPermission(adminSession, "create_loan-type");
+  const canUpdateLoanType = canAccessPermission(adminSession, "update_loan-type");
+  const canExportLoanPerformance = canAccessPermission(adminSession, "view_reports_export", "view_loans_list");
+  const canReviewAppLoan = canAccessPermission(adminSession, "create_app-loans_review");
+  const canApproveAppLoan = canAccessPermission(adminSession, "create_app-loans_approve", "approve_app-loan");
+  const canRejectAppLoan = canAccessPermission(adminSession, "create_app-loans_reject", "reject_app-loan");
+  const canApproveManualRepayment = canAccessPermission(adminSession, "create_app-loans_manual-repayment_approve", "approve_app-loans_manual-repayment");
+  const canRejectManualRepayment = canAccessPermission(adminSession, "create_app-loans_manual-repayment_reject", "reject_app-loans_manual-repayment");
+  const canApproveTopUp = canAccessPermission(adminSession, "create_app-loans_top-up_approve", "approve_app-loans_top-up");
+  const canRejectTopUp = canAccessPermission(adminSession, "create_app-loans_top-up_reject", "reject_app-loans_top-up");
+  const canCloseAppLoan = canAccessPermission(adminSession, "create_app-loans_close", "close_app-loan", "approve_app-loans_close");
+  const canMarkAppLoanOverdue = canAccessPermission(adminSession, "mark-overdue_app-loan");
+  const canRescheduleAppLoan = canAccessPermission(adminSession, "reschedule_app-loan", "approve_app-loans_reschedule");
+  const canRunOverdueSweep = canAccessPermission(adminSession, "mark-overdue_app-loan");
+  const canScoreAppLoan = canAccessPermission(adminSession, "create_app-loans_score");
+  const canReviewCoreLoan = canAccessPermission(adminSession, "create_loans_review");
+  const canApproveCoreLoan = canAccessPermission(adminSession, "create_loans_approve", "approve_loan");
+  const canRejectCoreLoan = canAccessPermission(adminSession, "create_loans_reject", "reject_loan");
+  const canCloseCoreLoan = canAccessPermission(adminSession, "create_loans_close", "close_loan", "approve_loans_close");
+  const canMarkCoreLoanOverdue = canAccessPermission(adminSession, "mark-overdue_loan");
+  const canCreateAppLoanFromCore = canAccessPermission(adminSession, "create_loans_create-app-loan");
+  const canSyncBankoneLoanStatus = canAccessPermission(adminSession, "create_loans_sync-bankone-statu");
 
   useEffect(() => {
     let cancelled = false;
@@ -2468,6 +2448,10 @@ export default function LoansPage() {
   ];
 
   const handleExportAppLoans = async (format: "csv" | "xlsx") => {
+    if (!canExportLoanPerformance) {
+      return;
+    }
+
     setAppLoanExportingFormat(format);
 
     try {
@@ -2501,6 +2485,10 @@ export default function LoansPage() {
   };
 
   const handleExportPersonalLoans = async (format: "csv" | "xlsx") => {
+    if (!canExportLoanPerformance) {
+      return;
+    }
+
     setPersonalLoanExportingFormat(format);
 
     try {
@@ -2562,6 +2550,10 @@ export default function LoansPage() {
   };
 
   const openCreateLoanType = () => {
+    if (!canCreateLoanType) {
+      return;
+    }
+
     setLoanTypeEditor({
       eyebrow: "Loan type",
       title: "Create loan type",
@@ -2598,6 +2590,10 @@ export default function LoansPage() {
   };
 
   const openEditLoanType = (row: Record<string, unknown>) => {
+    if (!canUpdateLoanType) {
+      return;
+    }
+
     const id = getId(row);
     setLoanTypeEditor({
       eyebrow: "Loan type",
@@ -2725,6 +2721,10 @@ export default function LoansPage() {
   };
 
   const openRejectAppLoan = (id: string) => {
+    if (!canRejectAppLoan) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "App loan",
       title: "Reject application loan",
@@ -2776,6 +2776,10 @@ export default function LoansPage() {
   };
 
   const startAppLoanApproval = async (id: string) => {
+    if (!canApproveAppLoan) {
+      return;
+    }
+
     setBusyAction(`app-loan-${id}-approve`);
 
     try {
@@ -2810,6 +2814,10 @@ export default function LoansPage() {
   };
 
   const openReviewAppLoan = (id: string) => {
+    if (!canReviewAppLoan) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "App loan",
       title: "Review application loan",
@@ -2822,6 +2830,10 @@ export default function LoansPage() {
   };
 
   const openApproveManualRepayment = (id: string) => {
+    if (!canApproveManualRepayment) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Manual repayment",
       title: "Approve manual repayment",
@@ -2849,6 +2861,10 @@ export default function LoansPage() {
   };
 
   const openRejectManualRepayment = (id: string) => {
+    if (!canRejectManualRepayment) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Manual repayment",
       title: "Reject manual repayment",
@@ -2873,6 +2889,10 @@ export default function LoansPage() {
   };
 
   const openCloseAppLoan = (id: string) => {
+    if (!canCloseAppLoan) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "App loan",
       title: "Close application loan",
@@ -2885,6 +2905,10 @@ export default function LoansPage() {
   };
 
   const openMarkAppLoanOverdue = (id: string) => {
+    if (!canMarkAppLoanOverdue) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "App loan",
       title: "Mark application loan overdue",
@@ -2897,6 +2921,10 @@ export default function LoansPage() {
   };
 
   const openRescheduleAppLoan = (id: string) => {
+    if (!canRescheduleAppLoan) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "App loan",
       title: "Reschedule application loan",
@@ -2927,6 +2955,10 @@ export default function LoansPage() {
   };
 
   const openApproveTopUp = (id: string) => {
+    if (!canApproveTopUp) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Top up",
       title: "Approve top-up request",
@@ -2938,6 +2970,10 @@ export default function LoansPage() {
   };
 
   const openRejectTopUp = (id: string) => {
+    if (!canRejectTopUp) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Top up",
       title: "Reject top-up request",
@@ -2993,6 +3029,10 @@ export default function LoansPage() {
   };
 
   const openReviewCoreLoan = (id: string) => {
+    if (!canReviewCoreLoan) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Core loan",
       title: "Review core loan",
@@ -3005,6 +3045,10 @@ export default function LoansPage() {
   };
 
   const startCoreLoanApproval = async (id: string) => {
+    if (!canApproveCoreLoan) {
+      return;
+    }
+
     setBusyAction(`loan-${id}-approve`);
 
     try {
@@ -3040,6 +3084,10 @@ export default function LoansPage() {
   };
 
   const openRejectCoreLoan = (id: string) => {
+    if (!canRejectCoreLoan) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Core loan",
       title: "Reject core loan",
@@ -3052,6 +3100,10 @@ export default function LoansPage() {
   };
 
   const openCloseCoreLoan = (id: string) => {
+    if (!canCloseCoreLoan) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Core loan",
       title: "Close core loan",
@@ -3064,6 +3116,10 @@ export default function LoansPage() {
   };
 
   const openMarkCoreLoanOverdue = (id: string) => {
+    if (!canMarkCoreLoanOverdue) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Core loan",
       title: "Mark core loan overdue",
@@ -3101,24 +3157,26 @@ export default function LoansPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() =>
-                setFormAction({
-                  eyebrow: "Portfolio maintenance",
-                  title: "Mark overdue app loans",
-                  description: "Submit a bulk overdue sweep for application loans that have crossed their repayment dates.",
-                  submitLabel: "Run overdue sweep",
-                  initialValues: { note: "Bulk overdue sweep" },
-                  fields: [{ name: "note", label: "Operational note", type: "textarea", required: true }],
-                  onSubmit: (values) => submitAndRefresh(() => adminService.markAllAppLoansOverdue({ note: values.note })),
-                })
-              }
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-              Overdue sweep
-            </button>
+            {canRunOverdueSweep ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setFormAction({
+                    eyebrow: "Portfolio maintenance",
+                    title: "Mark overdue app loans",
+                    description: "Submit a bulk overdue sweep for application loans that have crossed their repayment dates.",
+                    submitLabel: "Run overdue sweep",
+                    initialValues: { note: "Bulk overdue sweep" },
+                    fields: [{ name: "note", label: "Operational note", type: "textarea", required: true }],
+                    onSubmit: (values) => submitAndRefresh(() => adminService.markAllAppLoansOverdue({ note: values.note })),
+                  })
+                }
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+              >
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                Overdue sweep
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void refreshData()}
@@ -3200,10 +3258,12 @@ export default function LoansPage() {
               rows={loanTypes}
               columns={["Type", "Amount range", "Status", "Durations", "Action"]}
               action={
-                <button type="button" onClick={openCreateLoanType} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white">
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  New type
-                </button>
+                canCreateLoanType ? (
+                  <button type="button" onClick={openCreateLoanType} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white">
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    New type
+                  </button>
+                ) : null
               }
             >
               {(row, index) => (
@@ -3240,7 +3300,7 @@ export default function LoansPage() {
                   <td className="px-5 py-4">
                     <button
                       type="button"
-                      disabled={!getId(row)}
+                      disabled={!getId(row) || !canUpdateLoanType}
                       onClick={() => openEditLoanType(row)}
                       className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
                     >
@@ -3253,31 +3313,13 @@ export default function LoansPage() {
 
             <ManagementTable
               title="App Loans"
-              rows={filteredAppLoans}
+              rows={appLoans}
               columns={["Applicant", "Loan", "Exposure", "Status", "Action"]}
               action={
                 <div className="flex flex-wrap gap-2">
-                  <label className="min-w-[180px]">
-                    <span className="sr-only">Filter app loans by status</span>
-                    <select
-                      value={appLoanFilters.status}
-                      onChange={(event) => setAppLoanFilters({ status: event.target.value })}
-                      className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition focus:border-[#069AFF] focus:ring-2 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
-                    >
-                      <option value="">All statuses</option>
-                      {availableAppLoanStatuses.map((status) => (
-                        <option key={status} value={status}>
-                          {formatLabel(status)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <span className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-                    {formatValue(filteredAppLoans.length)} of {formatValue(appLoans.length)}
-                  </span>
                   <button
                     type="button"
-                    disabled={!filteredAppLoans.length || Boolean(appLoanExportingFormat)}
+                    disabled={!canExportLoanPerformance || !appLoans.length || Boolean(appLoanExportingFormat)}
                     onClick={() => void handleExportAppLoans("csv")}
                     className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                   >
@@ -3286,7 +3328,7 @@ export default function LoansPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={!filteredAppLoans.length || Boolean(appLoanExportingFormat)}
+                    disabled={!canExportLoanPerformance || !appLoans.length || Boolean(appLoanExportingFormat)}
                     onClick={() => void handleExportAppLoans("xlsx")}
                     className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
                   >
@@ -3411,7 +3453,7 @@ export default function LoansPage() {
                               <LoanActionButton
                                 label="Review"
                                 icon={FileText}
-                                disabled={!id || !canReview}
+                                disabled={!id || !canReview || !canReviewAppLoan}
                                 onClick={() => openReviewAppLoan(id)}
                               />
                               <LoanActionButton
@@ -3419,7 +3461,7 @@ export default function LoansPage() {
                                 icon={BarChart3}
                                 tone="primary"
                                 busy={busyAction === `app-loan-${id}-score`}
-                                disabled={!id}
+                                disabled={!id || !canScoreAppLoan}
                                 onClick={() => runAppLoanAction(id, "score", () => adminService.scoreAppLoan(id))}
                               />
                             </div>
@@ -3429,14 +3471,14 @@ export default function LoansPage() {
                                 icon={CheckCircle2}
                                 tone="success"
                                 busy={busyAction === `app-loan-${id}-approve`}
-                                disabled={!id || !isReviewed || isApproved || isRejected || isClosed}
+                                disabled={!id || !isReviewed || isApproved || isRejected || isClosed || !canApproveAppLoan}
                                 onClick={() => void startAppLoanApproval(id)}
                               />
                               <LoanActionButton
                                 label="Reject"
                                 icon={X}
                                 tone="danger"
-                                disabled={!id}
+                                disabled={!id || !canRejectAppLoan}
                                 onClick={() => openRejectAppLoan(id)}
                               />
                             </div>
@@ -3452,14 +3494,14 @@ export default function LoansPage() {
                                 label="Approve repayment"
                                 icon={CheckCircle2}
                                 tone="success"
-                                disabled={!id}
+                                disabled={!id || !canApproveManualRepayment}
                                 onClick={() => openApproveManualRepayment(id)}
                               />
                               <LoanActionButton
                                 label="Reject repayment"
                                 icon={X}
                                 tone="danger"
-                                disabled={!id}
+                                disabled={!id || !canRejectManualRepayment}
                                 onClick={() => openRejectManualRepayment(id)}
                               />
                             </div>
@@ -3472,34 +3514,34 @@ export default function LoansPage() {
                                 label="Top-up approve"
                                 icon={CheckCircle2}
                                 tone="primary"
-                                disabled={!id}
+                                disabled={!id || !canApproveTopUp}
                                 onClick={() => openApproveTopUp(id)}
                               />
                               <LoanActionButton
                                 label="Top-up reject"
                                 icon={X}
                                 tone="danger"
-                                disabled={!id}
+                                disabled={!id || !canRejectTopUp}
                                 onClick={() => openRejectTopUp(id)}
                               />
                               <LoanActionButton
                                 label="Close loan"
                                 icon={ShieldCheck}
-                                disabled={!id || !canClose}
+                                disabled={!id || !canClose || !canCloseAppLoan}
                                 onClick={() => openCloseAppLoan(id)}
                               />
                               <LoanActionButton
                                 label="Mark overdue"
                                 icon={AlertCircle}
                                 tone="danger"
-                                disabled={!id || isClosed || isRejected}
+                                disabled={!id || isClosed || isRejected || !canMarkAppLoanOverdue}
                                 onClick={() => openMarkAppLoanOverdue(id)}
                               />
                               <LoanActionButton
                                 label="Reschedule"
                                 icon={RefreshCw}
                                 tone="primary"
-                                disabled={!id || isClosed || isRejected}
+                                disabled={!id || isClosed || isRejected || !canRescheduleAppLoan}
                                 onClick={() => openRescheduleAppLoan(id)}
                               />
                             </div>
@@ -3574,7 +3616,7 @@ export default function LoansPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={!filteredLoans.length || Boolean(personalLoanExportingFormat)}
+                  disabled={!canExportLoanPerformance || !filteredLoans.length || Boolean(personalLoanExportingFormat)}
                   onClick={() => void handleExportPersonalLoans("csv")}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
                 >
@@ -3583,7 +3625,7 @@ export default function LoansPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={!filteredLoans.length || Boolean(personalLoanExportingFormat)}
+                  disabled={!canExportLoanPerformance || !filteredLoans.length || Boolean(personalLoanExportingFormat)}
                   onClick={() => void handleExportPersonalLoans("xlsx")}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 px-4 text-sm font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
                 >
@@ -3635,7 +3677,7 @@ export default function LoansPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={!id || !canReview}
+                          disabled={!id || !canReview || !canReviewCoreLoan}
                           onClick={() => openReviewCoreLoan(id)}
                           className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
                         >
@@ -3643,7 +3685,7 @@ export default function LoansPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={!id || !reviewed || status === "approved" || status === "active" || status === "rejected" || status === "closed" || busyAction === `loan-${id}-approve`}
+                          disabled={!id || !reviewed || status === "approved" || status === "active" || status === "rejected" || status === "closed" || busyAction === `loan-${id}-approve` || !canApproveCoreLoan}
                           onClick={() => void startCoreLoanApproval(id)}
                           className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200"
                         >
@@ -3651,7 +3693,7 @@ export default function LoansPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={!id || !canReview}
+                          disabled={!id || !canReview || !canRejectCoreLoan}
                           onClick={() => openRejectCoreLoan(id)}
                           className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
                         >
@@ -3659,7 +3701,7 @@ export default function LoansPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={!id || busyAction === `loan-${id}-create-app-loan`}
+                          disabled={!id || busyAction === `loan-${id}-create-app-loan` || !canCreateAppLoanFromCore}
                           onClick={() => void runLoanMaintenanceAction(id, "create-app-loan", () => adminService.createAppLoanFromLoan(id))}
                           className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
                         >
@@ -3667,7 +3709,7 @@ export default function LoansPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={!id}
+                          disabled={!id || !canSyncBankoneLoanStatus}
                           onClick={() => openSyncBankoneStatus(id)}
                           className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                         >
@@ -3675,7 +3717,7 @@ export default function LoansPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={!id || !canClose}
+                          disabled={!id || !canClose || !canCloseCoreLoan}
                           onClick={() => openCloseCoreLoan(id)}
                           className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                         >
@@ -3683,7 +3725,7 @@ export default function LoansPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={!id || isClosed}
+                          disabled={!id || isClosed || !canMarkCoreLoanOverdue}
                           onClick={() => openMarkCoreLoanOverdue(id)}
                           className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
                         >
@@ -3700,7 +3742,6 @@ export default function LoansPage() {
       </div>
 
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
-      {loanTypeEditor && <LoanTypeEditorModal action={loanTypeEditor} onClose={() => setLoanTypeEditor(null)} />}
       {appLoanDetail && <AppLoanDetailsModal loan={appLoanDetail} onClose={() => setAppLoanDetail(null)} />}
       {coreLoanDetail && <CoreLoanDetailsModal loan={coreLoanDetail} onClose={() => setCoreLoanDetail(null)} />}
       {creditScoreResult && <CreditScoreResultModal result={creditScoreResult} onClose={() => setCreditScoreResult(null)} />}

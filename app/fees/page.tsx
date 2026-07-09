@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
-import { useRouteAccess } from "@/lib/admin-access";
+import { canAccessPermission, useAdminSession, useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 
@@ -1201,6 +1201,7 @@ function formatFeeExpression(row: Record<string, unknown>) {
 export default function FeesPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const adminSession = useAdminSession();
   const { allowed: canOpenFees } = useRouteAccess("/fees");
   const [filters, setFilters] = useState<FeeFilters>({ type: "", scope: "", userId: "" });
   const [appliedFilters, setAppliedFilters] = useState<FeeFilters>({ type: "", scope: "", userId: "" });
@@ -1263,6 +1264,14 @@ export default function FeesPage() {
     result: null,
   });
   const isDarkMode = resolvedTheme === "dark";
+  const canOpenBillLedger = canAccessPermission(adminSession, "view_general-ledger_bill", "view_general-ledger_bills_summary");
+  const canCreateDefaultFee = canAccessPermission(adminSession, "create_fees_default");
+  const canCreateUserFee = canAccessPermission(adminSession, "create_users_fee");
+  const canResolveFee = canAccessPermission(adminSession, "view_fees_resolve");
+  const canViewBillPricing = canAccessPermission(adminSession, "view_fees_bill-pricing");
+  const canCreateBillPricing = canAccessPermission(adminSession, "create_fees_bill-pricing");
+  const canUpdateBillPricing = canAccessPermission(adminSession, "update_fees_bill-pricing");
+  const canCalculateBillPricing = canAccessPermission(adminSession, "create_fees_bill-pricing_calculate");
 
   useEffect(() => {
     let cancelled = false;
@@ -1354,10 +1363,21 @@ export default function FeesPage() {
   };
 
   const openPreset = (preset: FeeModalPreset) => {
+    if (
+      (preset.scope === "default" && !canCreateDefaultFee) ||
+      (preset.scope === "user" && !canCreateUserFee)
+    ) {
+      return;
+    }
+
     setModalPreset(preset);
   };
 
   const openBillPricingCreate = () => {
+    if (!canCreateBillPricing) {
+      return;
+    }
+
     setBillPricingModal({
       mode: "create",
       title: "Create bill pricing row",
@@ -1372,6 +1392,10 @@ export default function FeesPage() {
   };
 
   const openBillPricingEdit = (row: Record<string, unknown>) => {
+    if (!canUpdateBillPricing) {
+      return;
+    }
+
     setBillPricingModal({
       mode: "edit",
       rowId: getBillPricingId(row),
@@ -1474,6 +1498,10 @@ export default function FeesPage() {
   };
 
   const submitBillPricingPreview = async () => {
+    if (!canCalculateBillPricing) {
+      return;
+    }
+
     if (!billPricingPreview.amount.trim() || !billPricingPreview.serviceType.trim()) {
       setBillPricingPreview((current) => ({
         ...current,
@@ -1513,6 +1541,10 @@ export default function FeesPage() {
   };
 
   const submitFeeResolve = async () => {
+    if (!canResolveFee) {
+      return;
+    }
+
     if (!feeResolve.amount.trim()) {
       setFeeResolve((current) => ({
         ...current,
@@ -1571,13 +1603,15 @@ export default function FeesPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link
-              href="/general-ledger-bills"
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
-            >
-              <FileText className="h-4 w-4" aria-hidden="true" />
-              Bill ledger
-            </Link>
+            {canOpenBillLedger ? (
+              <Link
+                href="/general-ledger-bills"
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+              >
+                <FileText className="h-4 w-4" aria-hidden="true" />
+                Bill ledger
+              </Link>
+            ) : null}
             <button
               type="button"
               onClick={() => void refreshData()}
@@ -1625,22 +1659,30 @@ export default function FeesPage() {
 
                 <div className="grid gap-3 rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 p-4 shadow-lg shadow-[#069AFF]/10">
                   <div className="grid grid-cols-2 gap-3">
-                    <button type="button" onClick={() => openPreset({ scope: "default", type: "payin", title: "Set default payin fee", description: "Configure the standard wallet funding fee policy.", initialValues: { feeType: "percentage", value: "1", minFee: "10", maxFee: "500", providerFeeType: "percentage", providerFeeValue: "0.5", providerMinFee: "0", providerMaxFee: "", description: "Default wallet funding fee" } })} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50">
-                      <Plus className="h-4 w-4" aria-hidden="true" />
-                      Default payin
-                    </button>
-                    <button type="button" onClick={() => openPreset({ scope: "default", type: "payout", title: "Set default payout fee", description: "Configure the standard bank transfer payout fee policy.", initialValues: { feeType: "flat", value: "50", minFee: "0", maxFee: "", providerFeeType: "flat", providerFeeValue: "35", providerMinFee: "0", providerMaxFee: "", description: "Default bank transfer payout fee" } })} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10">
-                      <Plus className="h-4 w-4" aria-hidden="true" />
-                      Default payout
-                    </button>
-                    <button type="button" onClick={() => openPreset({ scope: "user", type: "payin", title: "Set user payin fee", description: "Configure a special wallet funding fee for a selected customer.", initialValues: { feeType: "percentage", value: "0.5", minFee: "5", maxFee: "250", providerFeeType: "percentage", providerFeeValue: "0.25", providerMinFee: "0", providerMaxFee: "", description: "Special funding fee for this user" } })} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10">
-                      <Plus className="h-4 w-4" aria-hidden="true" />
-                      User payin
-                    </button>
-                    <button type="button" onClick={() => openPreset({ scope: "user", type: "payout", title: "Set user payout fee", description: "Configure a special payout fee for a selected customer.", initialValues: { feeType: "flat", value: "25", minFee: "0", maxFee: "", providerFeeType: "flat", providerFeeValue: "15", providerMinFee: "0", providerMaxFee: "", description: "Special payout fee for this user" } })} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10">
-                      <Plus className="h-4 w-4" aria-hidden="true" />
-                      User payout
-                    </button>
+                    {canCreateDefaultFee ? (
+                      <>
+                        <button type="button" onClick={() => openPreset({ scope: "default", type: "payin", title: "Set default payin fee", description: "Configure the standard wallet funding fee policy.", initialValues: { feeType: "percentage", value: "1", minFee: "10", maxFee: "500", providerFeeType: "percentage", providerFeeValue: "0.5", providerMinFee: "0", providerMaxFee: "", description: "Default wallet funding fee" } })} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50">
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          Default payin
+                        </button>
+                        <button type="button" onClick={() => openPreset({ scope: "default", type: "payout", title: "Set default payout fee", description: "Configure the standard bank transfer payout fee policy.", initialValues: { feeType: "flat", value: "50", minFee: "0", maxFee: "", providerFeeType: "flat", providerFeeValue: "35", providerMinFee: "0", providerMaxFee: "", description: "Default bank transfer payout fee" } })} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10">
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          Default payout
+                        </button>
+                      </>
+                    ) : null}
+                    {canCreateUserFee ? (
+                      <>
+                        <button type="button" onClick={() => openPreset({ scope: "user", type: "payin", title: "Set user payin fee", description: "Configure a special wallet funding fee for a selected customer.", initialValues: { feeType: "percentage", value: "0.5", minFee: "5", maxFee: "250", providerFeeType: "percentage", providerFeeValue: "0.25", providerMinFee: "0", providerMaxFee: "", description: "Special funding fee for this user" } })} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10">
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          User payin
+                        </button>
+                        <button type="button" onClick={() => openPreset({ scope: "user", type: "payout", title: "Set user payout fee", description: "Configure a special payout fee for a selected customer.", initialValues: { feeType: "flat", value: "25", minFee: "0", maxFee: "", providerFeeType: "flat", providerFeeValue: "15", providerMinFee: "0", providerMaxFee: "", description: "Special payout fee for this user" } })} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10">
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          User payout
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -1675,18 +1717,22 @@ export default function FeesPage() {
 
                 <div className="grid gap-3 rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 p-4 shadow-lg shadow-[#069AFF]/10">
                   <div className="grid grid-cols-2 gap-3">
-                    <button type="button" onClick={openBillPricingCreate} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50">
-                      <Plus className="h-4 w-4" aria-hidden="true" />
-                      New bill pricing
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBillPricingPreview((current) => ({ ...current, open: true, error: "", result: null }))}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10"
-                    >
-                      <BarChart3 className="h-4 w-4" aria-hidden="true" />
-                      Profit preview
-                    </button>
+                    {canCreateBillPricing ? (
+                      <button type="button" onClick={openBillPricingCreate} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50">
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                        New bill pricing
+                      </button>
+                    ) : null}
+                    {canCalculateBillPricing ? (
+                      <button
+                        type="button"
+                        onClick={() => setBillPricingPreview((current) => ({ ...current, open: true, error: "", result: null }))}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10"
+                      >
+                        <BarChart3 className="h-4 w-4" aria-hidden="true" />
+                        Profit preview
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -1819,6 +1865,7 @@ export default function FeesPage() {
               </div>
             </section>
 
+            {canViewBillPricing ? (
             <ManagementTable title="Bill pricing registry" rows={billPricingRows} columns={["Product", "Provider Commission", "Customer Charge", "Profit Model", "Routing", "Action"]}>
               {(row, index) => {
                 const providerCommissionModel = getProviderCommissionModel(row);
@@ -1868,19 +1915,22 @@ export default function FeesPage() {
                       </p>
                     </td>
                     <td className="px-5 py-4">
-                      <button
-                        type="button"
-                        onClick={() => openBillPricingEdit(row)}
-                        className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white dark:text-sky-200"
-                      >
-                        <Plus className="h-4 w-4" aria-hidden="true" />
-                        Edit
-                      </button>
+                      {canUpdateBillPricing ? (
+                        <button
+                          type="button"
+                          onClick={() => openBillPricingEdit(row)}
+                          className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white dark:text-sky-200"
+                        >
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          Edit
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );
               }}
             </ManagementTable>
+            ) : null}
 
             <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[repeat(3,minmax(0,1fr))_auto_auto]">
@@ -2018,14 +2068,16 @@ export default function FeesPage() {
                       <p className="mt-1 text-xs break-all text-slate-500 dark:text-slate-400">{scope === "user" ? userId : "Default system policy"}</p>
                     </td>
                     <td className="px-5 py-4">
-                      <button
-                        type="button"
-                        onClick={() => openPreset(preset)}
-                        className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white dark:text-sky-200"
-                      >
-                        <Plus className="h-4 w-4" aria-hidden="true" />
-                        Reuse
-                      </button>
+                      {((preset.scope === "default" && canCreateDefaultFee) || (preset.scope === "user" && canCreateUserFee)) ? (
+                        <button
+                          type="button"
+                          onClick={() => openPreset(preset)}
+                          className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white dark:text-sky-200"
+                        >
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          Reuse
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );
@@ -2036,8 +2088,10 @@ export default function FeesPage() {
       </div>
 
       {modalPreset && <FeeConfigModal preset={modalPreset} users={users.rows} onClose={() => setModalPreset(null)} onSubmit={submitFeeRule} />}
-      {billPricingModal && <BillPricingModal state={billPricingModal} onClose={() => setBillPricingModal(null)} onSubmit={submitBillPricingRule} />}
-      {billPricingPreview.open && (
+      {canCreateBillPricing || canUpdateBillPricing ? (
+        billPricingModal ? <BillPricingModal state={billPricingModal} onClose={() => setBillPricingModal(null)} onSubmit={submitBillPricingRule} /> : null
+      ) : null}
+      {canCalculateBillPricing && billPricingPreview.open && (
         <BillPricingPreviewModal
           state={billPricingPreview}
           onChange={(field, value) => setBillPricingPreview((current) => ({ ...current, [field]: value }))}
@@ -2045,7 +2099,7 @@ export default function FeesPage() {
           onSubmit={() => void submitBillPricingPreview()}
         />
       )}
-      {feeResolve.open && (
+      {canResolveFee && feeResolve.open && (
         <FeeResolveModal
           state={feeResolve}
           users={users.rows}

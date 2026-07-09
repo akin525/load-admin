@@ -13,6 +13,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type MixpanelLogFilters = {
@@ -353,6 +355,7 @@ function DetailModal({
 
 export default function MixpanelLogsPage() {
   const router = useRouter();
+  const { allowed } = useRouteAccess("/mixpanel-logs");
   const [filters, setFilters] = useState<MixpanelLogFilters>(() => getDefaultFilters());
   const [logsState, setLogsState] = useState<MixpanelLogsState>({
     payload: null,
@@ -375,6 +378,10 @@ export default function MixpanelLogsPage() {
       return;
     }
 
+    if (!allowed) {
+      return;
+    }
+
     void fetchMixpanelLogs(getDefaultFilters()).then((result) => {
       if (!cancelled) {
         setLogsState(result);
@@ -384,7 +391,7 @@ export default function MixpanelLogsPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [allowed, router]);
 
   const refreshLogs = async (nextFilters = filters) => {
     setRefreshing(true);
@@ -412,6 +419,17 @@ export default function MixpanelLogsPage() {
       { label: "Track calls", value: formatValue(track || skipped), icon: Search },
     ];
   }, [rows]);
+
+  if (!allowed) {
+    return (
+      <main className="min-h-screen px-6 py-8 sm:px-8">
+        <AccessDeniedState
+          title="Mixpanel logs access denied"
+          description="Your current admin role does not include permission to inspect Mixpanel logs."
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

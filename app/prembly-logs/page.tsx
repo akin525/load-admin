@@ -13,6 +13,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type PremblyLogFilters = {
@@ -346,6 +348,7 @@ function DetailModal({
 
 export default function PremblyLogsPage() {
   const router = useRouter();
+  const { allowed } = useRouteAccess("/prembly-logs");
   const [filters, setFilters] = useState<PremblyLogFilters>(() => getDefaultFilters());
   const [logsState, setLogsState] = useState<PremblyLogsState>({
     payload: null,
@@ -368,6 +371,10 @@ export default function PremblyLogsPage() {
       return;
     }
 
+    if (!allowed) {
+      return;
+    }
+
     void fetchPremblyLogs(getDefaultFilters()).then((result) => {
       if (!cancelled) {
         setLogsState(result);
@@ -377,7 +384,7 @@ export default function PremblyLogsPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [allowed, router]);
 
   const refreshLogs = async (nextFilters = filters) => {
     setRefreshing(true);
@@ -407,6 +414,17 @@ export default function PremblyLogsPage() {
       { label: "Categories", value: formatValue(categories), icon: UserSearch },
     ];
   }, [rows]);
+
+  if (!allowed) {
+    return (
+      <main className="min-h-screen px-6 py-8 sm:px-8">
+        <AccessDeniedState
+          title="Prembly logs access denied"
+          description="Your current admin role does not include permission to inspect Prembly logs."
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen pb-20 text-slate-950 dark:text-white">

@@ -143,6 +143,12 @@ export const adminService = {
         return response.data;
     },
 
+    // PATCH /admin/admins/:id
+    updateAdmin: async (id: string, payload: AdminPayload): Promise<unknown> => {
+        const response = await api.patch(`/admin/admins/${id}`, payload);
+        return response.data;
+    },
+
     // PATCH /admin/admin/:id
     toggleAdminStatus: async (id: string) => {
         const response = await api.patch(`/admin/admin/${id}`);

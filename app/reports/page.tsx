@@ -22,7 +22,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
-import { useRouteAccess } from "@/lib/admin-access";
+import { canAccessPermission, useAdminSession, useRouteAccess } from "@/lib/admin-access";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 
@@ -65,6 +65,24 @@ const reportRequests: Array<[ReportKey, (params: Record<string, string>) => Prom
   ["profitLoss", adminService.getProfitLossReport],
   ["revenue", adminService.getRevenueReport],
 ];
+
+const reportPermissionMap: Record<ReportKey, string> = {
+  billProfit: "view_reports_bill-profit",
+  financial: "view_reports_financial",
+  loanPerformance: "view_reports_loan-performance",
+  payinPayoutProfit: "view_reports_payin-payout-profit",
+  profitLoss: "view_reports_profit-los",
+  revenue: "view_reports_revenue",
+};
+
+const reportExportPermissionMap: Partial<Record<ReportExportType, string>> = {
+  "bill-profit": "view_reports_bill-profit",
+  financial: "view_reports_financial",
+  "loan-performance": "view_reports_loan-performance",
+  "payin-payout-profit": "view_reports_payin-payout-profit",
+  "profit-loss": "view_reports_profit-los",
+  revenue: "view_reports_revenue",
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -311,7 +329,7 @@ const getReportLead = (payload: unknown) => {
   };
 };
 
-const fetchReports = async (filters: ReportFilters): Promise<ReportState> => {
+const fetchReports = async (filters: ReportFilters, allowedKeys: ReportKey[]): Promise<ReportState> => {
   const params: Record<string, string> = {};
 
   if (filters.fromDate) {
@@ -326,12 +344,13 @@ const fetchReports = async (filters: ReportFilters): Promise<ReportState> => {
     params.groupBy = filters.groupBy;
   }
 
-  const results = await Promise.allSettled(reportRequests.map(([, request]) => request(params)));
+  const allowedRequests = reportRequests.filter(([key]) => allowedKeys.includes(key));
+  const results = await Promise.allSettled(allowedRequests.map(([, request]) => request(params)));
   const data: Partial<Record<ReportKey, unknown>> = {};
   const errors: Partial<Record<ReportKey, string>> = {};
 
   results.forEach((result, index) => {
-    const key = reportRequests[index][0];
+    const key = allowedRequests[index][0];
 
     if (result.status === "fulfilled") {
       data[key] = result.value;
@@ -1064,6 +1083,7 @@ function LoadingReports() {
 export default function ReportsPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const adminSession = useAdminSession();
   const { allowed: canOpenReports } = useRouteAccess("/reports");
   const [reportFilters, setReportFilters] = useState<ReportFilters>(() => getDefaultReportFilters());
   const [appliedFilters, setAppliedFilters] = useState<ReportFilters>(() => getDefaultReportFilters());
@@ -1081,6 +1101,12 @@ export default function ReportsPage() {
   const [exporting, setExporting] = useState<ReportExportType | null>(null);
   const [exportError, setExportError] = useState("");
   const isDarkMode = resolvedTheme === "dark";
+  const allowedReportKeys = useMemo(
+    () => (Object.keys(reportPermissionMap) as ReportKey[]).filter((key) => canAccessPermission(adminSession, reportPermissionMap[key])),
+    [adminSession],
+  );
+  const canViewReportCenter = canAccessPermission(adminSession, "view_reports_center");
+  const canExportReports = canAccessPermission(adminSession, "view_reports_export");
 
   useEffect(() => {
     let cancelled = false;
@@ -1095,7 +1121,10 @@ export default function ReportsPage() {
       return;
     }
 
-    void Promise.all([fetchReports(appliedFilters), fetchReportCenter(appliedFilters)]).then(([reportResult, centerResult]) => {
+    void Promise.all([
+      fetchReports(appliedFilters, allowedReportKeys),
+      canViewReportCenter ? fetchReportCenter(appliedFilters) : Promise.resolve({ payload: null, metrics: [], error: "" }),
+    ]).then(([reportResult, centerResult]) => {
       if (!cancelled) {
         setReports(reportResult);
         setReportCenter(centerResult);
@@ -1105,11 +1134,14 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedFilters, canOpenReports, router]);
+  }, [allowedReportKeys, appliedFilters, canOpenReports, canViewReportCenter, router]);
 
   const refreshReports = async (filters = appliedFilters) => {
     setReports((current) => ({ ...current, loading: true }));
-    const [reportResult, centerResult] = await Promise.all([fetchReports(filters), fetchReportCenter(filters)]);
+    const [reportResult, centerResult] = await Promise.all([
+      fetchReports(filters, allowedReportKeys),
+      canViewReportCenter ? fetchReportCenter(filters) : Promise.resolve({ payload: null, metrics: [], error: "" }),
+    ]);
     setReports(reportResult);
     setReportCenter(centerResult);
   };
@@ -1180,6 +1212,15 @@ export default function ReportsPage() {
   };
 
   const handleExport = async (type: ReportExportType) => {
+    if (!canExportReports) {
+      return;
+    }
+
+    const requiredPermission = reportExportPermissionMap[type];
+    if (requiredPermission && !canAccessPermission(adminSession, requiredPermission)) {
+      return;
+    }
+
     setExporting(type);
     setExportError("");
 
@@ -1324,7 +1365,7 @@ export default function ReportsPage() {
                         Backend summary and export center for {appliedFilters.fromDate || "N/A"} to {appliedFilters.toDate || "N/A"}
                       </p>
                     </div>
-                    {reportCenter.metrics.length > 0 && (
+                    {canViewReportCenter && reportCenter.metrics.length > 0 && (
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
                         {reportCenter.metrics.map((metric) => (
                           <div key={metric.label} className="rounded-lg border border-white/10 bg-white/5 p-3">
@@ -1334,12 +1375,13 @@ export default function ReportsPage() {
                         ))}
                       </div>
                     )}
-                    {reportCenter.error && (
+                    {canViewReportCenter && reportCenter.error && (
                       <div className="mt-4 flex gap-3 rounded-lg border border-red-300/30 bg-red-500/10 p-3 text-sm font-semibold text-red-100">
                         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                         <span>{reportCenter.error}</span>
                       </div>
                     )}
+                    {canExportReports ? (
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                         {[
                           { key: "dashboard-summary", label: "Dashboard summary" },
@@ -1350,7 +1392,10 @@ export default function ReportsPage() {
                           { key: "payin-payout-profit", label: "Payin / payout profit" },
                           { key: "profit-loss", label: "Profit & loss" },
                           { key: "revenue", label: "Revenue" },
-                        ].map((item) => (
+                        ].filter((item) => {
+                          const requiredPermission = reportExportPermissionMap[item.key as ReportExportType];
+                          return !requiredPermission || canAccessPermission(adminSession, requiredPermission);
+                        }).map((item) => (
                         <button
                           key={item.key}
                           type="button"
@@ -1363,7 +1408,8 @@ export default function ReportsPage() {
                         </button>
                       ))}
                     </div>
-                    {exportError && (
+                    ) : null}
+                    {canExportReports && exportError && (
                       <div className="mt-4 flex gap-3 rounded-lg border border-red-300/30 bg-red-500/10 p-3 text-sm font-semibold text-red-100">
                         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                         <span>{exportError}</span>
@@ -1375,40 +1421,60 @@ export default function ReportsPage() {
             </section>
 
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-              <SummaryCard label="Combined Operational Profit" value={combinedOperationalProfit} detail={combinedOperationalDetail} icon={BarChart3} />
-              <SummaryCard label={`Bill Profit - ${billProfitLead.label}`} value={billProfitLead.value} detail={billProfitDetail} icon={FileText} />
-              <SummaryCard label={`Payin / Payout - ${payinPayoutLead.label}`} value={payinPayoutLead.value} detail={payinPayoutDetail} icon={BarChart3} />
-              <SummaryCard label={`Financial - ${financialLead.label}`} value={financialLead.value} detail={financialDetail} icon={Landmark} />
+              {(canAccessPermission(adminSession, reportPermissionMap.billProfit) || canAccessPermission(adminSession, reportPermissionMap.payinPayoutProfit)) ? (
+                <SummaryCard label="Combined Operational Profit" value={combinedOperationalProfit} detail={combinedOperationalDetail} icon={BarChart3} />
+              ) : null}
+              {canAccessPermission(adminSession, reportPermissionMap.billProfit) ? (
+                <SummaryCard label={`Bill Profit - ${billProfitLead.label}`} value={billProfitLead.value} detail={billProfitDetail} icon={FileText} />
+              ) : null}
+              {canAccessPermission(adminSession, reportPermissionMap.payinPayoutProfit) ? (
+                <SummaryCard label={`Payin / Payout - ${payinPayoutLead.label}`} value={payinPayoutLead.value} detail={payinPayoutDetail} icon={BarChart3} />
+              ) : null}
+              {canAccessPermission(adminSession, reportPermissionMap.financial) ? (
+                <SummaryCard label={`Financial - ${financialLead.label}`} value={financialLead.value} detail={financialDetail} icon={Landmark} />
+              ) : null}
             </section>
 
             <div className="grid gap-6 xl:grid-cols-2">
-              <PayinPayoutProfitPanel
-                payload={reports.data.payinPayoutProfit}
-                error={reports.errors.payinPayoutProfit}
-              />
-              <BillProfitPanel payload={reports.data.billProfit} error={reports.errors.billProfit} />
-              <FinancialReportPanel payload={reports.data.financial} error={reports.errors.financial} />
-              <ReportPanel
-                title="Loan performance"
-                description="Portfolio quality, repayments, and exposure"
-                payload={reports.data.loanPerformance}
-                error={reports.errors.loanPerformance}
-                icon={CreditCard}
-              />
-              <ReportPanel
-                title="Profit and loss"
-                description="Income, expenses, and operating result"
-                payload={reports.data.profitLoss}
-                error={reports.errors.profitLoss}
-                icon={BriefcaseBusiness}
-              />
-              <ReportPanel
-                title="Revenue report"
-                description="Collections, fees, and earnings summary"
-                payload={reports.data.revenue}
-                error={reports.errors.revenue}
-                icon={WalletCards}
-              />
+              {canAccessPermission(adminSession, reportPermissionMap.payinPayoutProfit) ? (
+                <PayinPayoutProfitPanel
+                  payload={reports.data.payinPayoutProfit}
+                  error={reports.errors.payinPayoutProfit}
+                />
+              ) : null}
+              {canAccessPermission(adminSession, reportPermissionMap.billProfit) ? (
+                <BillProfitPanel payload={reports.data.billProfit} error={reports.errors.billProfit} />
+              ) : null}
+              {canAccessPermission(adminSession, reportPermissionMap.financial) ? (
+                <FinancialReportPanel payload={reports.data.financial} error={reports.errors.financial} />
+              ) : null}
+              {canAccessPermission(adminSession, reportPermissionMap.loanPerformance) ? (
+                <ReportPanel
+                  title="Loan performance"
+                  description="Portfolio quality, repayments, and exposure"
+                  payload={reports.data.loanPerformance}
+                  error={reports.errors.loanPerformance}
+                  icon={CreditCard}
+                />
+              ) : null}
+              {canAccessPermission(adminSession, reportPermissionMap.profitLoss) ? (
+                <ReportPanel
+                  title="Profit and loss"
+                  description="Income, expenses, and operating result"
+                  payload={reports.data.profitLoss}
+                  error={reports.errors.profitLoss}
+                  icon={BriefcaseBusiness}
+                />
+              ) : null}
+              {canAccessPermission(adminSession, reportPermissionMap.revenue) ? (
+                <ReportPanel
+                  title="Revenue report"
+                  description="Collections, fees, and earnings summary"
+                  payload={reports.data.revenue}
+                  error={reports.errors.revenue}
+                  icon={WalletCards}
+                />
+              ) : null}
             </div>
           </>
         )}

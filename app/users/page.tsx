@@ -31,9 +31,10 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
 import { exportTableRows } from "@/lib/export/table";
-import { useRouteAccess } from "@/lib/admin-access";
+import { canAccessPermission, useAdminSession, useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 import { OtpInput } from "@/components/OtpInput";
@@ -1975,6 +1976,7 @@ function UserControlsModal({
   onRefresh: () => Promise<void>;
   showToast: (payload: unknown, fallback: string, tone: ToastTone) => void;
 }) {
+  const adminSession = useAdminSession();
   const [loadingAction, setLoadingAction] = useState("");
   const [pinResetAction, setPinResetAction] = useState<FormAction | null>(null);
   const [walletValues, setWalletValues] = useState({
@@ -1990,6 +1992,13 @@ function UserControlsModal({
   const [fundWalletOtpCode, setFundWalletOtpCode] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [uploadingProof, setUploadingProof] = useState(false);
+  const canResetPassword = canAccessPermission(adminSession, "create_users_reset-password");
+  const canResetPin = canAccessPermission(adminSession, "create_users_reset-pin");
+  const canLockUser = canAccessPermission(adminSession, "create_users_lock");
+  const canUnlockUser = canAccessPermission(adminSession, "create_users_unlock");
+  const canDisableUser = canAccessPermission(adminSession, "create_users_disable");
+  const canEnableUser = canAccessPermission(adminSession, "create_users_enable");
+  const canFundWallet = canAccessPermission(adminSession, "create_users_fund-wallet");
 
   const runAction = async (actionKey: string, request: () => Promise<unknown>, fallbackMessage: string) => {
     setLoadingAction(actionKey);
@@ -2203,8 +2212,17 @@ function UserControlsModal({
     });
   };
 
-  const actionCards = [
-    {
+  const actionCards: Array<{
+    key: string;
+    eyebrow: string;
+    title: string;
+    description: string;
+    actionLabel: string;
+    icon: LucideIcon;
+    tone: string;
+    onClick: () => void;
+  }> = [
+    canResetPassword ? {
       key: "reset-password",
       eyebrow: "Security",
       title: "Reset password",
@@ -2218,8 +2236,8 @@ function UserControlsModal({
           () => adminService.resetUserPassword(target.userId),
           `Password reset submitted for approval for ${target.userName}`,
         ),
-    },
-    {
+    } : null,
+    canResetPin ? {
       key: "reset-pin",
       eyebrow: "Security",
       title: "Reset PIN",
@@ -2228,8 +2246,8 @@ function UserControlsModal({
       icon: CreditCard,
       tone: "border-amber-200 bg-amber-50/80 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100",
       onClick: openResetPinAction,
-    },
-    {
+    } : null,
+    canLockUser ? {
       key: "lock-user",
       eyebrow: "Security",
       title: "Lock account",
@@ -2243,8 +2261,8 @@ function UserControlsModal({
           () => adminService.lockUser(target.userId),
           `${target.userName} lock request submitted for approval`,
         ),
-    },
-    {
+    } : null,
+    canUnlockUser ? {
       key: "unlock-user",
       eyebrow: "Security",
       title: "Unlock account",
@@ -2258,8 +2276,8 @@ function UserControlsModal({
           () => adminService.unlockUser(target.userId),
           `${target.userName} unlock request submitted for approval`,
         ),
-    },
-    {
+    } : null,
+    canDisableUser ? {
       key: "disable-user",
       eyebrow: "Access",
       title: "Disable profile",
@@ -2273,8 +2291,8 @@ function UserControlsModal({
           () => adminService.disableUser(target.userId),
           `${target.userName} disable request submitted for approval`,
         ),
-    },
-    {
+    } : null,
+    canEnableUser ? {
       key: "enable-user",
       eyebrow: "Access",
       title: "Enable profile",
@@ -2288,8 +2306,8 @@ function UserControlsModal({
           () => adminService.enableUser(target.userId),
           `${target.userName} enable request submitted for approval`,
         ),
-    },
-  ] as const;
+    } : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
@@ -2322,6 +2340,7 @@ function UserControlsModal({
 
         <div className="max-h-[80vh] overflow-y-auto p-5">
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]">
+            {actionCards.length ? (
             <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
               <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
                 <h3 className="font-bold text-slate-950 dark:text-white">Security and access actions</h3>
@@ -2356,7 +2375,9 @@ function UserControlsModal({
                 })}
               </div>
             </section>
+            ) : null}
 
+            {canFundWallet ? (
             <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.045]">
               <div className="border-b border-slate-100 px-5 py-4 dark:border-white/10">
                 <h3 className="font-bold text-slate-950 dark:text-white">Wallet intervention</h3>
@@ -2485,6 +2506,7 @@ function UserControlsModal({
                 </div>
               </form>
             </section>
+            ) : null}
           </div>
         </div>
       </div>
@@ -2740,6 +2762,7 @@ function UserDashboardModal({
   onClose: () => void;
   showToast: (payload: unknown, fallback: string, tone: ToastTone) => void;
 }) {
+  const adminSession = useAdminSession();
   const [activeTab, setActiveTab] = useState<UserDashboardTab>("overview");
   const [transactionFilters, setTransactionFilters] = useState<UserTransactionFilters>(() => getDefaultUserTransactionFilters());
   const [statementFilters, setStatementFilters] = useState<WalletStatementFilters>(() => getDefaultWalletStatementFilters());
@@ -2782,6 +2805,13 @@ function UserDashboardModal({
   const [xpressCustomerAction, setXpressCustomerAction] = useState<FormAction | null>(null);
   const [statementAction, setStatementAction] = useState<"" | "download" | "email">("");
   const [transactionExportingFormat, setTransactionExportingFormat] = useState<"" | "csv" | "xlsx">("");
+  const canViewUserTransactions = canAccessPermission(adminSession, "view_users_transaction");
+  const canViewUserKyc = canAccessPermission(adminSession, "view_users_kyc");
+  const canViewVirtualAccounts = canAccessPermission(adminSession, "view_users_virtual-account");
+  const canViewXpressWalletBalance = canAccessPermission(adminSession, "view_users_xpress-wallet_balance");
+  const canUpdateXpressCustomer = canAccessPermission(adminSession, "update_users_xpress-wallet_customer");
+  const canDownloadWalletStatement = canAccessPermission(adminSession, "view_users_wallets_statement_download", "download_users_wallets_statement");
+  const canEmailWalletStatement = canAccessPermission(adminSession, "create_users_wallets_statement_email", "email_users_wallets_statement");
 
   const dashboardVirtualAccounts = getDashboardCollection(dashboard.data, "virtualAccounts");
   const wallets = getDashboardCollection(dashboard.data, "wallets");
@@ -2870,6 +2900,10 @@ function UserDashboardModal({
   );
 
   const loadUserKyc = async () => {
+    if (!canViewUserKyc) {
+      return;
+    }
+
     setKyc((current) => ({
       ...current,
       loading: true,
@@ -2897,6 +2931,10 @@ function UserDashboardModal({
   };
 
   const loadUserXpressWalletBalance = async () => {
+    if (!canViewXpressWalletBalance) {
+      return;
+    }
+
     setXpressWalletBalance((current) => ({
       ...current,
       loading: true,
@@ -2924,6 +2962,10 @@ function UserDashboardModal({
   };
 
   const loadUserVirtualAccounts = async () => {
+    if (!canViewVirtualAccounts) {
+      return;
+    }
+
     setVirtualAccountsState((current) => ({
       ...current,
       loading: true,
@@ -2951,6 +2993,10 @@ function UserDashboardModal({
   };
 
   const openEditXpressCustomer = () => {
+    if (!canUpdateXpressCustomer) {
+      return;
+    }
+
     setXpressCustomerAction({
       eyebrow: "Xpress wallet",
       title: `Edit Xpress customer for ${dashboard.userName}`,
@@ -3272,6 +3318,14 @@ function UserDashboardModal({
   };
 
   const handleTabChange = (nextTab: UserDashboardTab) => {
+    if (nextTab === "transactions" && !canViewUserTransactions) {
+      return;
+    }
+
+    if (nextTab === "kyc" && !canViewUserKyc) {
+      return;
+    }
+
     setActiveTab(nextTab);
 
     if (nextTab === "transactions" && !transactions.loaded && !transactions.loading) {
@@ -3298,6 +3352,10 @@ function UserDashboardModal({
     }, {});
 
   const handleStatementDownload = async () => {
+    if (!canDownloadWalletStatement) {
+      return;
+    }
+
     setStatementAction("download");
 
     try {
@@ -3312,6 +3370,10 @@ function UserDashboardModal({
   };
 
   const handleStatementEmail = async () => {
+    if (!canEmailWalletStatement) {
+      return;
+    }
+
     setStatementAction("email");
 
     try {
@@ -3407,6 +3469,10 @@ function UserDashboardModal({
   }, [dashboard.userId, transactionSnapshot]);
 
   const handleTransactionExport = async (format: "csv" | "xlsx") => {
+    if (!canViewUserTransactions) {
+      return;
+    }
+
     setTransactionExportingFormat(format);
 
     try {
@@ -3477,17 +3543,21 @@ function UserDashboardModal({
                 label: "Overview",
                 description: "Accounts, wallets, and loans",
               },
-              {
-                key: "transactions" as const,
-                label: "Transactions",
-                description: "Wallet, deposits, bills, and transfers",
-              },
-              {
-                key: "kyc" as const,
-                label: "KYC",
-                description: "Verification records and identity data",
-              },
-            ].map((tab) => {
+              canViewUserTransactions
+                ? {
+                    key: "transactions" as const,
+                    label: "Transactions",
+                    description: "Wallet, deposits, bills, and transfers",
+                  }
+                : null,
+              canViewUserKyc
+                ? {
+                    key: "kyc" as const,
+                    label: "KYC",
+                    description: "Verification records and identity data",
+                  }
+                : null,
+            ].filter((tab) => tab !== null).map((tab) => {
               const active = activeTab === tab.key;
 
               return (
@@ -3553,15 +3623,17 @@ function UserDashboardModal({
                             Pulled from the dedicated admin virtual-account endpoint and used as the primary source when returned.
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => void loadUserVirtualAccounts()}
-                          disabled={virtualAccountsState.loading}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                        >
-                          <RefreshCw className={`h-4 w-4 ${virtualAccountsState.loading ? "animate-spin" : ""}`} aria-hidden="true" />
-                          Refresh accounts
-                        </button>
+                        {canViewVirtualAccounts ? (
+                          <button
+                            type="button"
+                            onClick={() => void loadUserVirtualAccounts()}
+                            disabled={virtualAccountsState.loading}
+                            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                          >
+                            <RefreshCw className={`h-4 w-4 ${virtualAccountsState.loading ? "animate-spin" : ""}`} aria-hidden="true" />
+                            Refresh accounts
+                          </button>
+                        ) : null}
                       </div>
                       <div className="grid gap-3 p-4">
                         {virtualAccountsState.loading && !virtualAccountsState.data ? (
@@ -3686,23 +3758,27 @@ function UserDashboardModal({
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={openEditXpressCustomer}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#069AFF] px-4 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0] dark:text-white"
-                        >
-                          <PencilLine className="h-4 w-4" aria-hidden="true" />
-                          Edit customer
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void loadUserXpressWalletBalance()}
-                          disabled={xpressWalletBalance.loading}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                        >
-                          <RefreshCw className={`h-4 w-4 ${xpressWalletBalance.loading ? "animate-spin" : ""}`} aria-hidden="true" />
-                          Refresh balance
-                        </button>
+                        {canUpdateXpressCustomer ? (
+                          <button
+                            type="button"
+                            onClick={openEditXpressCustomer}
+                            className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#069AFF] px-4 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0] dark:text-white"
+                          >
+                            <PencilLine className="h-4 w-4" aria-hidden="true" />
+                            Edit customer
+                          </button>
+                        ) : null}
+                        {canViewXpressWalletBalance ? (
+                          <button
+                            type="button"
+                            onClick={() => void loadUserXpressWalletBalance()}
+                            disabled={xpressWalletBalance.loading}
+                            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                          >
+                            <RefreshCw className={`h-4 w-4 ${xpressWalletBalance.loading ? "animate-spin" : ""}`} aria-hidden="true" />
+                            Refresh balance
+                          </button>
+                        ) : null}
                       </div>
                     </div>
 
@@ -3914,24 +3990,28 @@ function UserDashboardModal({
                     >
                       Reset statement filters
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleStatementDownload()}
-                      disabled={Boolean(statementAction)}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
-                    >
-                      {statementAction === "download" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileText className="h-4 w-4" aria-hidden="true" />}
-                      Download statement
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleStatementEmail()}
-                      disabled={Boolean(statementAction)}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0] disabled:opacity-60"
-                    >
-                      {statementAction === "email" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
-                      Email statement
-                    </button>
+                    {canDownloadWalletStatement ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleStatementDownload()}
+                        disabled={Boolean(statementAction)}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
+                      >
+                        {statementAction === "download" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileText className="h-4 w-4" aria-hidden="true" />}
+                        Download statement
+                      </button>
+                    ) : null}
+                    {canEmailWalletStatement ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleStatementEmail()}
+                        disabled={Boolean(statementAction)}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-5 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/20 transition hover:bg-[#0588e0] disabled:opacity-60"
+                      >
+                        {statementAction === "email" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+                        Email statement
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </section>
@@ -4319,6 +4399,7 @@ function ManagementTable({
 export default function UsersPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const adminSession = useAdminSession();
   const { allowed: canOpenUsers } = useRouteAccess("/users");
   const toastIdRef = useRef(0);
   const [usersState, setUsersState] = useState<UsersState>({
@@ -4339,6 +4420,26 @@ export default function UsersPage() {
   const [accountUpgradeStatuses, setAccountUpgradeStatuses] = useState<Record<string, string>>({});
   const [customerExportingFormat, setCustomerExportingFormat] = useState<"" | "csv" | "xlsx">("");
   const isDarkMode = resolvedTheme === "dark";
+  const canCreateUser = canAccessPermission(adminSession, "create_user_create");
+  const canViewUserProfile = canAccessPermission(adminSession, "view_user_detail");
+  const canViewUserDashboard = canAccessPermission(adminSession, "view_users_dashboard");
+  const canNotifyUser = canAccessPermission(adminSession, "create_users_notifications_send");
+  const canBroadcastActiveUsers = canAccessPermission(adminSession, "broadcast_notification", "broadcast_user");
+  const canRevokeUserSessions = canAccessPermission(adminSession, "create_users_revoke-session");
+  const canQueueReferralBackfill = canAccessPermission(adminSession, "create_referrals_backfill");
+  const canCheckReferralBackfill = canAccessPermission(adminSession, "view_referrals_backfill-job");
+  const canUseUserControls = canAccessPermission(
+    adminSession,
+    "create_users_reset-password",
+    "create_users_reset-pin",
+    "create_users_lock",
+    "create_users_unlock",
+    "create_users_disable",
+    "create_users_enable",
+    "create_users_fund-wallet",
+    "create_users_bankone_account-tier",
+    "update_users_xpress-wallet_customer",
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -4374,49 +4475,6 @@ export default function UsersPage() {
   };
 
   const rows = usersState.rows;
-
-  useEffect(() => {
-    const visibleUserIds = Array.from(
-      new Set(
-        visibleRows
-          .map((row) => getId(row))
-          .filter(Boolean),
-      ),
-    ).filter((userId) => !accountUpgradeStatuses[userId]);
-
-    if (!visibleUserIds.length) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void Promise.all(
-      visibleUserIds.map(async (userId) => {
-        try {
-          const payload = await adminService.getUserKyc(userId);
-          return [userId, resolveKycSubmissionStatus(payload)] as const;
-        } catch {
-          return [userId, "No submission"] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (cancelled) {
-        return;
-      }
-
-      setAccountUpgradeStatuses((current) => {
-        const next = { ...current };
-        entries.forEach(([userId, status]) => {
-          next[userId] = status;
-        });
-        return next;
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [accountUpgradeStatuses, visibleRows]);
 
   const summaryCards = useMemo(
     () => [
@@ -4508,6 +4566,10 @@ export default function UsersPage() {
   };
 
   const openCreateUser = () => {
+    if (!canCreateUser) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Customer onboarding",
       title: "Create customer profile",
@@ -4525,6 +4587,10 @@ export default function UsersPage() {
   };
 
   const openBroadcast = (userId: string, userName: string) => {
+    if (!canNotifyUser) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Customer communication",
       title: `Notify ${userName}`,
@@ -4558,6 +4624,10 @@ export default function UsersPage() {
   };
 
   const openBroadcastAllActive = () => {
+    if (!canBroadcastActiveUsers) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Customer communication",
       title: "Broadcast to all active users",
@@ -4591,6 +4661,10 @@ export default function UsersPage() {
   };
 
   const openReferralBackfill = () => {
+    if (!canQueueReferralBackfill) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Referral operations",
       title: "Queue referral backfill job",
@@ -4628,6 +4702,10 @@ export default function UsersPage() {
   };
 
   const openReferralBackfillJobLookup = () => {
+    if (!canCheckReferralBackfill) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Referral operations",
       title: "Check referral backfill job",
@@ -4654,6 +4732,10 @@ export default function UsersPage() {
   };
 
   const openRevokeUserSessions = (userId: string, userName: string) => {
+    if (!canRevokeUserSessions) {
+      return;
+    }
+
     setFormAction({
       eyebrow: "Security response",
       title: `Revoke sessions for ${userName}`,
@@ -4684,6 +4766,10 @@ export default function UsersPage() {
   };
 
   const openUserDashboard = (userId: string, userName: string, userEmail: string, userReferralCode: string) => {
+    if (!canViewUserDashboard) {
+      return;
+    }
+
     setUserDashboard({
       title: "Customer dashboard",
       loading: true,
@@ -4794,6 +4880,10 @@ export default function UsersPage() {
   };
 
   const openUserControls = (userId: string, userName: string, status: string) => {
+    if (!canUseUserControls) {
+      return;
+    }
+
     setUserControls({
       userId,
       userName,
@@ -4827,30 +4917,36 @@ export default function UsersPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={openReferralBackfill}
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              <Database className="h-4 w-4" aria-hidden="true" />
-              Backfill referrals
-            </button>
-            <button
-              type="button"
-              onClick={openReferralBackfillJobLookup}
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              <Activity className="h-4 w-4" aria-hidden="true" />
-              Check backfill job
-            </button>
-            <button
-              type="button"
-              onClick={openBroadcastAllActive}
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-            >
-              <Send className="h-4 w-4" aria-hidden="true" />
-              Broadcast active users
-            </button>
+            {canQueueReferralBackfill ? (
+              <button
+                type="button"
+                onClick={openReferralBackfill}
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+              >
+                <Database className="h-4 w-4" aria-hidden="true" />
+                Backfill referrals
+              </button>
+            ) : null}
+            {canCheckReferralBackfill ? (
+              <button
+                type="button"
+                onClick={openReferralBackfillJobLookup}
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+              >
+                <Activity className="h-4 w-4" aria-hidden="true" />
+                Check backfill job
+              </button>
+            ) : null}
+            {canBroadcastActiveUsers ? (
+              <button
+                type="button"
+                onClick={openBroadcastAllActive}
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+              >
+                <Send className="h-4 w-4" aria-hidden="true" />
+                Broadcast active users
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void refreshUsers()}
@@ -5032,10 +5128,12 @@ export default function UsersPage() {
                     {customerExportingFormat === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />}
                     Excel
                   </button>
-                  <button type="button" onClick={openCreateUser} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white">
-                    <Plus className="h-4 w-4" aria-hidden="true" />
-                    Create user
-                  </button>
+                  {canCreateUser ? (
+                    <button type="button" onClick={openCreateUser} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#069AFF] px-3 text-xs font-bold text-white">
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      Create user
+                    </button>
+                  ) : null}
                 </div>
               }
             >
@@ -5080,51 +5178,61 @@ export default function UsersPage() {
                     <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
                     <td className="px-5 py-4">
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={!id}
-                          onClick={() => openUserDashboard(id, name, email === "Not available" ? "" : email, referralCode)}
-                          className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
-                        >
-                          <Eye className="h-4 w-4" aria-hidden="true" />
-                          Dashboard
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!id}
-                          onClick={() => openDetail(`${name} profile`, () => adminService.getUserDetails(id))}
-                          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-                        >
-                          <FileText className="h-4 w-4" aria-hidden="true" />
-                          Profile
-                        </button>
-                            <button
-                              type="button"
-                              disabled={!id}
-                              onClick={() => openBroadcast(id, name)}
-                              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-                            >
-                              <Send className="h-4 w-4" aria-hidden="true" />
-                              Notify
-                            </button>
-                            <button
-                              type="button"
-                              disabled={!id}
-                              onClick={() => openRevokeUserSessions(id, name)}
-                              className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
-                            >
-                              <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-                              Revoke Sessions
-                            </button>
-                            <button
-                              type="button"
-                              disabled={!id}
-                              onClick={() => openUserControls(id, name, status)}
-                          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-                        >
-                          <KeyRound className="h-4 w-4" aria-hidden="true" />
-                          Controls
-                        </button>
+                        {canViewUserDashboard ? (
+                          <button
+                            type="button"
+                            disabled={!id}
+                            onClick={() => openUserDashboard(id, name, email === "Not available" ? "" : email, referralCode)}
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                          >
+                            <Eye className="h-4 w-4" aria-hidden="true" />
+                            Dashboard
+                          </button>
+                        ) : null}
+                        {canViewUserProfile ? (
+                          <button
+                            type="button"
+                            disabled={!id}
+                            onClick={() => openDetail(`${name} profile`, () => adminService.getUserDetails(id))}
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                          >
+                            <FileText className="h-4 w-4" aria-hidden="true" />
+                            Profile
+                          </button>
+                        ) : null}
+                        {canNotifyUser ? (
+                          <button
+                            type="button"
+                            disabled={!id}
+                            onClick={() => openBroadcast(id, name)}
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                          >
+                            <Send className="h-4 w-4" aria-hidden="true" />
+                            Notify
+                          </button>
+                        ) : null}
+                        {canRevokeUserSessions ? (
+                          <button
+                            type="button"
+                            disabled={!id}
+                            onClick={() => openRevokeUserSessions(id, name)}
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                          >
+                            <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+                            Revoke Sessions
+                          </button>
+                        ) : null}
+                        {canUseUserControls ? (
+                          <button
+                            type="button"
+                            disabled={!id}
+                            onClick={() => openUserControls(id, name, status)}
+                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                          >
+                            <KeyRound className="h-4 w-4" aria-hidden="true" />
+                            Controls
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

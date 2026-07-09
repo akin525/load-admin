@@ -28,6 +28,8 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
+import { useRouteAccess } from "@/lib/admin-access";
+import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 
 type DashboardKey =
@@ -1131,6 +1133,7 @@ function LoadingDashboard() {
 export default function DashboardPage() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const { allowed: canOpenDashboard } = useRouteAccess("/dashboard");
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>("overview");
   const [refreshing, setRefreshing] = useState(false);
@@ -1148,6 +1151,10 @@ export default function DashboardPage() {
       return;
     }
 
+    if (!canOpenDashboard) {
+      return;
+    }
+
     void fetchDashboard().then((result) => {
       if (!cancelled) {
         setDashboardData(result);
@@ -1157,7 +1164,18 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [canOpenDashboard, router]);
+
+  if (!canOpenDashboard) {
+    return (
+      <main className="min-h-screen px-6 py-8 sm:px-8">
+        <AccessDeniedState
+          title="Dashboard access denied"
+          description="Your current admin role does not include permission to view dashboard metrics."
+        />
+      </main>
+    );
+  }
 
   const recentLoans = useMemo(() => extractRows(dashboardData?.recentLoans), [dashboardData]);
   const recentBills = useMemo(() => extractRows(dashboardData?.recentBills), [dashboardData]);

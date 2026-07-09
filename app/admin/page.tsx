@@ -15,6 +15,7 @@ import {
   FileText,
   Landmark,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Send,
@@ -26,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
-import { canAccessAdminSection, canAccessRoute, useAdminSession } from "@/lib/admin-access";
+import { canAccessAdminSection, canAccessPermission, canAccessRoute, useAdminSession } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
 import { TablePagination, paginateItems } from "@/components/TablePagination";
 import { OtpInput } from "@/components/OtpInput";
@@ -444,6 +445,28 @@ const getId = (row: Record<string, unknown>) => String(getRecordValue(row, ["_id
 const getPersonName = (row: Record<string, unknown>) => {
   const combined = [row.first_name, row.last_name].filter((item) => typeof item === "string").join(" ");
   return combined || String(getRecordValue(row, ["name", "fullName", "email", "phone"]) ?? "Unnamed record");
+};
+
+const getAdminStatusValue = (row: Record<string, unknown>) => {
+  const rawStatus = getRecordValue(row, ["status"]);
+  if (typeof rawStatus === "number") {
+    return rawStatus > 0 ? "1" : "0";
+  }
+
+  const normalizedStatus = String(rawStatus ?? "").trim().toLowerCase();
+  if (!normalizedStatus) {
+    return "1";
+  }
+
+  if (["1", "true", "active", "enabled"].includes(normalizedStatus)) {
+    return "1";
+  }
+
+  if (["0", "false", "inactive", "disabled"].includes(normalizedStatus)) {
+    return "0";
+  }
+
+  return "1";
 };
 
 const getCollectionRows = (payload: unknown, key: string) => {
@@ -2252,26 +2275,144 @@ function RoleFormModal({
   onSave: (name: string, permissionIds: string[]) => Promise<void>;
 }) {
   const [name, setName] = useState(initialData?.name || "");
-  const [selectedIds, setSelectedIds] = useState<string[]>(initialData?.permissionIds || []);
   const [query, setQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   const isEditing = !!initialData?.id;
 
-  const filteredPermissions = permissions.filter((permission) => {
-    const label = String(getRecordValue(permission, ["name", "title", "permission", "action"]) ?? "");
-    const group = String(getRecordValue(permission, ["module", "group", "category", "resource"]) ?? "General");
-    return `${label} ${group}`.toLowerCase().includes(query.trim().toLowerCase());
+  const getPermissionSelectionId = (permission: Record<string, unknown>) => {
+    const rawId = getId(permission);
+    return String(getRecordValue(permission, ["name", "title", "permission", "action", "slug"]) ?? rawId).trim();
+  };
+
+  const parsePermissionParts = (permission: Record<string, unknown>) => {
+    const selectionId = getPermissionSelectionId(permission);
+    const normalized = selectionId.toLowerCase();
+    const actionPrefixes = [
+      "mark-overdue",
+      "manual-repayment",
+      "broadcast",
+      "download",
+      "reschedule",
+      "approval",
+      "approve",
+      "create",
+      "update",
+      "reject",
+      "remove",
+      "reverse",
+      "status",
+      "reply",
+      "close",
+      "email",
+      "sync",
+      "view",
+    ];
+
+    let actionKey = "other";
+    let resourceKey = normalized;
+
+    for (const prefix of actionPrefixes) {
+      if (normalized === prefix) {
+        actionKey = prefix;
+        resourceKey = "general";
+        break;
+      }
+
+      if (normalized.startsWith(`${prefix}_`) || normalized.startsWith(`${prefix}-`)) {
+        actionKey = prefix;
+        resourceKey = normalized.slice(prefix.length).replace(/^[_-]+/, "") || "general";
+        break;
+      }
+    }
+
+    return {
+      selectionId,
+      actionKey,
+      actionLabel: formatLabel(actionKey),
+      resourceKey,
+      resourceLabel: formatLabel(resourceKey),
+    };
+  };
+
+  const allPermissionEntries = permissions.map((permission) => ({
+    permission,
+    ...parsePermissionParts(permission),
+    databaseId: getId(permission).trim(),
+    description: String(getRecordValue(permission, ["description"]) ?? "").trim(),
+  }));
+
+  const filteredPermissionEntries = allPermissionEntries.filter((entry) => {
+    const label = String(getRecordValue(entry.permission, ["name", "title", "permission", "action"]) ?? "");
+    return `${label} ${entry.description} ${entry.selectionId} ${entry.actionLabel} ${entry.resourceLabel}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase());
   });
 
-  const groupedPermissions = filteredPermissions.reduce<Record<string, Record<string, unknown>[]>>((groups, permission) => {
-    const group = String(getRecordValue(permission, ["module", "group", "category", "resource"]) ?? "General");
-    groups[group] = [...(groups[group] ?? []), permission];
+  const groupedPermissions = filteredPermissionEntries.reduce<Record<string, typeof filteredPermissionEntries>>((groups, entry) => {
+    groups[entry.resourceKey] = [...(groups[entry.resourceKey] ?? []), entry];
     return groups;
   }, {});
 
+  const permissionIdLookup = useMemo(
+    () =>
+      allPermissionEntries.reduce<Record<string, string>>((lookup, entry) => {
+        if (entry.selectionId) {
+          lookup[entry.selectionId] = entry.selectionId;
+          lookup[entry.selectionId.toLowerCase()] = entry.selectionId;
+        }
+
+        if (entry.databaseId) {
+          lookup[entry.databaseId] = entry.selectionId;
+        }
+
+        return lookup;
+      }, {}),
+    [allPermissionEntries],
+  );
+
+  const normalizedSelectedIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (initialData?.permissionIds ?? [])
+            .map((value) => {
+              const trimmed = String(value ?? "").trim();
+              if (!trimmed) {
+                return "";
+              }
+
+              return permissionIdLookup[trimmed] ?? permissionIdLookup[trimmed.toLowerCase()] ?? trimmed;
+            })
+            .filter(Boolean),
+        ),
+      ),
+    [initialData?.permissionIds, permissionIdLookup],
+  );
+
+  const normalizedSelectedIdsKey = normalizedSelectedIds.join("|");
+  const [selectedIds, setSelectedIds] = useState<string[]>(normalizedSelectedIds);
+
+  useEffect(() => {
+    setName(initialData?.name || "");
+    setSelectedIds(normalizedSelectedIds);
+    setQuery("");
+    setError("");
+  }, [initialData?.id, initialData?.name, normalizedSelectedIdsKey]);
+
   const selectedSet = new Set(selectedIds);
+  const selectedPermissionEntries = useMemo(
+    () =>
+      allPermissionEntries
+        .filter((entry) => selectedSet.has(entry.selectionId))
+        .sort((left, right) => left.resourceLabel.localeCompare(right.resourceLabel) || left.actionLabel.localeCompare(right.actionLabel)),
+    [allPermissionEntries, selectedSet],
+  );
+  const unmatchedSelectedIds = useMemo(
+    () => selectedIds.filter((id) => !selectedPermissionEntries.some((entry) => entry.selectionId === id)),
+    [selectedIds, selectedPermissionEntries],
+  );
 
   const togglePermission = (id: string) => {
     setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
@@ -2318,7 +2459,7 @@ function RoleFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6 backdrop-blur-sm">
-      <div className="grid max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
+      <div className="grid max-h-[94vh] w-full max-w-[110rem] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#07111f]">
         <div className="flex items-start justify-between gap-5 border-b border-slate-100 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/[0.035]">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#069AFF]">Role control</p>
@@ -2326,7 +2467,7 @@ function RoleFormModal({
               {isEditing ? "Update role permissions" : "Create role with permissions"}
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Select one or more permissions. The selected permission IDs are submitted as an array to the role endpoint.
+              Permissions are grouped by resource derived from the permission name, with bulk selection by action family and by resource.
             </p>
           </div>
           <button
@@ -2339,7 +2480,7 @@ function RoleFormModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="grid min-h-0 gap-0 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <form onSubmit={handleSubmit} className="grid min-h-0 gap-0 xl:grid-cols-[360px_minmax(0,1fr)]">
           <aside className="border-b border-slate-100 p-5 dark:border-white/10 lg:border-b-0 lg:border-r">
             <label>
               <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Role name</span>
@@ -2357,6 +2498,54 @@ function RoleFormModal({
               <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-[#069AFF] dark:text-sky-200">Selected permissions</p>
             </div>
 
+            <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.035]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-slate-950 dark:text-white">Attached to this role</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Existing permissions are preselected. Click any attached item to remove it from the role.
+                  </p>
+                </div>
+                <span className="rounded-full border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600 dark:border-white/10 dark:text-slate-300">
+                  {selectedPermissionEntries.length}
+                </span>
+              </div>
+
+              <div className="mt-4 flex max-h-52 flex-wrap gap-2 overflow-y-auto pr-1">
+                {selectedPermissionEntries.map((entry) => (
+                  <button
+                    key={entry.selectionId}
+                    type="button"
+                    onClick={() => togglePermission(entry.selectionId)}
+                    className="inline-flex items-center gap-2 rounded-full border border-[#069AFF]/25 bg-[#069AFF]/10 px-3 py-1.5 text-xs font-bold text-[#069AFF] transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:text-sky-200 dark:hover:border-red-400/40 dark:hover:bg-red-400/10 dark:hover:text-red-200"
+                  >
+                    <span>{entry.resourceLabel}</span>
+                    <span className="rounded-full border border-[#069AFF]/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]">
+                      {entry.actionLabel}
+                    </span>
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                ))}
+                {unmatchedSelectedIds.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => togglePermission(id)}
+                    className="inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200 dark:hover:border-red-400/40 dark:hover:bg-red-400/10 dark:hover:text-red-200"
+                  >
+                    <span>Attached</span>
+                    <span className="max-w-[12rem] truncate rounded-full border border-amber-300/40 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] dark:border-amber-400/20">
+                      {id}
+                    </span>
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                ))}
+                {!selectedPermissionEntries.length && !unmatchedSelectedIds.length && (
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">No permissions attached yet.</p>
+                )}
+              </div>
+            </div>
+
             {error && (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
                 {error}
@@ -2366,10 +2555,7 @@ function RoleFormModal({
             <div className="mt-5 grid gap-3">
               <button
                 type="button"
-                onClick={() => setSelectedIds(filteredPermissions.map(p => {
-                  const rawId = isRecord(p) ? getId(p) : String(p);
-                  return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
-                }).filter(Boolean) as string[])}
+                onClick={() => setSelectedIds(filteredPermissionEntries.map((entry) => entry.selectionId).filter(Boolean))}
                 className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
               >
                 Select visible
@@ -2403,37 +2589,53 @@ function RoleFormModal({
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
                 />
               </label>
-              <p className="text-sm font-bold text-slate-500 dark:text-slate-400">{filteredPermissions.length} visible</p>
+              <div className="flex items-center gap-3 text-sm font-bold text-slate-500 dark:text-slate-400">
+                <span>{filteredPermissionEntries.length} visible</span>
+                <span className="rounded-full border border-slate-200 px-3 py-1 text-xs dark:border-white/10">
+                  {Object.keys(groupedPermissions).length} resource groups
+                </span>
+              </div>
             </div>
 
             <div className="max-h-[58vh] overflow-y-auto pr-1">
               {Object.entries(groupedPermissions).map(([group, groupPermissions]) => {
-                const groupIds = groupPermissions.map(p => {
-                  const rawId = isRecord(p) ? getId(p) : String(p);
-                  return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
-                }).filter(Boolean) as string[];
+                const groupIds = groupPermissions.map((entry) => entry.selectionId).filter(Boolean);
                 const allSelected = groupIds.length > 0 && groupIds.every((id) => selectedSet.has(id));
+                const selectedCount = groupIds.filter((id) => selectedSet.has(id)).length;
+                const actionSummary = Array.from(new Set(groupPermissions.map((entry) => entry.actionLabel)));
 
                 return (
                   <div key={group} className="mb-4 rounded-lg border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/40">
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
                       <div>
-                        <h3 className="text-sm font-bold text-slate-950 dark:text-white">{formatLabel(group)}</h3>
-                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{groupPermissions.length} permissions</p>
+                        <h3 className="text-sm font-bold text-slate-950 dark:text-white">{groupPermissions[0]?.resourceLabel ?? formatLabel(group)}</h3>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                            {groupPermissions.length} permissions · {selectedCount} selected
+                          </p>
+                          {actionSummary.map((label) => (
+                            <span
+                              key={label}
+                              className="rounded-full border border-[#069AFF]/20 bg-[#069AFF]/10 px-2 py-0.5 text-[11px] font-bold text-[#069AFF] dark:text-sky-200"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleGroup(groupPermissions)}
-                        className="h-8 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
-                      >
-                        {allSelected ? "Clear group" : "Select group"}
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(groupPermissions.map((entry) => entry.permission))}
+                          className="h-8 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                        >
+                          {allSelected ? "Clear resource" : "Select resource"}
+                        </button>
+                      </div>
                     </div>
-                    <div className="grid gap-2 p-3 sm:grid-cols-2">
-                      {groupPermissions.map((permission, index) => {
-                        const rawId = isRecord(permission) ? getId(permission) : String(permission);
-                        const permissionName = String(getRecordValue(permission, ["name", "title", "permission", "action", "slug"]) ?? rawId);
-                        const id = permissionName; // Use the string name/action as the ID for submission
+                    <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-3">
+                      {groupPermissions.map((entry, index) => {
+                        const { permission, selectionId: id, actionLabel, description } = entry;
                         const label = String(getRecordValue(permission, ["title", "name", "action"]) ?? `Permission ${index + 1}`);
                         const checked = id ? selectedSet.has(id) : false;
 
@@ -2452,9 +2654,15 @@ function RoleFormModal({
                               onChange={() => id && togglePermission(id)}
                               className="mt-1 h-4 w-4 accent-[#069AFF]"
                             />
-                            <span>
-                              <span className="block text-sm font-bold text-slate-900 dark:text-white">{formatLabel(label)}</span>
+                            <span className="min-w-0">
+                              <span className="inline-flex rounded-full border border-[#069AFF]/20 bg-[#069AFF]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#069AFF] dark:text-sky-200">
+                                {actionLabel}
+                              </span>
+                              <span className="mt-2 block text-sm font-bold text-slate-900 dark:text-white">{formatLabel(label)}</span>
                               <span className="mt-1 block break-all text-[11px] font-medium text-slate-500 dark:text-slate-400">{id || "Missing id"}</span>
+                              {description && (
+                                <span className="mt-2 block text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</span>
+                              )}
                             </span>
                           </label>
                         );
@@ -2463,6 +2671,11 @@ function RoleFormModal({
                   </div>
                 );
               })}
+              {!Object.keys(groupedPermissions).length && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400">
+                  No permissions match the current search.
+                </div>
+              )}
             </div>
           </section>
         </form>
@@ -2551,6 +2764,12 @@ export default function AdminCenterPage() {
   const [roleModalData, setRoleModalData] = useState<{ id?: string; name: string; permissionIds: string[] } | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const canOpenAdminCenter = canAccessRoute(adminSession, "/admin");
+  const canCreateAdminRecord = canAccessPermission(adminSession, "create_admin");
+  const canUpdateAdminRecord = canAccessPermission(adminSession, "update_admin");
+  const canRevokeAdminRecordSessions = canAccessPermission(adminSession, "create_admins_revoke-session");
+  const canCreateRoleRecord = canAccessPermission(adminSession, "create_role");
+  const canUpdateRoleRecord = canAccessPermission(adminSession, "update_role");
+  const canViewPermissionLibrary = canAccessPermission(adminSession, "view_permission", "view_roles_permission");
   const visibleSections = sections.filter((section) => canAccessAdminSection(adminSession, section.key as "admins" | "roles" | "kyc" | "tiers" | "support" | "content"));
   const currentSection = visibleSections.some((section) => section.key === activeSection)
     ? activeSection
@@ -2679,6 +2898,76 @@ export default function AdminCenterPage() {
     });
   };
 
+  const openEditAdmin = (row: Record<string, unknown>) => {
+    const id = getId(row);
+    if (!id) {
+      return;
+    }
+
+    const rawUser = getRecordValue(row, ["user"]);
+    const userRecord = isRecord(rawUser) ? rawUser : row;
+    const rawRole = getRecordValue(row, ["role"]);
+    const roleRecord = isRecord(rawRole) ? rawRole : null;
+    const roleValue = String(
+      getRecordValue(row, ["role_id", "roleId"]) ??
+        (roleRecord ? getRecordValue(roleRecord, ["_id", "id", "roleId"]) : "") ??
+        "",
+    ).trim();
+
+    setFormAction({
+      eyebrow: "Administrator",
+      title: "Update administrator",
+      description: "Update the assigned role, active status, and linked profile details for this admin account.",
+      submitLabel: "Update admin",
+      initialValues: {
+        role_id: roleValue || (adminRoleOptions[0]?.value ?? ""),
+        first_name: String(getRecordValue(userRecord, ["first_name", "firstName"]) ?? "").trim(),
+        last_name: String(getRecordValue(userRecord, ["last_name", "lastName"]) ?? "").trim(),
+        phone: String(getRecordValue(userRecord, ["phone"]) ?? "").trim(),
+        email: String(getRecordValue(userRecord, ["email"]) ?? "").trim(),
+        status: getAdminStatusValue(row),
+      },
+      fields: [
+        { name: "first_name", label: "First name", required: true, placeholder: "James" },
+        { name: "last_name", label: "Last name", required: true, placeholder: "Bond" },
+        { name: "email", label: "Email address", type: "email", required: true, placeholder: "james@example.com" },
+        { name: "phone", label: "Phone number", type: "tel", required: true, placeholder: "08030000000" },
+        {
+          name: "role_id",
+          label: "Assigned role",
+          type: "select",
+          required: true,
+          placeholder: adminRoleOptions.length ? "Select a role" : "No roles available",
+          helper: adminRoleOptions.length
+            ? "The selected role determines workspace access and permissions."
+            : "Load roles first or create a role before updating an administrator.",
+          options: adminRoleOptions,
+        },
+        {
+          name: "status",
+          label: "Active status",
+          type: "select",
+          required: true,
+          options: [
+            { value: "1", label: "Active", description: "Admin can sign in and operate normally." },
+            { value: "0", label: "Inactive", description: "Admin access is disabled." },
+          ],
+        },
+      ],
+      onSubmit: (values) =>
+        submitAndRefresh(() =>
+          adminService.updateAdmin(id, {
+            role_id: values.role_id.trim(),
+            first_name: values.first_name.trim(),
+            last_name: values.last_name.trim(),
+            phone: values.phone.trim(),
+            email: values.email.trim(),
+            status: Number(values.status),
+          }),
+        ),
+    });
+  };
+
   const openCreateRole = () => {
     setRoleModalData({ name: "", permissionIds: [] });
   };
@@ -2690,23 +2979,38 @@ export default function AdminCenterPage() {
     setBusyAction(`role-${id}`);
     try {
       const name = String(getRecordValue(row, ["name", "title", "role"]) ?? "");
-      let perms = Array.isArray(row.permissions) 
-        ? row.permissions.map(p => {
-            const rawId = isRecord(p) ? getId(p) : String(p);
-            return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
-          }).filter(Boolean) as string[]
-        : [];
+      const normalizePermissionValue = (permission: unknown) => {
+        if (isRecord(permission)) {
+          const rawId = getId(permission);
+          return String(getRecordValue(permission, ["name", "title", "permission", "action", "slug"]) ?? rawId).trim();
+        }
+
+        return String(permission ?? "").trim();
+      };
+      const extractPermissionIds = (value: unknown): string[] => {
+        if (Array.isArray(value)) {
+          return value.map(normalizePermissionValue).filter(Boolean) as string[];
+        }
+
+        if (isRecord(value)) {
+          const nestedArray =
+            getRecordValue(value, ["permissions", "data", "items", "results"]) ??
+            Object.values(value).find(Array.isArray);
+
+          if (Array.isArray(nestedArray)) {
+            return nestedArray.map(normalizePermissionValue).filter(Boolean) as string[];
+          }
+        }
+
+        return [];
+      };
+
+      let perms = extractPermissionIds(row.permissions);
 
       // If permissions are not embedded, fetch them
       if (perms.length === 0) {
         const payload = await adminService.getRolePermissions(id);
-        const permsArray = unwrapPayload(payload);
-        if (Array.isArray(permsArray)) {
-          perms = permsArray.map(p => {
-            const rawId = isRecord(p) ? getId(p) : String(p);
-            return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
-          }).filter(Boolean) as string[];
-        }
+        perms = extractPermissionIds(unwrapPayload(payload));
       }
 
       setRoleModalData({ id, name, permissionIds: perms });
@@ -3495,7 +3799,7 @@ export default function AdminCenterPage() {
                 title="Administrators"
                 rows={admins}
                 columns={["Admin", "Email", "Role", "Status", "Created", "Action"]}
-                action={
+                action={canCreateAdminRecord ? (
                   <button
                     type="button"
                     onClick={openCreateAdmin}
@@ -3504,7 +3808,7 @@ export default function AdminCenterPage() {
                     <Plus className="h-4 w-4" aria-hidden="true" />
                     New admin
                   </button>
-                }
+                ) : undefined}
               >
                 {(row, index) => {
                   const id = getId(row);
@@ -3520,24 +3824,39 @@ export default function AdminCenterPage() {
                       <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            disabled={!id}
-                            onClick={() => openRevokeAdminSessions(id, name)}
-                            className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
-                          >
-                            <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-                            Revoke Sessions
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!id || busyAction === `admin-${id}`}
-                            onClick={() => toggleAdmin(id)}
-                            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
-                          >
-                            {busyAction === `admin-${id}` ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
-                            Toggle
-                          </button>
+                          {canUpdateAdminRecord ? (
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openEditAdmin(row)}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                            >
+                              <Pencil className="h-4 w-4" aria-hidden="true" />
+                              Edit
+                            </button>
+                          ) : null}
+                          {canRevokeAdminRecordSessions ? (
+                            <button
+                              type="button"
+                              disabled={!id}
+                              onClick={() => openRevokeAdminSessions(id, name)}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                            >
+                              <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+                              Revoke Sessions
+                            </button>
+                          ) : null}
+                          {canUpdateAdminRecord ? (
+                            <button
+                              type="button"
+                              disabled={!id || busyAction === `admin-${id}`}
+                              onClick={() => toggleAdmin(id)}
+                              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
+                            >
+                              {busyAction === `admin-${id}` ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                              Toggle
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -3557,14 +3876,16 @@ export default function AdminCenterPage() {
                         Create official admin roles by selecting multiple permissions from the library. This keeps permission IDs visible but removes manual copy-paste mistakes.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={openCreateRole}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
-                    >
-                      <Plus className="h-4 w-4" aria-hidden="true" />
-                      Create role
-                    </button>
+                    {canCreateRoleRecord ? (
+                      <button
+                        type="button"
+                        onClick={openCreateRole}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                        Create role
+                      </button>
+                    ) : null}
                   </div>
                   <div className="grid gap-4 border-t border-slate-100 p-5 dark:border-white/10 md:grid-cols-3">
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/40">
@@ -3609,22 +3930,26 @@ export default function AdminCenterPage() {
                           </td>
                           <td className="px-5 py-4">
                             <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                disabled={!id}
-                                onClick={() => openEditRole(row)}
-                                className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                disabled={!id || busyAction === `role-${id}`}
-                                onClick={() => disableRole(id)}
-                                className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
-                              >
-                                Disable
-                              </button>
+                              {canUpdateRoleRecord ? (
+                                <button
+                                  type="button"
+                                  disabled={!id}
+                                  onClick={() => openEditRole(row)}
+                                  className="inline-flex h-9 items-center rounded-md border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
+                                >
+                                  Edit
+                                </button>
+                              ) : null}
+                              {canUpdateRoleRecord ? (
+                                <button
+                                  type="button"
+                                  disabled={!id || busyAction === `role-${id}`}
+                                  onClick={() => disableRole(id)}
+                                  className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200"
+                                >
+                                  Disable
+                                </button>
+                              ) : null}
                             </div>
                           </td>
                         </tr>
@@ -3632,7 +3957,7 @@ export default function AdminCenterPage() {
                     }}
                   </ManagementTable>
 
-                  <PermissionLibrary permissions={permissions} />
+                  {canViewPermissionLibrary ? <PermissionLibrary permissions={permissions} /> : null}
                 </div>
               </div>
             )}
@@ -4259,6 +4584,7 @@ export default function AdminCenterPage() {
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
       {roleModalData && (
         <RoleFormModal
+          key={roleModalData.id ?? "new-role"}
           permissions={permissions}
           initialData={roleModalData}
           onClose={() => setRoleModalData(null)}
