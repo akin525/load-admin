@@ -5172,9 +5172,6 @@ export default function UsersPage() {
                       <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{phone}</p>
                     </td>
                     <td className="px-5 py-4"><StatusBadge status={getRecordValue(row, ["status"]) ?? "active"} /></td>
-                    <td className="px-5 py-4">
-                      <AccountUpgradeBadge status={upgradeStatus} />
-                    </td>
                     <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(getRecordValue(row, ["createdAt", "updatedAt"]))}</td>
                     <td className="px-5 py-4">
                       <div className="flex flex-wrap gap-2">

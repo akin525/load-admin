@@ -3742,6 +3742,7 @@ export default function LoansPage() {
       </div>
 
       {formAction && <ActionModal action={formAction} onClose={() => setFormAction(null)} />}
+      {loanTypeEditor && <LoanTypeEditorModal action={loanTypeEditor} onClose={() => setLoanTypeEditor(null)} />}
       {appLoanDetail && <AppLoanDetailsModal loan={appLoanDetail} onClose={() => setAppLoanDetail(null)} />}
       {coreLoanDetail && <CoreLoanDetailsModal loan={coreLoanDetail} onClose={() => setCoreLoanDetail(null)} />}
       {creditScoreResult && <CreditScoreResultModal result={creditScoreResult} onClose={() => setCreditScoreResult(null)} />}

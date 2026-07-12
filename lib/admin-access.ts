@@ -531,11 +531,20 @@ const sectionScopeMap: Record<AdminSectionKey, string> = {
 const hasMatcher = (session: AdminSession, matchers: string[][]) => {
   const role = normalize(session.roleName);
 
-  if (/(super admin|superuser|owner|root)/.test(role)) {
+  if (/(super ?admin|superuser|owner|root)/.test(role)) {
     return true;
   }
 
-  if (session.permissions.some((permission) => permission === "*" || permission === "all" || permission === "full access")) {
+  if (
+    session.permissions.some(
+      (permission) =>
+        permission === "*" ||
+        permission === "all" ||
+        permission === "full access" ||
+        permission === "super admin" ||
+        permission === "superadmin",
+    )
+  ) {
     return true;
   }
 
