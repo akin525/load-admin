@@ -2274,6 +2274,7 @@ function RoleFormModal({
   onClose: () => void;
   onSave: (name: string, permissionIds: string[]) => Promise<void>;
 }) {
+  const primaryActionOrder = ["view", "create", "update", "approve", "reverse"];
   const [name, setName] = useState(initialData?.name || "");
   const [query, setQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -2350,10 +2351,48 @@ function RoleFormModal({
       .includes(query.trim().toLowerCase());
   });
 
-  const groupedPermissions = filteredPermissionEntries.reduce<Record<string, typeof filteredPermissionEntries>>((groups, entry) => {
-    groups[entry.resourceKey] = [...(groups[entry.resourceKey] ?? []), entry];
-    return groups;
-  }, {});
+  const groupedPermissions = useMemo(() => {
+    const groups = filteredPermissionEntries.reduce<
+      Record<
+        string,
+        {
+          actionKey: string;
+          actionLabel: string;
+          entries: typeof filteredPermissionEntries;
+          resources: Record<string, typeof filteredPermissionEntries>;
+        }
+      >
+    >((accumulator, entry) => {
+      const actionKey = entry.actionKey || "other";
+      const group = accumulator[actionKey] ?? {
+        actionKey,
+        actionLabel: formatLabel(actionKey),
+        entries: [],
+        resources: {},
+      };
+
+      group.entries = [...group.entries, entry];
+      group.resources[entry.resourceKey] = [...(group.resources[entry.resourceKey] ?? []), entry];
+      accumulator[actionKey] = group;
+      return accumulator;
+    }, {});
+
+    return Object.values(groups).sort((left, right) => {
+      const leftIndex = primaryActionOrder.indexOf(left.actionKey);
+      const rightIndex = primaryActionOrder.indexOf(right.actionKey);
+
+      if (leftIndex !== -1 || rightIndex !== -1) {
+        if (leftIndex === -1) return 1;
+        if (rightIndex === -1) return -1;
+        return leftIndex - rightIndex;
+      }
+
+      if (left.actionKey === "other") return 1;
+      if (right.actionKey === "other") return -1;
+
+      return left.actionLabel.localeCompare(right.actionLabel);
+    });
+  }, [filteredPermissionEntries]);
 
   const permissionIdLookup = useMemo(
     () =>
@@ -2406,9 +2445,10 @@ function RoleFormModal({
     () =>
       allPermissionEntries
         .filter((entry) => selectedSet.has(entry.selectionId))
-        .sort((left, right) => left.resourceLabel.localeCompare(right.resourceLabel) || left.actionLabel.localeCompare(right.actionLabel)),
+        .sort((left, right) => left.actionLabel.localeCompare(right.actionLabel) || left.resourceLabel.localeCompare(right.resourceLabel)),
     [allPermissionEntries, selectedSet],
   );
+
   const unmatchedSelectedIds = useMemo(
     () => selectedIds.filter((id) => !selectedPermissionEntries.some((entry) => entry.selectionId === id)),
     [selectedIds, selectedPermissionEntries],
@@ -2418,11 +2458,7 @@ function RoleFormModal({
     setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   };
 
-  const toggleGroup = (groupPermissions: Record<string, unknown>[]) => {
-    const ids = groupPermissions.map(p => {
-      const rawId = isRecord(p) ? getId(p) : String(p);
-      return String(getRecordValue(p, ["name", "title", "permission", "action", "slug"]) ?? rawId);
-    }).filter(Boolean) as string[];
+  const toggleGroup = (ids: string[]) => {
     const allSelected = ids.every((id) => selectedSet.has(id));
 
     setSelectedIds((current) => {
@@ -2467,7 +2503,7 @@ function RoleFormModal({
               {isEditing ? "Update role permissions" : "Create role with permissions"}
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Permissions are grouped by resource derived from the permission name, with bulk selection by action family and by resource.
+              Permissions are grouped by action first, then by resource, so admins can assign access in cleaner batches.
             </p>
           </div>
           <button
@@ -2519,9 +2555,9 @@ function RoleFormModal({
                     onClick={() => togglePermission(entry.selectionId)}
                     className="inline-flex items-center gap-2 rounded-full border border-[#069AFF]/25 bg-[#069AFF]/10 px-3 py-1.5 text-xs font-bold text-[#069AFF] transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:text-sky-200 dark:hover:border-red-400/40 dark:hover:bg-red-400/10 dark:hover:text-red-200"
                   >
-                    <span>{entry.resourceLabel}</span>
+                    <span>{entry.actionLabel}</span>
                     <span className="rounded-full border border-[#069AFF]/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]">
-                      {entry.actionLabel}
+                      {entry.resourceLabel}
                     </span>
                     <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
@@ -2592,86 +2628,110 @@ function RoleFormModal({
               <div className="flex items-center gap-3 text-sm font-bold text-slate-500 dark:text-slate-400">
                 <span>{filteredPermissionEntries.length} visible</span>
                 <span className="rounded-full border border-slate-200 px-3 py-1 text-xs dark:border-white/10">
-                  {Object.keys(groupedPermissions).length} resource groups
+                  {groupedPermissions.length} action groups
                 </span>
               </div>
             </div>
 
             <div className="max-h-[58vh] overflow-y-auto pr-1">
-              {Object.entries(groupedPermissions).map(([group, groupPermissions]) => {
-                const groupIds = groupPermissions.map((entry) => entry.selectionId).filter(Boolean);
-                const allSelected = groupIds.length > 0 && groupIds.every((id) => selectedSet.has(id));
-                const selectedCount = groupIds.filter((id) => selectedSet.has(id)).length;
-                const actionSummary = Array.from(new Set(groupPermissions.map((entry) => entry.actionLabel)));
+              {groupedPermissions.map((actionGroup) => {
+                const actionIds = actionGroup.entries.map((entry) => entry.selectionId).filter(Boolean);
+                const actionAllSelected = actionIds.length > 0 && actionIds.every((id) => selectedSet.has(id));
+                const actionSelectedCount = actionIds.filter((id) => selectedSet.has(id)).length;
 
                 return (
-                  <div key={group} className="mb-4 rounded-lg border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/40">
+                  <div key={actionGroup.actionKey} className="mb-4 rounded-lg border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/40">
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
                       <div>
-                        <h3 className="text-sm font-bold text-slate-950 dark:text-white">{groupPermissions[0]?.resourceLabel ?? formatLabel(group)}</h3>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                            {groupPermissions.length} permissions · {selectedCount} selected
-                          </p>
-                          {actionSummary.map((label) => (
-                            <span
-                              key={label}
-                              className="rounded-full border border-[#069AFF]/20 bg-[#069AFF]/10 px-2 py-0.5 text-[11px] font-bold text-[#069AFF] dark:text-sky-200"
-                            >
-                              {label}
-                            </span>
-                          ))}
-                        </div>
+                        <h3 className="text-sm font-bold text-slate-950 dark:text-white">{actionGroup.actionLabel}</h3>
+                        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                          {actionGroup.entries.length} permissions ? {actionSelectedCount} selected
+                        </p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleGroup(groupPermissions.map((entry) => entry.permission))}
-                          className="h-8 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
-                        >
-                          {allSelected ? "Clear resource" : "Select resource"}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(actionIds)}
+                        className="h-8 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                      >
+                        {actionAllSelected ? `Clear ${actionGroup.actionLabel}` : `Select ${actionGroup.actionLabel}`}
+                      </button>
                     </div>
-                    <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-3">
-                      {groupPermissions.map((entry, index) => {
-                        const { permission, selectionId: id, actionLabel, description } = entry;
-                        const label = String(getRecordValue(permission, ["title", "name", "action"]) ?? `Permission ${index + 1}`);
-                        const checked = id ? selectedSet.has(id) : false;
 
-                        return (
-                          <label
-                            key={id || `${group}-${index}`}
-                            className={`flex cursor-pointer gap-3 rounded-md border p-3 transition ${
-                              checked
-                                ? "border-[#069AFF]/40 bg-[#069AFF]/10"
-                                : "border-slate-200 bg-white hover:border-[#069AFF]/30 dark:border-white/10 dark:bg-white/[0.035]"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => id && togglePermission(id)}
-                              className="mt-1 h-4 w-4 accent-[#069AFF]"
-                            />
-                            <span className="min-w-0">
-                              <span className="inline-flex rounded-full border border-[#069AFF]/20 bg-[#069AFF]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#069AFF] dark:text-sky-200">
-                                {actionLabel}
-                              </span>
-                              <span className="mt-2 block text-sm font-bold text-slate-900 dark:text-white">{formatLabel(label)}</span>
-                              <span className="mt-1 block break-all text-[11px] font-medium text-slate-500 dark:text-slate-400">{id || "Missing id"}</span>
-                              {description && (
-                                <span className="mt-2 block text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</span>
-                              )}
-                            </span>
-                          </label>
-                        );
-                      })}
+                    <div className="grid gap-3 p-3">
+                      {Object.entries(actionGroup.resources)
+                        .sort(([leftKey], [rightKey]) => formatLabel(leftKey).localeCompare(formatLabel(rightKey)))
+                        .map(([resourceKey, resourcePermissions]) => {
+                          const resourceIds = resourcePermissions.map((entry) => entry.selectionId).filter(Boolean);
+                          const resourceAllSelected = resourceIds.length > 0 && resourceIds.every((id) => selectedSet.has(id));
+                          const resourceSelectedCount = resourceIds.filter((id) => selectedSet.has(id)).length;
+
+                          return (
+                            <div
+                              key={`${actionGroup.actionKey}-${resourceKey}`}
+                              className="rounded-md border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.035]"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
+                                <div>
+                                  <h4 className="text-sm font-bold text-slate-950 dark:text-white">
+                                    {resourcePermissions[0]?.resourceLabel ?? formatLabel(resourceKey)}
+                                  </h4>
+                                  <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                                    {resourcePermissions.length} permissions ? {resourceSelectedCount} selected
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleGroup(resourceIds)}
+                                  className="h-8 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                                >
+                                  {resourceAllSelected ? "Clear resource" : "Select resource"}
+                                </button>
+                              </div>
+
+                              <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-3">
+                                {resourcePermissions.map((entry, index) => {
+                                  const { permission, selectionId: id, actionLabel, description } = entry;
+                                  const label = String(getRecordValue(permission, ["title", "name", "action"]) ?? `Permission ${index + 1}`);
+                                  const checked = id ? selectedSet.has(id) : false;
+
+                                  return (
+                                    <label
+                                      key={id || `${resourceKey}-${index}`}
+                                      className={`flex cursor-pointer gap-3 rounded-md border p-3 transition ${
+                                        checked
+                                          ? "border-[#069AFF]/40 bg-[#069AFF]/10"
+                                          : "border-slate-200 bg-white hover:border-[#069AFF]/30 dark:border-white/10 dark:bg-white/[0.035]"
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => id && togglePermission(id)}
+                                        className="mt-1 h-4 w-4 accent-[#069AFF]"
+                                      />
+                                      <span className="min-w-0">
+                                        <span className="inline-flex rounded-full border border-[#069AFF]/20 bg-[#069AFF]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#069AFF] dark:text-sky-200">
+                                          {actionLabel}
+                                        </span>
+                                        <span className="mt-2 block text-sm font-bold text-slate-900 dark:text-white">{formatLabel(label)}</span>
+                                        <span className="mt-1 block break-all text-[11px] font-medium text-slate-500 dark:text-slate-400">{id || "Missing id"}</span>
+                                        {description && (
+                                          <span className="mt-2 block text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</span>
+                                        )}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
                     </div>
                   </div>
                 );
               })}
-              {!Object.keys(groupedPermissions).length && (
+
+              {!groupedPermissions.length && (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-400">
                   No permissions match the current search.
                 </div>
