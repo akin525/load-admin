@@ -69,6 +69,52 @@ const getRecordValue = (record: Record<string, unknown>, keys: string[]) => {
   return foundKey ? record[foundKey] : undefined;
 };
 
+const getUserRecord = (record: Record<string, unknown>) => {
+  const user = getRecordValue(record, ["user"]);
+  return isRecord(user) ? user : null;
+};
+
+const getRecipientIdentity = (record: Record<string, unknown>) => {
+  const user = getUserRecord(record);
+  const userName = typeof user?.name === "string" && user.name.trim() ? user.name.trim() : "";
+  const userEmail = typeof user?.email === "string" && user.email.trim() ? user.email.trim() : "";
+  const fallbackRecipient = String(getRecordValue(record, ["recipient", "email", "to", "userId"]) ?? "").trim();
+  const fallbackUserId = String(getRecordValue(record, ["userId"]) ?? "").trim();
+
+  if (userName) {
+    return {
+      primary: userName,
+      secondary: userEmail && userEmail.toLowerCase() !== userName.toLowerCase() ? userEmail : "",
+    };
+  }
+
+  if (userEmail) {
+    return {
+      primary: userEmail,
+      secondary: "",
+    };
+  }
+
+  if (fallbackRecipient) {
+    return {
+      primary: fallbackRecipient,
+      secondary: "",
+    };
+  }
+
+  if (fallbackUserId) {
+    return {
+      primary: fallbackUserId,
+      secondary: "",
+    };
+  }
+
+  return {
+    primary: "Not available",
+    secondary: "",
+  };
+};
+
 const getErrorMessage = (error: unknown) => {
   if (typeof error === "object" && error !== null && "message" in error) {
     const message = (error as { message?: unknown }).message;
@@ -208,6 +254,8 @@ function DetailModal({
   row: Record<string, unknown>;
   onClose: () => void;
 }) {
+  const recipientIdentity = getRecipientIdentity(row);
+  const user = getUserRecord(row);
   const payload = isRecord(getRecordValue(row, ["payload", "data", "request"])) ? getRecordValue(row, ["payload", "data", "request"]) : null;
   const response = isRecord(getRecordValue(row, ["response", "result", "providerResponse"])) ? getRecordValue(row, ["response", "result", "providerResponse"]) : null;
   const metadata = isRecord(getRecordValue(row, ["metadata"])) ? getRecordValue(row, ["metadata"]) : null;
@@ -226,7 +274,8 @@ function DetailModal({
       title: "Recipient context",
       items: [
         { label: "User ID", value: String(getRecordValue(row, ["userId"]) ?? "Not available") },
-        { label: "Recipient", value: String(getRecordValue(row, ["recipient", "email", "to"]) ?? "Not available") },
+        { label: "Recipient", value: recipientIdentity.primary },
+        { label: "Email", value: typeof user?.email === "string" && user.email.trim() ? user.email : "Not available" },
         { label: "Title", value: String(getRecordValue(row, ["title", "subject"]) ?? "Not available") },
         { label: "Body", value: String(getRecordValue(row, ["body", "message"]) ?? "Not available") },
       ],
@@ -553,7 +602,7 @@ export default function PushNotificationLogsPage() {
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
                     {paginatedRows.map((row, index) => {
                       const type = String(getRecordValue(row, ["type"]) ?? "Not available");
-                      const recipient = String(getRecordValue(row, ["recipient", "userId", "to"]) ?? "Not available");
+                      const recipientIdentity = getRecipientIdentity(row);
                       const title = String(getRecordValue(row, ["title", "subject"]) ?? "Not available");
                       const status = getRecordValue(row, ["status"]) ?? "pending";
                       const key = String(getRecordValue(row, ["_id", "id", "reference", "messageId"]) ?? `push-log-${index}`);
@@ -567,7 +616,14 @@ export default function PushNotificationLogsPage() {
                             </p>
                           </td>
                           <td className="px-5 py-4">
-                            <p className="max-w-[16rem] break-all font-semibold text-slate-950 dark:text-white">{recipient}</p>
+                            <p className="max-w-[16rem] break-words font-semibold text-slate-950 dark:text-white">
+                              {recipientIdentity.primary}
+                            </p>
+                            {recipientIdentity.secondary ? (
+                              <p className="mt-1 max-w-[16rem] break-all text-xs font-medium text-slate-500 dark:text-slate-400">
+                                {recipientIdentity.secondary}
+                              </p>
+                            ) : null}
                           </td>
                           <td className="px-5 py-4">
                             <p className="max-w-[20rem] break-words text-slate-600 dark:text-slate-300">{title}</p>
