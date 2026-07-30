@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   Trash2,
   Upload,
+  Wallet,
   X,
 } from "lucide-react";
 import { adminService } from "@/lib/services/adminService";
@@ -46,7 +47,7 @@ type FeedbackState = {
 } | null;
 
 type SettingModalConfig = {
-  mode: "create" | "upsert" | "update";
+  mode: "create" | "upsert" | "update" | "wallet-minimum";
   title: string;
   description: string;
   values: SettingValues;
@@ -65,6 +66,17 @@ type MixpanelTestValues = {
   distinctId: string;
   properties: string;
 };
+
+type MainWalletMinimumState = {
+  value: string;
+  loading: boolean;
+  loaded: boolean;
+  error: string;
+};
+
+const MAIN_WALLET_MINIMUM_SETTING = "main_wallet_minimum_balance";
+const MAIN_WALLET_MINIMUM_DESCRIPTION =
+  "Minimum reserve that must remain in every user main wallet before debits are allowed";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -129,6 +141,21 @@ const formatValue = (value: unknown) => {
   return JSON.stringify(value);
 };
 
+const formatCurrencyValue = (value: string) => {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    return "Not set";
+  }
+
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(numeric);
+};
+
 const normalizeCategoryLabel = (value: string) =>
   value
     .replace(/[_-]+/g, " ")
@@ -140,6 +167,7 @@ const deriveCategory = (name: string) => {
   const normalized = name.toLowerCase();
 
   if (normalized.includes("bankone")) return "bankone";
+  if (normalized.includes("wallet")) return "wallet";
   if (normalized.includes("payment") || normalized.includes("gateway") || normalized.includes("payin") || normalized.includes("payout")) return "payments";
   if (normalized.includes("security") || normalized.includes("password") || normalized.includes("otp") || normalized.includes("2fa") || normalized.includes("auth") || normalized.includes("jwt")) return "security";
   if (normalized.includes("email") || normalized.includes("smtp") || normalized.includes("mailer")) return "email";
@@ -260,6 +288,55 @@ const fetchSystemSettings = async (): Promise<SettingsState> => {
       groups: [],
       loading: false,
       loaded: true,
+      error: getErrorMessage(error),
+    };
+  }
+};
+
+const findMainWalletMinimumFromRows = (rows: Record<string, unknown>[]) => {
+  const record = rows.find((row) => getSettingName(row) === MAIN_WALLET_MINIMUM_SETTING);
+  return record ? String(getRecordValue(record, ["value"]) ?? "").trim() : "";
+};
+
+const extractMainWalletMinimumValue = (payload: unknown): string => {
+  const value = unwrapPayload(payload);
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  const candidate = getRecordValue(value, ["value", "minimumBalance", "mainWalletMinimumBalance"]);
+
+  if (typeof candidate === "number") {
+    return String(candidate);
+  }
+
+  if (typeof candidate === "string") {
+    return candidate.trim();
+  }
+
+  return "";
+};
+
+const fetchMainWalletMinimumBalance = async () => {
+  try {
+    const payload = await adminService.getMainWalletMinimumBalance();
+
+    return {
+      value: extractMainWalletMinimumValue(payload),
+      error: "",
+    };
+  } catch (error) {
+    return {
+      value: "",
       error: getErrorMessage(error),
     };
   }
@@ -715,6 +792,12 @@ export default function SystemSettingsPage() {
     loaded: false,
     error: "",
   });
+  const [mainWalletMinimum, setMainWalletMinimum] = useState<MainWalletMinimumState>({
+    value: "",
+    loading: true,
+    loaded: false,
+    error: "",
+  });
   const [refreshing, setRefreshing] = useState(false);
   const [activeCategory, setActiveCategory] = useState("all");
   const [feedback, setFeedback] = useState<FeedbackState>(null);
@@ -741,10 +824,21 @@ export default function SystemSettingsPage() {
       return;
     }
 
-    void fetchSystemSettings().then((result) => {
-      if (!cancelled) {
-        setSettingsState(result);
+    void Promise.all([fetchSystemSettings(), fetchMainWalletMinimumBalance()]).then(([settingsResult, walletMinimumResult]) => {
+      if (cancelled) {
+        return;
       }
+
+      const fallbackValue = findMainWalletMinimumFromRows(settingsResult.rows);
+      const resolvedValue = walletMinimumResult.value || fallbackValue;
+
+      setSettingsState(settingsResult);
+      setMainWalletMinimum({
+        value: resolvedValue,
+        loading: false,
+        loaded: true,
+        error: resolvedValue ? "" : walletMinimumResult.error,
+      });
     });
 
     return () => {
@@ -755,8 +849,17 @@ export default function SystemSettingsPage() {
   const refreshSettings = async () => {
     setRefreshing(true);
     setSettingsState((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchSystemSettings();
-    setSettingsState(result);
+    setMainWalletMinimum((current) => ({ ...current, loading: true, error: "" }));
+    const [settingsResult, walletMinimumResult] = await Promise.all([fetchSystemSettings(), fetchMainWalletMinimumBalance()]);
+    const fallbackValue = findMainWalletMinimumFromRows(settingsResult.rows);
+    const resolvedValue = walletMinimumResult.value || fallbackValue;
+    setSettingsState(settingsResult);
+    setMainWalletMinimum({
+      value: resolvedValue,
+      loading: false,
+      loaded: true,
+      error: resolvedValue ? "" : walletMinimumResult.error,
+    });
     setRefreshing(false);
   };
 
@@ -840,6 +943,20 @@ export default function SystemSettingsPage() {
     });
   };
 
+  const openMainWalletMinimumModal = () => {
+    setModalConfig({
+      mode: "wallet-minimum",
+      title: "Set main wallet minimum balance",
+      description: "Define the minimum reserve that must remain in every user main wallet before debits are allowed.",
+      values: {
+        name: MAIN_WALLET_MINIMUM_SETTING,
+        value: mainWalletMinimum.value || findMainWalletMinimumFromRows(rows) || "500",
+        description: MAIN_WALLET_MINIMUM_DESCRIPTION,
+      },
+      nameReadOnly: true,
+    });
+  };
+
   const openUpdateModal = (row: Record<string, unknown>) => {
     setModalConfig({
       mode: "update",
@@ -865,6 +982,14 @@ export default function SystemSettingsPage() {
       response = await adminService.createSystemSetting(values);
     } else if (modalConfig.mode === "upsert") {
       response = await adminService.upsertSystemSetting(values);
+    } else if (modalConfig.mode === "wallet-minimum") {
+      const numericValue = Number(values.value);
+
+      if (!Number.isFinite(numericValue) || numericValue < 0) {
+        throw new Error("Minimum balance must be a valid number greater than or equal to zero.");
+      }
+
+      response = await adminService.updateMainWalletMinimumBalance({ value: numericValue });
     } else {
       response = await adminService.updateSystemSetting(values.name, {
         value: values.value,
@@ -1063,6 +1188,14 @@ export default function SystemSettingsPage() {
                     </button>
                     <button
                       type="button"
+                      onClick={openMainWalletMinimumModal}
+                      className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10"
+                    >
+                      <Wallet className="h-4 w-4" />
+                      Wallet minimum
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setMixpanelTestOpen(true)}
                       className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10"
                     >
@@ -1136,6 +1269,42 @@ export default function SystemSettingsPage() {
             )}
 
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-[#069AFF]/40 hover:shadow-lg hover:shadow-[#069AFF]/10 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/40 md:col-span-2 xl:col-span-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Wallet reserve</p>
+                    <h2 className="mt-2 text-lg font-bold tracking-tight text-slate-950 dark:text-white">Main wallet minimum balance</h2>
+                    <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+                      {MAIN_WALLET_MINIMUM_DESCRIPTION}.
+                    </p>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#069AFF]/10 text-[#069AFF] ring-1 ring-[#069AFF]/15 dark:bg-[#069AFF]/15 dark:text-sky-200">
+                    <Wallet className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                </div>
+                <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Current minimum</p>
+                    <p className="mt-1 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">
+                      {mainWalletMinimum.loading ? "Loading..." : formatCurrencyValue(mainWalletMinimum.value)}
+                    </p>
+                    <p className="mt-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Setting key: {MAIN_WALLET_MINIMUM_SETTING}
+                    </p>
+                    {mainWalletMinimum.error ? (
+                      <p className="mt-2 text-sm font-semibold text-red-600 dark:text-red-300">{mainWalletMinimum.error}</p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openMainWalletMinimumModal}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#069AFF] px-4 text-sm font-bold text-white shadow-sm shadow-[#069AFF]/25 transition hover:bg-[#0588e0]"
+                  >
+                    <Save className="h-4 w-4" aria-hidden="true" />
+                    Update minimum
+                  </button>
+                </div>
+              </div>
               {summaryCards.map((item) => (
                 <SummaryCard key={item.label} label={item.label} value={item.value} icon={item.icon} />
               ))}

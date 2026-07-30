@@ -1109,6 +1109,12 @@ export const adminService = {
         return response.data;
     },
 
+    // GET /admin/wallet-settings/main-wallet-minimum-balance
+    getMainWalletMinimumBalance: async (): Promise<unknown> => {
+        const response = await api.get('/admin/wallet-settings/main-wallet-minimum-balance');
+        return response.data;
+    },
+
     // POST /admin/system-settings
     createSystemSetting: async (payload: AdminPayload): Promise<unknown> => {
         const response = await api.post('/admin/system-settings', payload);
@@ -1118,6 +1124,12 @@ export const adminService = {
     // POST /admin/system-settings/upsert
     upsertSystemSetting: async (payload: AdminPayload): Promise<unknown> => {
         const response = await api.post('/admin/system-settings/upsert', payload);
+        return response.data;
+    },
+
+    // POST /admin/wallet-settings/main-wallet-minimum-balance
+    updateMainWalletMinimumBalance: async (payload: { value: number }): Promise<unknown> => {
+        const response = await api.post('/admin/wallet-settings/main-wallet-minimum-balance', payload);
         return response.data;
     },
 

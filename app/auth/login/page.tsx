@@ -189,13 +189,13 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-950 transition-colors dark:bg-[#07111f] dark:text-white">
-      <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(520px,0.88fr)]">
-        <section className="relative flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-12">
+    <main className="min-h-[100dvh] bg-slate-50 text-slate-950 transition-colors dark:bg-[#07111f] dark:text-white">
+      <div className="grid min-h-[100dvh] lg:h-[100dvh] lg:grid-cols-[minmax(0,1fr)_minmax(500px,0.82fr)]">
+        <section className="relative flex min-h-[100dvh] items-center justify-center px-5 py-6 sm:px-8 lg:min-h-0 lg:overflow-y-auto lg:px-10 lg:py-6 xl:px-12">
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(180deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:56px_56px] dark:bg-[linear-gradient(90deg,rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(180deg,rgba(148,163,184,0.055)_1px,transparent_1px)]" />
 
-          <div className="relative w-full max-w-[520px]">
-            <header className="mb-9 flex items-center justify-between gap-4">
+          <div className="relative w-full max-w-[500px] lg:my-auto">
+            <header className="mb-7 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 items-center rounded-lg border border-slate-200 bg-white px-3 shadow-sm dark:border-white/10 dark:bg-white">
                   <Image
@@ -223,7 +223,7 @@ export default function LoginPage() {
               </button>
             </header>
 
-            <div className="mb-7">
+            <div className="mb-6">
               <div className="mb-4 inline-flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200">
                 <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                 Secure administration
@@ -231,13 +231,13 @@ export default function LoginPage() {
               {/*<h1 className="text-4xl font-semibold leading-tight tracking-tight text-slate-950 dark:text-white sm:text-5xl">*/}
               {/*  Sign in to the EazyCredit control center.*/}
               {/*</h1>*/}
-              <p className="mt-4 max-w-[440px] text-sm leading-6 text-slate-600 dark:text-slate-300">
+              <p className="mt-3 max-w-[420px] text-sm leading-6 text-slate-600 dark:text-slate-300">
                 A focused workspace for loan approvals, portfolio supervision, customer verification, and internal operations.
               </p>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/70 dark:border-white/10 dark:bg-white/[0.045] dark:shadow-black/25 sm:p-7">
-              <div className="mb-6 flex items-start justify-between gap-4 border-b border-slate-100 pb-5 dark:border-white/10">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/70 dark:border-white/10 dark:bg-white/[0.045] dark:shadow-black/25 sm:p-6">
+              <div className="mb-5 flex items-start justify-between gap-4 border-b border-slate-100 pb-4 dark:border-white/10">
                 <div>
                   <h2 className="text-lg font-bold tracking-tight text-slate-950 dark:text-white">
                     {twoFactorChallenge ? "Verify administrator access" : "Administrator login"}
@@ -425,10 +425,10 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <aside className="hidden bg-[#0b1728] p-8 text-white dark:bg-black lg:block">
-          <div className="flex h-full min-h-[720px] flex-col rounded-lg border border-white/10 bg-[#101d31] shadow-2xl dark:bg-[#07111f]">
-            <div className="border-b border-white/10 p-7">
-              <div className="mb-7 flex items-center justify-between">
+        <aside className="hidden h-full bg-[#0b1728] p-5 text-white dark:bg-black lg:block lg:overflow-hidden">
+          <div className="flex h-full min-h-0 flex-col rounded-lg border border-white/10 bg-[#101d31] shadow-2xl dark:bg-[#07111f]">
+            <div className="border-b border-white/10 p-6">
+              <div className="mb-6 flex items-center justify-between">
                 <div className="rounded-lg bg-white px-3 py-2">
                   <Image
                     src="/eazy-logo.svg"
@@ -446,7 +446,7 @@ export default function LoginPage() {
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-200">
                 Operations console
               </p>
-              <h2 className="mt-3 max-w-md text-4xl font-semibold leading-tight tracking-tight">
+              <h2 className="mt-3 max-w-md text-3xl font-semibold leading-tight tracking-tight xl:text-4xl">
                 Built for controlled credit administration.
               </h2>
               <p className="mt-4 max-w-md text-sm leading-6 text-slate-300">
@@ -454,7 +454,7 @@ export default function LoginPage() {
               </p>
             </div>
 
-            <div className="grid gap-3 p-7">
+            <div className="grid gap-3 p-6">
               {accessModules.map((module) => {
                 const Icon = module.icon;
 
@@ -472,8 +472,8 @@ export default function LoginPage() {
               })}
             </div>
 
-            <div className="mt-auto border-t border-white/10 p-7">
-              <div className="mb-5 flex items-center gap-3">
+            <div className="mt-auto border-t border-white/10 p-6">
+              <div className="mb-4 flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-sky-200">
                   <BarChart3 className="h-5 w-5" aria-hidden="true" />
                 </div>
@@ -482,7 +482,7 @@ export default function LoginPage() {
                   <p className="text-xs text-slate-400">Prepared for management review</p>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3 border-b border-white/10 pb-6">
+              <div className="grid grid-cols-3 gap-3 border-b border-white/10 pb-5">
                 {[
                   ["98%", "Uptime"],
                   ["24/7", "Monitoring"],
@@ -494,7 +494,7 @@ export default function LoginPage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-5 grid gap-3">
+              <div className="mt-4 grid gap-3">
                 {assuranceItems.map((item) => (
                   <div key={item} className="flex items-center gap-3 text-sm font-medium text-slate-200">
                     <CheckCircle2 className="h-4 w-4 text-emerald-300" aria-hidden="true" />
