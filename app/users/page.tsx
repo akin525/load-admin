@@ -36,7 +36,7 @@ import { adminService } from "@/lib/services/adminService";
 import { exportTableRows } from "@/lib/export/table";
 import { canAccessPermission, useAdminSession, useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
 import { OtpInput } from "@/components/OtpInput";
 
 type DetailState = {
@@ -116,6 +116,10 @@ type ToastNotice = {
 type UsersState = {
   payload: unknown;
   rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -182,6 +186,26 @@ const extractRows = (payload: unknown): Record<string, unknown>[] => {
 
   const list = Object.values(value).find(Array.isArray);
   return Array.isArray(list) ? list.filter(isRecord) : [];
+};
+
+const extractUsersPagination = (payload: unknown) => {
+  const value = unwrapPayload(payload);
+
+  if (!isRecord(value)) {
+    return {
+      total: 0,
+      page: 1,
+      limit: 50,
+      skip: 0,
+    };
+  }
+
+  return {
+    total: typeof value.total === "number" ? value.total : extractRows(payload).length,
+    page: typeof value.page === "number" && value.page > 0 ? value.page : 1,
+    limit: typeof value.limit === "number" && value.limit > 0 ? value.limit : 50,
+    skip: typeof value.skip === "number" && value.skip >= 0 ? value.skip : 0,
+  };
 };
 
 const extractRowsOrRecord = (payload: unknown): Record<string, unknown>[] => {
@@ -644,7 +668,7 @@ const downloadBlob = (blob: Blob, filename: string) => {
   window.URL.revokeObjectURL(objectUrl);
 };
 
-const fetchUsers = async (filters?: UsersFilters): Promise<UsersState> => {
+const fetchUsers = async (filters?: UsersFilters, page = 1, limit = 50): Promise<UsersState> => {
   try {
     const params = Object.entries(filters ?? {}).reduce<Record<string, string>>((accumulator, [key, value]) => {
       const normalized = value.trim();
@@ -656,11 +680,19 @@ const fetchUsers = async (filters?: UsersFilters): Promise<UsersState> => {
       return accumulator;
     }, {});
 
+    params.page = String(page);
+    params.limit = String(limit);
+
     const payload = await adminService.getUsers(params);
+    const pagination = extractUsersPagination(payload);
 
     return {
       payload,
       rows: extractRows(payload),
+      total: pagination.total,
+      page: pagination.page,
+      limit: pagination.limit,
+      skip: pagination.skip,
       loading: false,
       loaded: true,
       error: "",
@@ -669,6 +701,10 @@ const fetchUsers = async (filters?: UsersFilters): Promise<UsersState> => {
     return {
       payload: null,
       rows: [],
+      total: 0,
+      page: 1,
+      limit: limit,
+      skip: 0,
       loading: false,
       loaded: true,
       error: getErrorMessage(error),
@@ -4330,6 +4366,11 @@ function UserDashboardModal({
 function ManagementTable({
   title,
   rows,
+  totalItems,
+  currentPage,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
   columns,
   action,
   onVisibleRowsChange,
@@ -4337,25 +4378,19 @@ function ManagementTable({
 }: {
   title: string;
   rows: Record<string, unknown>[];
+  totalItems: number;
+  currentPage: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   columns: string[];
   action?: ReactNode;
   onVisibleRowsChange?: (rows: Record<string, unknown>[]) => void;
   children: (row: Record<string, unknown>, index: number) => ReactNode;
 }) {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const paginatedRows = useMemo(() => paginateItems(rows, currentPage, pageSize), [rows, currentPage, pageSize]);
-
   useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, pageSize, rows.length]);
-
-  useEffect(() => {
-    onVisibleRowsChange?.(paginatedRows);
-  }, [onVisibleRowsChange, paginatedRows]);
+    onVisibleRowsChange?.(rows);
+  }, [onVisibleRowsChange, rows]);
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-[#069AFF]/25 dark:border-white/10 dark:bg-white/[0.045] dark:hover:border-[#069AFF]/30">
@@ -4373,19 +4408,16 @@ function ManagementTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-            {paginatedRows.map((row, index) => children(row, index))}
+            {rows.map((row, index) => children(row, index))}
           </tbody>
         </table>
       </div>
       <TablePagination
-        totalItems={rows.length}
+        totalItems={totalItems}
         currentPage={currentPage}
         pageSize={pageSize}
-        onPageChange={setCurrentPage}
-        onPageSizeChange={(next) => {
-          setPageSize(next);
-          setCurrentPage(1);
-        }}
+        onPageChange={onPageChange}
+        onPageSizeChange={onPageSizeChange}
       />
       {!rows.length && (
         <div className="px-5 py-10 text-sm font-medium text-slate-500 dark:text-slate-400">
@@ -4402,9 +4434,15 @@ export default function UsersPage() {
   const adminSession = useAdminSession();
   const { allowed: canOpenUsers } = useRouteAccess("/users");
   const toastIdRef = useRef(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [usersState, setUsersState] = useState<UsersState>({
     payload: null,
     rows: [],
+    total: 0,
+    page: 1,
+    limit: 50,
+    skip: 0,
     loading: false,
     loaded: false,
     error: "",
@@ -4454,7 +4492,7 @@ export default function UsersPage() {
       return;
     }
 
-    void fetchUsers(filters).then((result) => {
+    void fetchUsers(filters, currentPage, pageSize).then((result) => {
       if (!cancelled) {
         setUsersState(result);
       }
@@ -4463,22 +4501,23 @@ export default function UsersPage() {
     return () => {
       cancelled = true;
     };
-  }, [canOpenUsers, filters, router]);
+  }, [canOpenUsers, currentPage, filters, pageSize, router]);
 
   const refreshUsers = async (nextFilters?: UsersFilters) => {
     const activeFilters = nextFilters ?? filters;
     setRefreshing(true);
     setUsersState((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchUsers(activeFilters);
+    const result = await fetchUsers(activeFilters, currentPage, pageSize);
     setUsersState(result);
     setRefreshing(false);
   };
 
   const rows = usersState.rows;
+  const totalUsers = usersState.total;
 
   const summaryCards = useMemo(
     () => [
-      { label: "Customer records", value: formatValue(rows.length), icon: Users },
+      { label: "Customer records", value: formatValue(totalUsers), icon: Users },
       {
         label: "Active profiles",
         value: formatValue(rows.filter((user) => String(getRecordValue(user, ["status"]) ?? "active").toLowerCase() === "active").length),
@@ -4495,7 +4534,7 @@ export default function UsersPage() {
         icon: WalletCards,
       },
     ],
-    [rows],
+    [rows, totalUsers],
   );
 
   const handleLogout = () => {
@@ -5017,7 +5056,7 @@ export default function UsersPage() {
                   </p>
                 </div>
                 <div className="rounded-lg border border-[#069AFF]/20 bg-[#069AFF]/5 px-4 py-3 text-xs font-semibold text-slate-600 dark:border-[#069AFF]/25 dark:bg-[#069AFF]/10 dark:text-slate-300">
-                  <p>Results loaded: {formatValue(rows.length)}</p>
+                  <p>Results loaded: {formatValue(rows.length)} of {formatValue(totalUsers)}</p>
                   <p className="mt-1">Filters apply to the backend query, not just the visible table.</p>
                 </div>
               </div>
@@ -5026,6 +5065,11 @@ export default function UsersPage() {
                 className="grid items-end gap-3 p-4 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto_auto]"
                 onSubmit={(event) => {
                   event.preventDefault();
+                  if (currentPage !== 1) {
+                    setCurrentPage(1);
+                    return;
+                  }
+
                   void refreshUsers();
                 }}
               >
@@ -5074,6 +5118,12 @@ export default function UsersPage() {
                   onClick={() => {
                     const defaults = getDefaultUsersFilters();
                     setFilters(defaults);
+
+                    if (currentPage !== 1) {
+                      setCurrentPage(1);
+                      return;
+                    }
+
                     void refreshUsers(defaults);
                   }}
                   className="h-11 self-end rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
@@ -5106,6 +5156,16 @@ export default function UsersPage() {
             <ManagementTable
               title="Customer directory"
               rows={rows}
+              totalItems={totalUsers}
+              currentPage={usersState.page || currentPage}
+              pageSize={usersState.limit || pageSize}
+              onPageChange={(next) => {
+                setCurrentPage(next);
+              }}
+              onPageSizeChange={(next) => {
+                setPageSize(next);
+                setCurrentPage(1);
+              }}
               columns={["Customer", "Contact", "Status", "Account Upgrade", "Created", "Action"]}
               onVisibleRowsChange={setVisibleRows}
               action={
