@@ -15,7 +15,8 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
+import { extractPaginationMeta } from "@/lib/pagination";
 
 type RecentKycFilters = {
   status: string;
@@ -29,6 +30,10 @@ type RecentKycFilters = {
 type RecentKycState = {
   payload: unknown;
   rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -153,13 +158,20 @@ const buildRequestParams = (filters: RecentKycFilters) => {
   return params;
 };
 
-const fetchRecentKycs = async (filters: RecentKycFilters): Promise<RecentKycState> => {
+const fetchRecentKycs = async (filters: RecentKycFilters, page = 1): Promise<RecentKycState> => {
   try {
-    const payload = await adminService.getRecentKycs(buildRequestParams(filters));
+    const requestedLimit = Number(filters.limit) || 100;
+    const payload = await adminService.getRecentKycs({
+      ...buildRequestParams(filters),
+      page,
+      limit: requestedLimit,
+    });
+    const pagination = extractPaginationMeta(payload, requestedLimit);
 
     return {
       payload,
       rows: extractRows(payload),
+      ...pagination,
       loading: false,
       loaded: true,
       error: "",
@@ -168,6 +180,10 @@ const fetchRecentKycs = async (filters: RecentKycFilters): Promise<RecentKycStat
     return {
       payload: null,
       rows: [],
+      total: 0,
+      page: 1,
+      limit: Number(filters.limit) || 100,
+      skip: 0,
       loading: false,
       loaded: true,
       error: getErrorMessage(error),
@@ -473,6 +489,10 @@ export default function RecentKycsPage() {
   const [kycs, setKycs] = useState<RecentKycState>({
     payload: null,
     rows: [],
+    total: 0,
+    page: 1,
+    limit: Number(getDefaultFilters().limit) || 100,
+    skip: 0,
     loading: false,
     loaded: false,
     error: "",
@@ -492,7 +512,7 @@ export default function RecentKycsPage() {
       return;
     }
 
-    void fetchRecentKycs(appliedFilters).then((result) => {
+    void fetchRecentKycs(appliedFilters, 1).then((result) => {
       if (!cancelled) {
         setKycs(result);
       }
@@ -501,24 +521,16 @@ export default function RecentKycsPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedFilters, canOpenRecentKycs, router]);
+  }, [canOpenRecentKycs, router]);
 
-  const refreshRecentKycs = async (nextFilters = appliedFilters) => {
+  const refreshRecentKycs = async (nextFilters = appliedFilters, nextPage = currentPage) => {
     setKycs((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchRecentKycs(nextFilters);
+    const result = await fetchRecentKycs(nextFilters, nextPage);
     setKycs(result);
   };
 
   const rows = kycs.rows;
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [rows.length]);
 
   const summary = useMemo(() => {
     const pendingCount = rows.filter((row) => String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "pending").length;
@@ -559,7 +571,7 @@ export default function RecentKycsPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => void refreshRecentKycs()}
+                      onClick={() => void refreshRecentKycs(appliedFilters, currentPage)}
               disabled={kycs.loading}
               className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
             >
@@ -673,7 +685,8 @@ export default function RecentKycsPage() {
                       type="button"
                       onClick={() => {
                         setAppliedFilters(filters);
-                        void refreshRecentKycs(filters);
+                        setCurrentPage(1);
+                        void refreshRecentKycs(filters, 1);
                       }}
                       disabled={kycs.loading}
                       className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:opacity-70"
@@ -687,7 +700,8 @@ export default function RecentKycsPage() {
                         const defaults = getDefaultFilters();
                         setFilters(defaults);
                         setAppliedFilters(defaults);
-                        void refreshRecentKycs(defaults);
+                        setCurrentPage(1);
+                        void refreshRecentKycs(defaults, 1);
                       }}
                       disabled={kycs.loading}
                       className="inline-flex h-11 items-center justify-center rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10 disabled:opacity-70"
@@ -709,7 +723,7 @@ export default function RecentKycsPage() {
             )}
 
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-              <SummaryCard label="Returned submissions" value={formatValue(rows.length)} icon={ShieldCheck} />
+              <SummaryCard label="Returned submissions" value={formatValue(kycs.total || rows.length)} icon={ShieldCheck} />
               <SummaryCard label="Pending review" value={formatValue(summary.pendingCount)} icon={AlertCircle} />
               <SummaryCard label="Manual review" value={formatValue(summary.manualReviewCount)} icon={Eye} />
               <SummaryCard label="Unique users" value={formatValue(summary.uniqueUsers)} icon={UserRound} />
@@ -744,7 +758,7 @@ export default function RecentKycsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {paginatedRows.map((row, index) => {
+                    {rows.map((row, index) => {
                       const user = isRecord(getRecordValue(row, ["user"])) ? (getRecordValue(row, ["user"]) as Record<string, unknown>) : null;
                       const fullName = user
                         ? `${String(getRecordValue(user, ["first_name"]) ?? "")} ${String(getRecordValue(user, ["last_name"]) ?? "")}`.trim()
@@ -798,13 +812,19 @@ export default function RecentKycsPage() {
               </div>
 
               <TablePagination
-                totalItems={rows.length}
-                currentPage={safeCurrentPage}
-                pageSize={pageSize}
-                onPageChange={setCurrentPage}
+                totalItems={kycs.total || rows.length}
+                currentPage={kycs.page || currentPage}
+                pageSize={kycs.limit || Number(appliedFilters.limit) || 100}
+                onPageChange={(nextPage) => {
+                  setCurrentPage(nextPage);
+                  void refreshRecentKycs(appliedFilters, nextPage);
+                }}
                 onPageSizeChange={(next) => {
-                  setPageSize(next);
+                  const nextFilters = { ...filters, limit: String(next) };
+                  setFilters(nextFilters);
+                  setAppliedFilters(nextFilters);
                   setCurrentPage(1);
+                  void refreshRecentKycs(nextFilters, 1);
                 }}
               />
 

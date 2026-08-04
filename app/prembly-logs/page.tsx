@@ -15,7 +15,8 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
+import { extractPaginationMeta } from "@/lib/pagination";
 
 type PremblyLogFilters = {
   category: string;
@@ -32,6 +33,10 @@ type PremblyLogFilters = {
 type PremblyLogsState = {
   payload: unknown;
   rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -159,13 +164,20 @@ const buildRequestParams = (filters: PremblyLogFilters) => {
   return params;
 };
 
-const fetchPremblyLogs = async (filters: PremblyLogFilters): Promise<PremblyLogsState> => {
+const fetchPremblyLogs = async (filters: PremblyLogFilters, page = 1): Promise<PremblyLogsState> => {
   try {
-    const payload = await adminService.getPremblyLogs(buildRequestParams(filters));
+    const requestedLimit = Number(filters.limit) || 100;
+    const payload = await adminService.getPremblyLogs({
+      ...buildRequestParams(filters),
+      page,
+      limit: requestedLimit,
+    });
+    const pagination = extractPaginationMeta(payload, requestedLimit);
 
     return {
       payload,
       rows: extractRows(payload),
+      ...pagination,
       loading: false,
       loaded: true,
       error: "",
@@ -174,6 +186,10 @@ const fetchPremblyLogs = async (filters: PremblyLogFilters): Promise<PremblyLogs
     return {
       payload: null,
       rows: [],
+      total: 0,
+      page: 1,
+      limit: Number(filters.limit) || 100,
+      skip: 0,
       loading: false,
       loaded: true,
       error: getErrorMessage(error),
@@ -353,6 +369,10 @@ export default function PremblyLogsPage() {
   const [logsState, setLogsState] = useState<PremblyLogsState>({
     payload: null,
     rows: [],
+    total: 0,
+    page: 1,
+    limit: Number(getDefaultFilters().limit) || 100,
+    skip: 0,
     loading: true,
     loaded: false,
     error: "",
@@ -360,7 +380,6 @@ export default function PremblyLogsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     let cancelled = false;
@@ -375,7 +394,7 @@ export default function PremblyLogsPage() {
       return;
     }
 
-    void fetchPremblyLogs(getDefaultFilters()).then((result) => {
+    void fetchPremblyLogs(getDefaultFilters(), 1).then((result) => {
       if (!cancelled) {
         setLogsState(result);
       }
@@ -386,18 +405,15 @@ export default function PremblyLogsPage() {
     };
   }, [allowed, router]);
 
-  const refreshLogs = async (nextFilters = filters) => {
+  const refreshLogs = async (nextFilters = filters, nextPage = currentPage) => {
     setRefreshing(true);
     setLogsState((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchPremblyLogs(nextFilters);
+    const result = await fetchPremblyLogs(nextFilters, nextPage);
     setLogsState(result);
     setRefreshing(false);
   };
 
   const rows = logsState.rows;
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const summaryCards = useMemo(() => {
     const successCount = rows.filter((row) => {
@@ -408,12 +424,12 @@ export default function PremblyLogsPage() {
     const categories = new Set(rows.map((row) => String(getRecordValue(row, ["category"]) ?? "")).filter(Boolean)).size;
 
     return [
-      { label: "Prembly logs", value: formatValue(rows.length), icon: Search },
+      { label: "Prembly logs", value: formatValue(logsState.total || rows.length), icon: Search },
       { label: "Successful", value: formatValue(successCount), icon: ShieldCheck },
       { label: "Failed", value: formatValue(failureCount), icon: AlertCircle },
       { label: "Categories", value: formatValue(categories), icon: UserSearch },
     ];
-  }, [rows]);
+  }, [logsState.total, rows]);
 
   if (!allowed) {
     return (
@@ -440,7 +456,10 @@ export default function PremblyLogsPage() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => void refreshLogs()}
+                      onClick={() => {
+                        setCurrentPage(1);
+                        void refreshLogs(filters, 1);
+                      }}
               disabled={refreshing}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/40 dark:hover:text-sky-200"
             >
@@ -561,7 +580,8 @@ export default function PremblyLogsPage() {
                         const defaults = getDefaultFilters();
                         setFilters(defaults);
                         setCurrentPage(1);
-                        void refreshLogs(defaults);
+                        setCurrentPage(1);
+                        void refreshLogs(defaults, 1);
                       }}
                       className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:bg-white/15"
                     >
@@ -620,7 +640,7 @@ export default function PremblyLogsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-white/10">
-                    {paginatedRows.length === 0 ? (
+                    {rows.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="px-5 py-16 text-center">
                           <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
@@ -637,7 +657,7 @@ export default function PremblyLogsPage() {
                         </td>
                       </tr>
                     ) : (
-                      paginatedRows.map((row, index) => (
+                      rows.map((row, index) => (
                         <tr key={`${String(getRecordValue(row, ["_id", "id", "reference"]) ?? "prembly")}-${index}`} className="text-slate-700 dark:text-slate-300">
                           <td className="px-5 py-4 align-top">
                             <p className="font-bold text-slate-950 dark:text-white">{String(getRecordValue(row, ["category"]) ?? "Not available")}</p>
@@ -681,13 +701,18 @@ export default function PremblyLogsPage() {
               </div>
 
               <TablePagination
-                currentPage={safeCurrentPage}
-                pageSize={pageSize}
-                totalItems={rows.length}
-                onPageChange={setCurrentPage}
+                currentPage={logsState.page || currentPage}
+                pageSize={logsState.limit || Number(filters.limit) || 100}
+                totalItems={logsState.total || rows.length}
+                onPageChange={(nextPage) => {
+                  setCurrentPage(nextPage);
+                  void refreshLogs(filters, nextPage);
+                }}
                 onPageSizeChange={(value) => {
-                  setPageSize(value);
+                  const nextFilters = { ...filters, limit: String(value) };
+                  setFilters(nextFilters);
                   setCurrentPage(1);
+                  void refreshLogs(nextFilters, 1);
                 }}
               />
             </section>

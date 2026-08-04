@@ -27,8 +27,9 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
 import { exportTableRows } from "@/lib/export/table";
+import { extractPaginationMeta } from "@/lib/pagination";
 
 type TransferFilters = {
   search: string;
@@ -41,6 +42,10 @@ type TransferFilters = {
 
 type TransfersState = {
   rows: any[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -52,6 +57,30 @@ type ActionNotice = {
 };
 
 type UserLabelMap = Record<string, { name: string; email: string }>;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const extractTransferRows = (payload: unknown) => {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (!isRecord(payload)) {
+    return [];
+  }
+
+  if (Array.isArray(payload.data)) {
+    return payload.data;
+  }
+
+  const nested = payload.data;
+  if (isRecord(nested) && Array.isArray(nested.data)) {
+    return nested.data;
+  }
+
+  return [];
+};
 
 const STATUS_VARIANTS: Record<string, { label: string; icon: any; className: string }> = {
   success: {
@@ -435,30 +464,37 @@ export default function TransfersPage() {
 
   const [state, setState] = useState<TransfersState>({
     rows: [],
+    total: 0,
+    page: 1,
+    limit: 1000,
+    skip: 0,
     loading: true,
     loaded: false,
     error: "",
   });
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
   const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
   const [reversingId, setReversingId] = useState("");
   const [notice, setNotice] = useState<ActionNotice | null>(null);
   const [userLabels, setUserLabels] = useState<UserLabelMap>({});
   const [exportingFormat, setExportingFormat] = useState<"" | "csv" | "xlsx">("");
 
-  const fetchTransfers = useCallback(async () => {
+  const fetchTransfers = useCallback(async (nextPage = 1, nextFilters: TransferFilters = filters) => {
     setState((prev) => ({ ...prev, loading: true, error: "" }));
     try {
-      const response = await adminService.getTransfers(filters as any);
-      const payload = (response as any).data || response;
-      
-      // Handle nested data structure: { success: true, data: { total: 31, data: [...] } }
-      const rows = Array.isArray(payload.data) ? payload.data : (Array.isArray(payload) ? payload : []);
-      
+      const requestedLimit = Number(nextFilters.limit) || 1000;
+      const response = await adminService.getTransfers({
+        ...nextFilters,
+        page: nextPage,
+        limit: requestedLimit,
+      } as any);
+      const rows = extractTransferRows(response);
+      const pagination = extractPaginationMeta(response, requestedLimit);
+
       setState({
         rows,
+        ...pagination,
         loading: false,
         loaded: true,
         error: "",
@@ -474,22 +510,19 @@ export default function TransfersPage() {
 
   useEffect(() => {
     if (allowed) {
-      void fetchTransfers();
+      setCurrentPage(1);
+      void fetchTransfers(1, filters);
     }
-  }, [allowed, fetchTransfers]);
+  }, [allowed, fetchTransfers, filters]);
 
   const filteredRows = useMemo(() => {
     return state.rows;
   }, [state.rows]);
 
-  const paginatedRows = useMemo(() => {
-    return paginateItems(filteredRows, currentPage, pageSize);
-  }, [filteredRows, currentPage, pageSize]);
-
   useEffect(() => {
     const visibleUserIds = Array.from(
       new Set(
-        paginatedRows
+        filteredRows
           .map((row) => String(row.user_id || row.userId || row.metadata?.userId || "").trim())
           .filter(Boolean),
       ),
@@ -527,7 +560,7 @@ export default function TransfersPage() {
     return () => {
       cancelled = true;
     };
-  }, [paginatedRows, userLabels]);
+  }, [filteredRows, userLabels]);
 
   const handleReverseTransfer = async (id: string) => {
     if (!id) {
@@ -545,7 +578,7 @@ export default function TransfersPage() {
         tone: isPendingApprovalResponse(response) ? "warning" : "success",
         message: requestId ? `Transfer reversal submitted. Request ID: ${requestId}` : "Transfer reversal submitted.",
       });
-      await fetchTransfers();
+      await fetchTransfers(currentPage, filters);
     } catch (error) {
       setNotice({ tone: "error", message: getErrorMessage(error) });
     } finally {
@@ -656,7 +689,7 @@ export default function TransfersPage() {
               Export Excel
             </button>
             <button
-              onClick={() => void fetchTransfers()}
+              onClick={() => void fetchTransfers(currentPage, filters)}
               disabled={state.loading}
               className="inline-flex h-12 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
             >
@@ -759,8 +792,8 @@ export default function TransfersPage() {
                       </div>
                     </td>
                   </tr>
-                ) : paginatedRows.length > 0 ? (
-                  paginatedRows.map((row) => {
+                ) : filteredRows.length > 0 ? (
+                  filteredRows.map((row) => {
                     const canReverse = String(row.status ?? "").toLowerCase() === "success";
                     const userId = String(row.user_id || row.userId || row.metadata?.userId || "").trim();
                     const embeddedName = typeof row.user?.name === "string" && row.user.name.trim() ? row.user.name : "";
@@ -849,12 +882,18 @@ export default function TransfersPage() {
           </div>
 
           <TablePagination
-            totalItems={filteredRows.length}
-            currentPage={currentPage}
-            pageSize={pageSize}
-            onPageChange={setCurrentPage}
+            totalItems={state.total || filteredRows.length}
+            currentPage={state.page || currentPage}
+            pageSize={state.limit || Number(filters.limit) || 1000}
+            onPageChange={(nextPage) => {
+              setCurrentPage(nextPage);
+              void fetchTransfers(nextPage, filters);
+            }}
             onPageSizeChange={(size) => {
-              setPageSize(size);
+              setFilters((current) => ({
+                ...current,
+                limit: size,
+              }));
               setCurrentPage(1);
             }}
             label="transfers"

@@ -32,6 +32,9 @@ export function TablePagination({
     return null;
   }
 
+  const normalizedPageSizeOptions = Array.from(
+    new Set([...pageSizeOptions, pageSize].filter((option) => option > 0)),
+  ).sort((left, right) => left - right);
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const start = (currentPage - 1) * pageSize + 1;
   const end = Math.min(totalItems, currentPage * pageSize);
@@ -52,7 +55,7 @@ export function TablePagination({
             onChange={(event) => onPageSizeChange(Number(event.target.value))}
             className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none transition focus:border-[#069AFF] focus:ring-4 focus:ring-[#069AFF]/15 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200"
           >
-            {pageSizeOptions.map((option) => (
+            {normalizedPageSizeOptions.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>

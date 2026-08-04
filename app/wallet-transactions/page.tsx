@@ -31,7 +31,8 @@ import { adminService } from "@/lib/services/adminService";
 import { exportTableRows } from "@/lib/export/table";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
+import { extractPaginationMeta } from "@/lib/pagination";
 
 type WalletTransactionFilters = {
   search: string;
@@ -49,6 +50,10 @@ type WalletTransactionFilters = {
 type WalletTransactionsState = {
   payload: unknown;
   rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -303,13 +308,20 @@ const buildRequestParams = (filters: WalletTransactionFilters) => {
   return params;
 };
 
-const fetchWalletTransactions = async (filters: WalletTransactionFilters): Promise<WalletTransactionsState> => {
+const fetchWalletTransactions = async (filters: WalletTransactionFilters, page = 1): Promise<WalletTransactionsState> => {
   try {
-    const payload = await adminService.getWalletTransactions(buildRequestParams(filters));
+    const requestedLimit = Number(filters.limit) || 100;
+    const payload = await adminService.getWalletTransactions({
+      ...buildRequestParams(filters),
+      page,
+      limit: requestedLimit,
+    });
+    const pagination = extractPaginationMeta(payload, requestedLimit);
 
     return {
       payload,
       rows: extractRows(payload),
+      ...pagination,
       loading: false,
       loaded: true,
       error: "",
@@ -318,6 +330,10 @@ const fetchWalletTransactions = async (filters: WalletTransactionFilters): Promi
     return {
       payload: null,
       rows: [],
+      total: 0,
+      page: 1,
+      limit: Number(filters.limit) || 100,
+      skip: 0,
       loading: false,
       loaded: true,
       error: getErrorMessage(error),
@@ -651,6 +667,10 @@ export default function WalletTransactionsPage() {
   const [transactions, setTransactions] = useState<WalletTransactionsState>({
     payload: null,
     rows: [],
+    total: 0,
+    page: 1,
+    limit: Number(getDefaultFilters().limit) || 100,
+    skip: 0,
     loading: false,
     loaded: false,
     error: "",
@@ -674,7 +694,7 @@ export default function WalletTransactionsPage() {
       return;
     }
 
-    void fetchWalletTransactions(appliedFilters).then((result) => {
+    void fetchWalletTransactions(appliedFilters, 1).then((result) => {
       if (!cancelled) {
         setTransactions(result);
       }
@@ -683,11 +703,11 @@ export default function WalletTransactionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedFilters, canOpenWalletLedger, router]);
+  }, [canOpenWalletLedger, router]);
 
-  const refreshTransactions = async (nextFilters = appliedFilters) => {
+  const refreshTransactions = async (nextFilters = appliedFilters, nextPage = currentPage) => {
     setTransactions((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchWalletTransactions(nextFilters);
+    const result = await fetchWalletTransactions(nextFilters, nextPage);
     setTransactions(result);
   };
 
@@ -732,10 +752,6 @@ export default function WalletTransactionsPage() {
 
   const rows = transactions.rows;
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const totals = useMemo(() => {
     const successCount = rows.filter((row) => String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "success").length;
@@ -836,7 +852,7 @@ export default function WalletTransactionsPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => void refreshTransactions()}
+              onClick={() => void refreshTransactions(appliedFilters, currentPage)}
               disabled={transactions.loading}
               className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:border-[#069AFF]/40 hover:text-[#069AFF] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:border-[#069AFF]/50 dark:hover:text-sky-200"
             >
@@ -959,7 +975,8 @@ export default function WalletTransactionsPage() {
                       type="button"
                       onClick={() => {
                         setAppliedFilters(filters);
-                        void refreshTransactions(filters);
+                        setCurrentPage(1);
+                        void refreshTransactions(filters, 1);
                       }}
                       disabled={transactions.loading}
                       className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:opacity-70"
@@ -973,7 +990,8 @@ export default function WalletTransactionsPage() {
                         const defaults = getDefaultFilters();
                         setFilters(defaults);
                         setAppliedFilters(defaults);
-                        void refreshTransactions(defaults);
+                        setCurrentPage(1);
+                        void refreshTransactions(defaults, 1);
                       }}
                       disabled={transactions.loading}
                       className="inline-flex h-11 items-center justify-center rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10 disabled:opacity-70"
@@ -1012,7 +1030,7 @@ export default function WalletTransactionsPage() {
             )}
 
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-              <SummaryCard label="Returned records" value={formatValue(rows.length)} icon={WalletCards} />
+              <SummaryCard label="Returned records" value={formatValue(transactions.total || rows.length)} icon={WalletCards} />
               <SummaryCard label="Successful transactions" value={formatValue(totals.successCount)} icon={Landmark} />
               <SummaryCard label="Inflow volume" value={formatCurrency(totals.inflow)} icon={ArrowDownLeft} />
               <SummaryCard label="Outflow volume" value={formatCurrency(totals.outflow)} icon={ArrowUpRight} />
@@ -1067,7 +1085,7 @@ export default function WalletTransactionsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {paginatedRows.map((row, index) => {
+                    {rows.map((row, index) => {
                       const direction = getDirection(row);
                       const directionTone = getDirectionTone(direction);
                       const DirectionIcon = directionTone.icon;
@@ -1157,13 +1175,19 @@ export default function WalletTransactionsPage() {
                 </table>
               </div>
               <TablePagination
-                totalItems={rows.length}
-                currentPage={safeCurrentPage}
-                pageSize={pageSize}
-                onPageChange={setCurrentPage}
+                totalItems={transactions.total || rows.length}
+                currentPage={transactions.page || currentPage}
+                pageSize={transactions.limit || Number(appliedFilters.limit) || 100}
+                onPageChange={(nextPage) => {
+                  setCurrentPage(nextPage);
+                  void refreshTransactions(appliedFilters, nextPage);
+                }}
                 onPageSizeChange={(next) => {
-                  setPageSize(next);
+                  const nextFilters = { ...filters, limit: String(next) };
+                  setFilters(nextFilters);
+                  setAppliedFilters(nextFilters);
                   setCurrentPage(1);
+                  void refreshTransactions(nextFilters, 1);
                 }}
               />
               {!rows.length && (

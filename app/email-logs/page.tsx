@@ -15,7 +15,8 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
+import { extractPaginationMeta } from "@/lib/pagination";
 
 type EmailLogFilters = {
   template: string;
@@ -26,6 +27,10 @@ type EmailLogFilters = {
 type EmailLogsState = {
   payload: unknown;
   rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -137,13 +142,20 @@ const buildRequestParams = (filters: EmailLogFilters) => {
   return params;
 };
 
-const fetchEmailLogs = async (filters: EmailLogFilters): Promise<EmailLogsState> => {
+const fetchEmailLogs = async (filters: EmailLogFilters, page = 1): Promise<EmailLogsState> => {
   try {
-    const payload = await adminService.getEmailLogs(buildRequestParams(filters));
+    const requestedLimit = Number(filters.limit) || 100;
+    const payload = await adminService.getEmailLogs({
+      ...buildRequestParams(filters),
+      page,
+      limit: requestedLimit,
+    });
+    const pagination = extractPaginationMeta(payload, requestedLimit);
 
     return {
       payload,
       rows: extractRows(payload),
+      ...pagination,
       loading: false,
       loaded: true,
       error: "",
@@ -152,6 +164,10 @@ const fetchEmailLogs = async (filters: EmailLogFilters): Promise<EmailLogsState>
     return {
       payload: null,
       rows: [],
+      total: 0,
+      page: 1,
+      limit: Number(filters.limit) || 100,
+      skip: 0,
       loading: false,
       loaded: true,
       error: getErrorMessage(error),
@@ -308,6 +324,10 @@ export default function EmailLogsPage() {
   const [logsState, setLogsState] = useState<EmailLogsState>({
     payload: null,
     rows: [],
+    total: 0,
+    page: 1,
+    limit: Number(getDefaultFilters().limit) || 100,
+    skip: 0,
     loading: true,
     loaded: false,
     error: "",
@@ -328,7 +348,7 @@ export default function EmailLogsPage() {
       return;
     }
 
-    void fetchEmailLogs(getDefaultFilters()).then((result) => {
+    void fetchEmailLogs(getDefaultFilters(), 1).then((result) => {
       if (!cancelled) {
         setLogsState(result);
       }
@@ -339,20 +359,16 @@ export default function EmailLogsPage() {
     };
   }, [canOpenEmailLogs, router]);
 
-  const refreshLogs = async (nextFilters = filters) => {
+  const refreshLogs = async (nextFilters = filters, nextPage = currentPage) => {
     setRefreshing(true);
     setLogsState((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchEmailLogs(nextFilters);
+    const result = await fetchEmailLogs(nextFilters, nextPage);
     setLogsState(result);
     setRefreshing(false);
   };
 
   const rows = logsState.rows;
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const summaryCards = useMemo(() => {
     const sent = rows.filter((row) => ["sent", "success", "delivered"].includes(String(getRecordValue(row, ["status"]) ?? "").toLowerCase())).length;
@@ -360,12 +376,12 @@ export default function EmailLogsPage() {
     const welcome = rows.filter((row) => String(getRecordValue(row, ["template", "templateName"]) ?? "").toLowerCase() === "welcome").length;
 
     return [
-      { label: "Email logs", value: formatValue(rows.length), icon: Mail },
+      { label: "Email logs", value: formatValue(logsState.total || rows.length), icon: Mail },
       { label: "Delivered", value: formatValue(sent), icon: ShieldCheck },
       { label: "Failed", value: formatValue(failed), icon: AlertCircle },
       { label: "Welcome template", value: formatValue(welcome), icon: Send },
     ];
-  }, [rows]);
+  }, [logsState.total, rows]);
 
   if (!canOpenEmailLogs) {
     return (
@@ -449,7 +465,10 @@ export default function EmailLogsPage() {
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => void refreshLogs()}
+                      onClick={() => {
+                        setCurrentPage(1);
+                        void refreshLogs(filters, 1);
+                      }}
                       disabled={refreshing}
                       className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:opacity-60"
                     >
@@ -461,7 +480,8 @@ export default function EmailLogsPage() {
                       onClick={() => {
                         const defaults = getDefaultFilters();
                         setFilters(defaults);
-                        void refreshLogs(defaults);
+                        setCurrentPage(1);
+                        void refreshLogs(defaults, 1);
                       }}
                       className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10"
                     >
@@ -507,7 +527,7 @@ export default function EmailLogsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {paginatedRows.map((row, index) => {
+                    {rows.map((row, index) => {
                       const template = String(getRecordValue(row, ["template", "templateName"]) ?? "Not available");
                       const recipient = String(getRecordValue(row, ["email", "recipient", "to"]) ?? "Not available");
                       const subject = String(getRecordValue(row, ["subject", "title"]) ?? "Not available");
@@ -558,13 +578,18 @@ export default function EmailLogsPage() {
                 </table>
               </div>
               <TablePagination
-                totalItems={rows.length}
-                currentPage={safeCurrentPage}
-                pageSize={pageSize}
-                onPageChange={setCurrentPage}
+                totalItems={logsState.total || rows.length}
+                currentPage={logsState.page || currentPage}
+                pageSize={logsState.limit || Number(filters.limit) || 100}
+                onPageChange={(nextPage) => {
+                  setCurrentPage(nextPage);
+                  void refreshLogs(filters, nextPage);
+                }}
                 onPageSizeChange={(next) => {
-                  setPageSize(next);
+                  const nextFilters = { ...filters, limit: String(next) };
+                  setFilters(nextFilters);
                   setCurrentPage(1);
+                  void refreshLogs(nextFilters, 1);
                 }}
               />
             </section>

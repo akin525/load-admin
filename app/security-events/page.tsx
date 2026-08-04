@@ -15,7 +15,8 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
+import { extractPaginationMeta } from "@/lib/pagination";
 
 type SecurityEventFilters = {
   eventType: string;
@@ -30,6 +31,10 @@ type SecurityEventFilters = {
 type SecurityEventsState = {
   payload: unknown;
   rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -165,13 +170,20 @@ const buildRequestParams = (filters: SecurityEventFilters) => {
   return params;
 };
 
-const fetchSecurityEvents = async (filters: SecurityEventFilters): Promise<SecurityEventsState> => {
+const fetchSecurityEvents = async (filters: SecurityEventFilters, page = 1): Promise<SecurityEventsState> => {
   try {
-    const payload = await adminService.getSecurityEvents(buildRequestParams(filters));
+    const requestedLimit = Number(filters.limit) || 100;
+    const payload = await adminService.getSecurityEvents({
+      ...buildRequestParams(filters),
+      page,
+      limit: requestedLimit,
+    });
+    const pagination = extractPaginationMeta(payload, requestedLimit);
 
     return {
       payload,
       rows: extractRows(payload),
+      ...pagination,
       loading: false,
       loaded: true,
       error: "",
@@ -180,6 +192,10 @@ const fetchSecurityEvents = async (filters: SecurityEventFilters): Promise<Secur
     return {
       payload: null,
       rows: [],
+      total: 0,
+      page: 1,
+      limit: Number(filters.limit) || 100,
+      skip: 0,
       loading: false,
       loaded: true,
       error: getErrorMessage(error),
@@ -411,6 +427,10 @@ export default function SecurityEventsPage() {
   const [eventsState, setEventsState] = useState<SecurityEventsState>({
     payload: null,
     rows: [],
+    total: 0,
+    page: 1,
+    limit: Number(getDefaultFilters().limit) || 100,
+    skip: 0,
     loading: true,
     loaded: false,
     error: "",
@@ -431,7 +451,7 @@ export default function SecurityEventsPage() {
       return;
     }
 
-    void fetchSecurityEvents(getDefaultFilters()).then((result) => {
+    void fetchSecurityEvents(getDefaultFilters(), 1).then((result) => {
       if (!cancelled) {
         setEventsState(result);
       }
@@ -442,20 +462,16 @@ export default function SecurityEventsPage() {
     };
   }, [allowed, router]);
 
-  const refreshEvents = async (nextFilters = filters) => {
+  const refreshEvents = async (nextFilters = filters, nextPage = currentPage) => {
     setRefreshing(true);
     setEventsState((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchSecurityEvents(nextFilters);
+    const result = await fetchSecurityEvents(nextFilters, nextPage);
     setEventsState(result);
     setRefreshing(false);
   };
 
   const rows = eventsState.rows;
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const summaryCards = useMemo(() => {
     const successCount = rows.filter((row) => getRecordValue(row, ["success"]) === true).length;
@@ -464,13 +480,13 @@ export default function SecurityEventsPage() {
     const adminCount = rows.filter((row) => String(getRecordValue(row, ["subjectType"]) ?? "").toLowerCase() === "admin").length;
 
     return [
-      { label: "Security events", value: formatValue(rows.length), icon: ShieldAlert },
+      { label: "Security events", value: formatValue(eventsState.total || rows.length), icon: ShieldAlert },
       { label: "Successful", value: formatValue(successCount), icon: ShieldCheck },
       { label: "Failed", value: formatValue(failedCount), icon: AlertCircle },
       { label: "High risk", value: formatValue(highRiskCount), icon: UserX },
       { label: "Admin subjects", value: formatValue(adminCount), icon: ShieldCheck },
     ];
-  }, [rows]);
+  }, [eventsState.total, rows]);
 
   if (!allowed) {
     return (
@@ -621,7 +637,10 @@ export default function SecurityEventsPage() {
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => void refreshEvents()}
+                      onClick={() => {
+                        setCurrentPage(1);
+                        void refreshEvents(filters, 1);
+                      }}
                       disabled={refreshing}
                       className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:opacity-60"
                     >
@@ -633,7 +652,8 @@ export default function SecurityEventsPage() {
                       onClick={() => {
                         const defaults = getDefaultFilters();
                         setFilters(defaults);
-                        void refreshEvents(defaults);
+                        setCurrentPage(1);
+                        void refreshEvents(defaults, 1);
                       }}
                       className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10"
                     >
@@ -679,7 +699,7 @@ export default function SecurityEventsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {paginatedRows.map((row, index) => {
+                    {rows.map((row, index) => {
                       const eventType = String(getRecordValue(row, ["eventType", "type"]) ?? "Not available");
                       const subjectType = String(getRecordValue(row, ["subjectType"]) ?? "Not available");
                       const subjectId = String(getRecordValue(row, ["subjectId", "userId", "adminId"]) ?? "Not available");
@@ -738,13 +758,18 @@ export default function SecurityEventsPage() {
                 </table>
               </div>
               <TablePagination
-                totalItems={rows.length}
-                currentPage={safeCurrentPage}
-                pageSize={pageSize}
-                onPageChange={setCurrentPage}
+                totalItems={eventsState.total || rows.length}
+                currentPage={eventsState.page || currentPage}
+                pageSize={eventsState.limit || Number(filters.limit) || 100}
+                onPageChange={(nextPage) => {
+                  setCurrentPage(nextPage);
+                  void refreshEvents(filters, nextPage);
+                }}
                 onPageSizeChange={(next) => {
-                  setPageSize(next);
+                  const nextFilters = { ...filters, limit: String(next) };
+                  setFilters(nextFilters);
                   setCurrentPage(1);
+                  void refreshEvents(nextFilters, 1);
                 }}
               />
             </section>

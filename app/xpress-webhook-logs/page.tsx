@@ -26,7 +26,8 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
+import { extractPaginationMeta } from "@/lib/pagination";
 
 type XpressWebhookFilters = {
   event: string;
@@ -39,6 +40,10 @@ type XpressWebhookFilters = {
 type XpressWebhookLogsState = {
   payload: unknown;
   rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -155,13 +160,20 @@ const buildRequestParams = (filters: XpressWebhookFilters) => {
   return params;
 };
 
-const fetchXpressWebhookLogs = async (filters: XpressWebhookFilters): Promise<XpressWebhookLogsState> => {
+const fetchXpressWebhookLogs = async (filters: XpressWebhookFilters, page = 1): Promise<XpressWebhookLogsState> => {
   try {
-    const payload = await adminService.getXpressWebhookLogs(buildRequestParams(filters));
+    const requestedLimit = Number(filters.limit) || 100;
+    const payload = await adminService.getXpressWebhookLogs({
+      ...buildRequestParams(filters),
+      page,
+      limit: requestedLimit,
+    });
+    const pagination = extractPaginationMeta(payload, requestedLimit);
 
     return {
       payload,
       rows: extractRows(payload),
+      ...pagination,
       loading: false,
       loaded: true,
       error: "",
@@ -170,6 +182,10 @@ const fetchXpressWebhookLogs = async (filters: XpressWebhookFilters): Promise<Xp
     return {
       payload: null,
       rows: [],
+      total: 0,
+      page: 1,
+      limit: Number(filters.limit) || 100,
+      skip: 0,
       loading: false,
       loaded: true,
       error: getErrorMessage(error),
@@ -328,6 +344,10 @@ export default function XpressWebhookLogsPage() {
   const [logsState, setLogsState] = useState<XpressWebhookLogsState>({
     payload: null,
     rows: [],
+    total: 0,
+    page: 1,
+    limit: Number(getDefaultFilters().limit) || 100,
+    skip: 0,
     loading: true,
     loaded: false,
     error: "",
@@ -349,7 +369,7 @@ export default function XpressWebhookLogsPage() {
       return;
     }
 
-    void fetchXpressWebhookLogs(getDefaultFilters()).then((result) => {
+    void fetchXpressWebhookLogs(getDefaultFilters(), 1).then((result) => {
       if (!cancelled) {
         setLogsState(result);
       }
@@ -360,20 +380,16 @@ export default function XpressWebhookLogsPage() {
     };
   }, [canOpenWebhookLogs, router]);
 
-  const refreshLogs = async (nextFilters = filters) => {
+  const refreshLogs = async (nextFilters = filters, nextPage = currentPage) => {
     setRefreshing(true);
     setLogsState((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchXpressWebhookLogs(nextFilters);
+    const result = await fetchXpressWebhookLogs(nextFilters, nextPage);
     setLogsState(result);
     setRefreshing(false);
   };
 
   const rows = logsState.rows;
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const summaryCards = useMemo(() => {
     const failed = rows.filter((row) => String(getRecordValue(row, ["processingStatus", "status"]) ?? "").toLowerCase() === "failed").length;
@@ -381,12 +397,12 @@ export default function XpressWebhookLogsPage() {
     const accountFunded = rows.filter((row) => String(getRecordValue(row, ["event"]) ?? "").toLowerCase() === "account_funded").length;
 
     return [
-      { label: "Webhook logs", value: formatValue(rows.length), icon: Activity },
+      { label: "Webhook logs", value: formatValue(logsState.total || rows.length), icon: Activity },
       { label: "Processed", value: formatValue(processed), icon: ShieldCheck },
       { label: "Failed", value: formatValue(failed), icon: AlertCircle },
       { label: "Account funded", value: formatValue(accountFunded), icon: WalletCards },
     ];
-  }, [rows]);
+  }, [logsState.total, rows]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -494,7 +510,10 @@ export default function XpressWebhookLogsPage() {
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => void refreshLogs()}
+                      onClick={() => {
+                        setCurrentPage(1);
+                        void refreshLogs(filters, 1);
+                      }}
                       disabled={refreshing}
                       className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:opacity-60"
                     >
@@ -506,7 +525,8 @@ export default function XpressWebhookLogsPage() {
                       onClick={() => {
                         const defaults = getDefaultFilters();
                         setFilters(defaults);
-                        void refreshLogs(defaults);
+                        setCurrentPage(1);
+                        void refreshLogs(defaults, 1);
                       }}
                       className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10"
                     >
@@ -552,7 +572,7 @@ export default function XpressWebhookLogsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {paginatedRows.map((row, index) => {
+                    {rows.map((row, index) => {
                       const event = String(getRecordValue(row, ["event"]) ?? "Not available");
                       const reference = String(getRecordValue(row, ["reference"]) ?? "Not available");
                       const requestId = String(getRecordValue(row, ["requestId"]) ?? "Not available");
@@ -602,13 +622,18 @@ export default function XpressWebhookLogsPage() {
                 </table>
               </div>
               <TablePagination
-                totalItems={rows.length}
-                currentPage={safeCurrentPage}
-                pageSize={pageSize}
-                onPageChange={setCurrentPage}
+                totalItems={logsState.total || rows.length}
+                currentPage={logsState.page || currentPage}
+                pageSize={logsState.limit || Number(filters.limit) || 100}
+                onPageChange={(nextPage) => {
+                  setCurrentPage(nextPage);
+                  void refreshLogs(filters, nextPage);
+                }}
                 onPageSizeChange={(next) => {
-                  setPageSize(next);
+                  const nextFilters = { ...filters, limit: String(next) };
+                  setFilters(nextFilters);
                   setCurrentPage(1);
+                  void refreshLogs(nextFilters, 1);
                 }}
               />
             </section>

@@ -25,7 +25,8 @@ import {
 import { adminService } from "@/lib/services/adminService";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
+import { extractPaginationMeta } from "@/lib/pagination";
 
 type AuditLogFilters = {
   adminUserId: string;
@@ -41,6 +42,10 @@ type AuditLogFilters = {
 type AuditLogsState = {
   payload: unknown;
   rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -224,16 +229,23 @@ const buildRequestParams = (filters: AuditLogFilters) => {
   return params;
 };
 
-const fetchAuditLogs = async (filters: AuditLogFilters): Promise<AuditLogsState> => {
+const fetchAuditLogs = async (filters: AuditLogFilters, page = 1): Promise<AuditLogsState> => {
   try {
-    const params = buildRequestParams(filters);
+    const requestedLimit = Number(filters.limit) || 100;
+    const params = {
+      ...buildRequestParams(filters),
+      page,
+      limit: requestedLimit,
+    };
     const payload = filters.adminId.trim()
       ? await adminService.getAdminAuditLogs(filters.adminId.trim(), params)
       : await adminService.getAuditLogs(params);
+    const pagination = extractPaginationMeta(payload, requestedLimit);
 
     return {
       payload,
       rows: extractRows(payload),
+      ...pagination,
       loading: false,
       loaded: true,
       error: "",
@@ -242,6 +254,10 @@ const fetchAuditLogs = async (filters: AuditLogFilters): Promise<AuditLogsState>
     return {
       payload: null,
       rows: [],
+      total: 0,
+      page: 1,
+      limit: Number(filters.limit) || 100,
+      skip: 0,
       loading: false,
       loaded: true,
       error: getErrorMessage(error),
@@ -493,6 +509,10 @@ export default function AuditLogsPage() {
   const [auditLogs, setAuditLogs] = useState<AuditLogsState>({
     payload: null,
     rows: [],
+    total: 0,
+    page: 1,
+    limit: Number(getDefaultFilters().limit) || 100,
+    skip: 0,
     loading: false,
     loaded: false,
     error: "",
@@ -513,7 +533,7 @@ export default function AuditLogsPage() {
       return;
     }
 
-    void fetchAuditLogs(appliedFilters).then((result) => {
+    void fetchAuditLogs(appliedFilters, 1).then((result) => {
       if (!cancelled) {
         setAuditLogs(result);
       }
@@ -522,20 +542,16 @@ export default function AuditLogsPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedFilters, canOpenAuditLogs, router]);
+  }, [canOpenAuditLogs, router]);
 
-  const refreshAuditLogs = async (nextFilters = appliedFilters) => {
+  const refreshAuditLogs = async (nextFilters = appliedFilters, nextPage = currentPage) => {
     setAuditLogs((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchAuditLogs(nextFilters);
+    const result = await fetchAuditLogs(nextFilters, nextPage);
     setAuditLogs(result);
   };
 
   const rows = auditLogs.rows;
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(rows, safeCurrentPage, pageSize);
 
   const totals = useMemo(() => {
     const successCount = rows.filter((row) => {
@@ -738,6 +754,8 @@ export default function AuditLogsPage() {
                       type="button"
                       onClick={() => {
                         setAppliedFilters(filters);
+                        setCurrentPage(1);
+                        void refreshAuditLogs(filters, 1);
                       }}
                       disabled={auditLogs.loading}
                       className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:opacity-70"
@@ -751,6 +769,8 @@ export default function AuditLogsPage() {
                         const defaults = getDefaultFilters();
                         setFilters(defaults);
                         setAppliedFilters(defaults);
+                        setCurrentPage(1);
+                        void refreshAuditLogs(defaults, 1);
                       }}
                       disabled={auditLogs.loading}
                       className="inline-flex h-11 items-center justify-center rounded-lg border border-white/20 bg-transparent px-4 text-sm font-bold text-white transition hover:bg-white/10 disabled:opacity-70"
@@ -763,7 +783,7 @@ export default function AuditLogsPage() {
             </section>
 
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-              <SummaryCard label="Log entries" value={formatValue(rows.length)} icon={FileText} />
+              <SummaryCard label="Log entries" value={formatValue(auditLogs.total || rows.length)} icon={FileText} />
               <SummaryCard label="Successful calls" value={formatValue(totals.successCount)} icon={ShieldCheck} />
               <SummaryCard label="Error calls" value={formatValue(totals.failureCount)} icon={AlertCircle} />
               <SummaryCard label="Unique routes" value={formatValue(totals.uniquePaths)} icon={BarChart3} />
@@ -784,7 +804,7 @@ export default function AuditLogsPage() {
                   </p>
                 </div>
                 <div className="rounded-md bg-[#069AFF]/10 px-3 py-1.5 text-xs font-bold text-[#069AFF] dark:text-sky-200">
-                  {formatValue(rows.length)} records
+                  {formatValue(auditLogs.total || rows.length)} records
                 </div>
               </div>
 
@@ -866,13 +886,19 @@ export default function AuditLogsPage() {
                   </table>
                 </div>
                 <TablePagination
-                  totalItems={rows.length}
-                  currentPage={safeCurrentPage}
-                  pageSize={pageSize}
-                  onPageChange={setCurrentPage}
+                  totalItems={auditLogs.total || rows.length}
+                  currentPage={auditLogs.page || currentPage}
+                  pageSize={auditLogs.limit || Number(appliedFilters.limit) || 100}
+                  onPageChange={(nextPage) => {
+                    setCurrentPage(nextPage);
+                    void refreshAuditLogs(appliedFilters, nextPage);
+                  }}
                   onPageSizeChange={(next) => {
-                    setPageSize(next);
+                    const nextFilters = { ...filters, limit: String(next) };
+                    setFilters(nextFilters);
+                    setAppliedFilters(nextFilters);
                     setCurrentPage(1);
+                    void refreshAuditLogs(nextFilters, 1);
                   }}
                 />
                 </>
