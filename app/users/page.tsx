@@ -687,6 +687,7 @@ const fetchUsers = async (filters?: UsersFilters, page = 1, limit = 50): Promise
       return accumulator;
     }, {});
 
+    params.page = String(page);
     params.limit = String(limit);
     params.skip = String(Math.max(page - 1, 0) * limit);
 
@@ -5164,8 +5165,8 @@ export default function UsersPage() {
               title="Customer directory"
               rows={rows}
               totalItems={totalUsers}
-              currentPage={usersState.page || currentPage}
-              pageSize={usersState.limit || pageSize}
+              currentPage={currentPage}
+              pageSize={pageSize}
               onPageChange={(next) => {
                 setCurrentPage(next);
               }}

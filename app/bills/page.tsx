@@ -26,7 +26,8 @@ import { adminService } from "@/lib/services/adminService";
 import { exportTableRows } from "@/lib/export/table";
 import { useRouteAccess } from "@/lib/admin-access";
 import { AccessDeniedState } from "@/components/AccessDeniedState";
-import { TablePagination, paginateItems } from "@/components/TablePagination";
+import { TablePagination } from "@/components/TablePagination";
+import { extractPaginationMeta } from "@/lib/pagination";
 
 type BillFilters = {
   search: string;
@@ -40,6 +41,10 @@ type BillFilters = {
 type BillsState = {
   payload: unknown;
   rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+  skip: number;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -205,6 +210,20 @@ const getDefaultFilters = (): BillFilters => ({
   toDate: "",
 });
 
+const buildRequestParams = (filters: BillFilters) => {
+  const params: Record<string, string> = {};
+
+  Object.entries(filters).forEach(([key, value]) => {
+    const normalized = value.trim();
+
+    if (normalized) {
+      params[key] = normalized;
+    }
+  });
+
+  return params;
+};
+
 const getDefaultWebhookPayload = () =>
   JSON.stringify(
     {
@@ -275,13 +294,19 @@ const getStatusTone = (status: unknown) => {
   return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100";
 };
 
-const fetchBills = async (): Promise<BillsState> => {
+const fetchBills = async (filters: BillFilters, page = 1, limit = 50): Promise<BillsState> => {
   try {
-    const payload = await adminService.getBillHistory();
+    const payload = await adminService.getBillHistory({
+      ...buildRequestParams(filters),
+      limit,
+      skip: Math.max(page - 1, 0) * limit,
+    });
+    const pagination = extractPaginationMeta(payload, limit);
 
     return {
       payload,
       rows: extractRows(payload),
+      ...pagination,
       loading: false,
       loaded: true,
       error: "",
@@ -290,6 +315,10 @@ const fetchBills = async (): Promise<BillsState> => {
     return {
       payload: null,
       rows: [],
+      total: 0,
+      page: 1,
+      limit,
+      skip: 0,
       loading: false,
       loaded: true,
       error: getErrorMessage(error),
@@ -649,6 +678,10 @@ export default function BillsPage() {
   const [bills, setBills] = useState<BillsState>({
     payload: null,
     rows: [],
+    total: 0,
+    page: 1,
+    limit: 50,
+    skip: 0,
     loading: false,
     loaded: false,
     error: "",
@@ -661,7 +694,14 @@ export default function BillsPage() {
   const [notice, setNotice] = useState<NoticeState>(null);
   const [userLabels, setUserLabels] = useState<UserLabelMap>({});
   const [exportingFormat, setExportingFormat] = useState<"" | "csv" | "xlsx">("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const isDarkMode = resolvedTheme === "dark";
+
+  const updateFilters = (updater: (current: BillFilters) => BillFilters) => {
+    setCurrentPage(1);
+    setFilters(updater);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -676,7 +716,7 @@ export default function BillsPage() {
       return;
     }
 
-    void fetchBills().then((result) => {
+    void fetchBills(filters, currentPage, pageSize).then((result) => {
       if (!cancelled) {
         setBills(result);
       }
@@ -685,69 +725,19 @@ export default function BillsPage() {
     return () => {
       cancelled = true;
     };
-  }, [canOpenBills, router]);
+  }, [canOpenBills, currentPage, filters, pageSize, router]);
 
   const refreshBills = async () => {
     setBills((current) => ({ ...current, loading: true, error: "" }));
-    const result = await fetchBills();
+    const result = await fetchBills(filters, currentPage, pageSize);
     setBills(result);
   };
-
-  const filteredRows = useMemo(() => {
-    const search = filters.search.trim().toLowerCase();
-
-    return bills.rows.filter((row) => {
-      const searchable = [
-        getRecordValue(row, ["reference"]),
-        getRecordValue(row, ["recipient"]),
-        getRecordValue(row, ["customerAccountNo"]),
-        getRecordValue(row, ["providerType"]),
-        getRecordValue(row, ["serviceType"]),
-        getRecordValue(row, ["userId"]),
-        getRecordValue(row, ["billId"]),
-        getRecordValue(row, ["token"]),
-      ]
-        .map((value) => String(value ?? "").toLowerCase())
-        .join(" ");
-
-      const status = String(getRecordValue(row, ["status"]) ?? "").toLowerCase();
-      const serviceType = String(getRecordValue(row, ["serviceType"]) ?? "").trim().toLowerCase();
-      const providerType = String(getRecordValue(row, ["providerType"]) ?? "").trim().toLowerCase();
-
-      if (search && !searchable.includes(search)) {
-        return false;
-      }
-
-      if (filters.status && status !== filters.status.toLowerCase()) {
-        return false;
-      }
-
-      if (filters.serviceType && serviceType !== filters.serviceType.toLowerCase()) {
-        return false;
-      }
-
-      if (filters.providerType && providerType !== filters.providerType.toLowerCase()) {
-        return false;
-      }
-
-      return matchesDateRange(row, filters.fromDate, filters.toDate);
-    });
-  }, [bills.rows, filters]);
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedRows = paginateItems(filteredRows, safeCurrentPage, pageSize);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filters]);
+  const rows = bills.rows;
 
   useEffect(() => {
     const visibleUserIds = Array.from(
       new Set(
-        paginatedRows
+        rows
           .map((row) => String(getRecordValue(row, ["userId", "user_id"]) ?? "").trim())
           .filter(Boolean),
       ),
@@ -785,14 +775,14 @@ export default function BillsPage() {
     return () => {
       cancelled = true;
     };
-  }, [paginatedRows, userLabels]);
+  }, [rows, userLabels]);
 
   const totals = useMemo(() => {
-    const successCount = filteredRows.filter((row) => String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "success").length;
-    const failedCount = filteredRows.filter((row) => String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "failed").length;
-    const totalAmount = filteredRows.reduce((sum, row) => sum + getAmount(row), 0);
+    const successCount = rows.filter((row) => String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "success").length;
+    const failedCount = rows.filter((row) => String(getRecordValue(row, ["status"]) ?? "").toLowerCase() === "failed").length;
+    const totalAmount = rows.reduce((sum, row) => sum + getAmount(row), 0);
     const uniqueCustomers = new Set(
-      filteredRows
+      rows
         .map((row) => String(getRecordValue(row, ["customerAccountNo", "recipient", "userId"]) ?? ""))
         .filter(Boolean),
     ).size;
@@ -803,7 +793,7 @@ export default function BillsPage() {
       totalAmount,
       uniqueCustomers,
     };
-  }, [filteredRows]);
+  }, [rows]);
 
   const availableValues = useMemo(() => {
     const build = (keys: string[]) =>
@@ -841,7 +831,7 @@ export default function BillsPage() {
         filenameBase: "bill-payment-transactions",
         sheetName: "Bills",
         format,
-        rows: filteredRows,
+        rows,
         columns: [
           {
             key: "initiatedBy",
@@ -1043,7 +1033,7 @@ export default function BillsPage() {
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" aria-hidden="true" />
                         <input
                           value={filters.search}
-                          onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+                          onChange={(event) => updateFilters((current) => ({ ...current, search: event.target.value }))}
                           placeholder="Reference, recipient, account number, bill id"
                           className="h-11 w-full rounded-lg border border-white/15 bg-white/10 pl-10 pr-3 text-sm font-semibold text-white outline-none transition placeholder:text-slate-300 focus:border-white/40"
                         />
@@ -1054,7 +1044,7 @@ export default function BillsPage() {
                       <input
                         type="date"
                         value={filters.fromDate}
-                        onChange={(event) => setFilters((current) => ({ ...current, fromDate: event.target.value }))}
+                        onChange={(event) => updateFilters((current) => ({ ...current, fromDate: event.target.value }))}
                         className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white outline-none transition focus:border-white/40"
                       />
                     </label>
@@ -1063,7 +1053,7 @@ export default function BillsPage() {
                       <input
                         type="date"
                         value={filters.toDate}
-                        onChange={(event) => setFilters((current) => ({ ...current, toDate: event.target.value }))}
+                        onChange={(event) => updateFilters((current) => ({ ...current, toDate: event.target.value }))}
                         className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white outline-none transition focus:border-white/40"
                       />
                     </label>
@@ -1080,7 +1070,7 @@ export default function BillsPage() {
                         <select
                           value={filters[field.key as keyof BillFilters]}
                           onChange={(event) =>
-                            setFilters((current) => ({
+                            updateFilters((current) => ({
                               ...current,
                               [field.key]: event.target.value,
                             }))
@@ -1101,14 +1091,17 @@ export default function BillsPage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <button
                       type="button"
-                      onClick={() => setFilters(getDefaultFilters())}
+                      onClick={() => {
+                        setCurrentPage(1);
+                        setFilters(getDefaultFilters());
+                      }}
                       className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:bg-white/15"
                     >
                       <RefreshCw className="h-4 w-4" aria-hidden="true" />
                       Reset filters
                     </button>
                     <div className="rounded-lg border border-white/15 bg-white/10 px-4 py-3 text-xs font-medium leading-6 text-slate-200">
-                      Filters apply instantly to the bill records already loaded from the backend.
+                      Filters query the backend directly, and pagination follows the filtered result set.
                     </div>
                   </div>
                 </div>
@@ -1134,7 +1127,7 @@ export default function BillsPage() {
             )}
 
             <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-              <SummaryCard label="Filtered bills" value={formatValue(filteredRows.length)} icon={FileText} />
+              <SummaryCard label="Filtered bills" value={formatValue(bills.total || rows.length)} icon={FileText} />
               <SummaryCard label="Successful bills" value={formatValue(totals.successCount)} icon={CheckCircle2} />
               <SummaryCard label="Failed bills" value={formatValue(totals.failedCount)} icon={AlertCircle} />
               <SummaryCard label="Bill volume" value={formatCurrency(totals.totalAmount)} icon={WalletCards} />
@@ -1153,11 +1146,11 @@ export default function BillsPage() {
                   </span>
                   <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/10 dark:bg-white/5">
                     <FileText className="h-4 w-4" aria-hidden="true" />
-                    Showing {formatValue(paginatedRows.length)} of {formatValue(filteredRows.length)}
+                    Showing {formatValue(rows.length)} of {formatValue(bills.total || rows.length)}
                   </span>
                   <button
                     type="button"
-                    disabled={!filteredRows.length || Boolean(exportingFormat)}
+                    disabled={!rows.length || Boolean(exportingFormat)}
                     onClick={() => void handleExport("csv")}
                     className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-[#069AFF]/35 hover:text-[#069AFF] disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
                   >
@@ -1166,7 +1159,7 @@ export default function BillsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={!filteredRows.length || Boolean(exportingFormat)}
+                    disabled={!rows.length || Boolean(exportingFormat)}
                     onClick={() => void handleExport("xlsx")}
                     className="inline-flex items-center gap-2 rounded-lg border border-[#069AFF]/30 bg-[#069AFF]/10 px-3 py-2 text-xs font-bold text-[#069AFF] transition hover:bg-[#069AFF] hover:text-white disabled:opacity-60 dark:text-sky-200"
                   >
@@ -1190,7 +1183,7 @@ export default function BillsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                    {paginatedRows.map((row, index) => {
+                    {rows.map((row, index) => {
                       const id = getBillId(row);
                       const userId = String(getRecordValue(row, ["userId", "user_id"]) ?? "").trim();
                       const name = getRecordValue(row, ["customerName", "name", "fullName", "userName", "recipient", "email"]) ?? `Bill ${index + 1}`;
@@ -1250,8 +1243,8 @@ export default function BillsPage() {
               </div>
 
               <TablePagination
-                totalItems={filteredRows.length}
-                currentPage={safeCurrentPage}
+                totalItems={bills.total || rows.length}
+                currentPage={currentPage}
                 pageSize={pageSize}
                 onPageChange={setCurrentPage}
                 onPageSizeChange={(next) => {
@@ -1260,7 +1253,7 @@ export default function BillsPage() {
                 }}
               />
 
-              {!filteredRows.length && (
+              {!rows.length && (
                 <div className="px-5 py-10 text-sm font-medium text-slate-500 dark:text-slate-400">
                   No bill records matched the current filters.
                 </div>

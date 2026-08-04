@@ -1178,8 +1178,8 @@ export default function WalletTransactionsPage() {
               </div>
               <TablePagination
                 totalItems={transactions.total || rows.length}
-                currentPage={transactions.page || currentPage}
-                pageSize={transactions.limit || Number(appliedFilters.limit) || 100}
+                currentPage={currentPage}
+                pageSize={Number(appliedFilters.limit) || transactions.limit || 100}
                 onPageChange={(nextPage) => {
                   setCurrentPage(nextPage);
                   void refreshTransactions(appliedFilters, nextPage);

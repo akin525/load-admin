@@ -186,14 +186,14 @@ export const adminService = {
     },
 
     // GET /admin/bill/history
-    getBillHistory: async (): Promise<unknown> => {
-        const response = await api.get('/admin/bill/history');
+    getBillHistory: async (params?: QueryParams): Promise<unknown> => {
+        const response = await api.get('/admin/bill/history', { params });
         return response.data;
     },
 
     // GET /admin/bill/history/:serviceType
-    getBillHistoryByServiceType: async (serviceType: string): Promise<unknown> => {
-        const response = await api.get(`/admin/bill/history/${serviceType}`);
+    getBillHistoryByServiceType: async (serviceType: string, params?: QueryParams): Promise<unknown> => {
+        const response = await api.get(`/admin/bill/history/${serviceType}`, { params });
         return response.data;
     },
 
