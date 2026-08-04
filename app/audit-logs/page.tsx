@@ -232,9 +232,10 @@ const buildRequestParams = (filters: AuditLogFilters) => {
 const fetchAuditLogs = async (filters: AuditLogFilters, page = 1): Promise<AuditLogsState> => {
   try {
     const requestedLimit = Number(filters.limit) || 100;
+    const skip = Math.max(page - 1, 0) * requestedLimit;
     const params = {
       ...buildRequestParams(filters),
-      page,
+      skip,
       limit: requestedLimit,
     };
     const payload = filters.adminId.trim()

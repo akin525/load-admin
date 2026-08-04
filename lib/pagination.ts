@@ -29,11 +29,17 @@ export const extractPaginationMeta = (payload: unknown, fallbackLimit = 50): Pag
   }
 
   const rows = Array.isArray(value.data) ? value.data : [];
+  const limit = typeof value.limit === "number" && value.limit > 0 ? value.limit : fallbackLimit;
+  const skip = typeof value.skip === "number" && value.skip >= 0 ? value.skip : 0;
+  const page =
+    typeof value.page === "number" && value.page > 0
+      ? value.page
+      : Math.floor(skip / Math.max(limit, 1)) + 1;
 
   return {
     total: typeof value.total === "number" ? value.total : rows.length,
-    page: typeof value.page === "number" && value.page > 0 ? value.page : 1,
-    limit: typeof value.limit === "number" && value.limit > 0 ? value.limit : fallbackLimit,
-    skip: typeof value.skip === "number" && value.skip >= 0 ? value.skip : 0,
+    page,
+    limit,
+    skip,
   };
 };

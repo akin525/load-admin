@@ -169,9 +169,10 @@ const buildRequestParams = (filters: MixpanelLogFilters) => {
 const fetchMixpanelLogs = async (filters: MixpanelLogFilters, page = 1): Promise<MixpanelLogsState> => {
   try {
     const requestedLimit = Number(filters.limit) || 100;
+    const skip = Math.max(page - 1, 0) * requestedLimit;
     const payload = await adminService.getMixpanelLogs({
       ...buildRequestParams(filters),
-      page,
+      skip,
       limit: requestedLimit,
     });
     const pagination = extractPaginationMeta(payload, requestedLimit);

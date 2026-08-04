@@ -173,9 +173,10 @@ const buildRequestParams = (filters: SecurityEventFilters) => {
 const fetchSecurityEvents = async (filters: SecurityEventFilters, page = 1): Promise<SecurityEventsState> => {
   try {
     const requestedLimit = Number(filters.limit) || 100;
+    const skip = Math.max(page - 1, 0) * requestedLimit;
     const payload = await adminService.getSecurityEvents({
       ...buildRequestParams(filters),
-      page,
+      skip,
       limit: requestedLimit,
     });
     const pagination = extractPaginationMeta(payload, requestedLimit);

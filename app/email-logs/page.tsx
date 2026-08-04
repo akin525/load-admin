@@ -145,9 +145,10 @@ const buildRequestParams = (filters: EmailLogFilters) => {
 const fetchEmailLogs = async (filters: EmailLogFilters, page = 1): Promise<EmailLogsState> => {
   try {
     const requestedLimit = Number(filters.limit) || 100;
+    const skip = Math.max(page - 1, 0) * requestedLimit;
     const payload = await adminService.getEmailLogs({
       ...buildRequestParams(filters),
-      page,
+      skip,
       limit: requestedLimit,
     });
     const pagination = extractPaginationMeta(payload, requestedLimit);

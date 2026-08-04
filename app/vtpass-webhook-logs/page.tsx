@@ -171,9 +171,10 @@ const buildRequestParams = (filters: VtpassWebhookFilters) => {
 const fetchVtpassWebhookLogs = async (filters: VtpassWebhookFilters, page = 1): Promise<VtpassWebhookLogsState> => {
   try {
     const requestedLimit = Number(filters.limit) || 100;
+    const skip = Math.max(page - 1, 0) * requestedLimit;
     const payload = await adminService.getVtpassWebhookLogs({
       ...buildRequestParams(filters),
-      page,
+      skip,
       limit: requestedLimit,
     });
     const pagination = extractPaginationMeta(payload, requestedLimit);

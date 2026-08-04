@@ -200,11 +200,18 @@ const extractUsersPagination = (payload: unknown) => {
     };
   }
 
+  const limit = typeof value.limit === "number" && value.limit > 0 ? value.limit : 50;
+  const skip = typeof value.skip === "number" && value.skip >= 0 ? value.skip : 0;
+  const page =
+    typeof value.page === "number" && value.page > 0
+      ? value.page
+      : Math.floor(skip / Math.max(limit, 1)) + 1;
+
   return {
     total: typeof value.total === "number" ? value.total : extractRows(payload).length,
-    page: typeof value.page === "number" && value.page > 0 ? value.page : 1,
-    limit: typeof value.limit === "number" && value.limit > 0 ? value.limit : 50,
-    skip: typeof value.skip === "number" && value.skip >= 0 ? value.skip : 0,
+    page,
+    limit,
+    skip,
   };
 };
 
@@ -680,8 +687,8 @@ const fetchUsers = async (filters?: UsersFilters, page = 1, limit = 50): Promise
       return accumulator;
     }, {});
 
-    params.page = String(page);
     params.limit = String(limit);
+    params.skip = String(Math.max(page - 1, 0) * limit);
 
     const payload = await adminService.getUsers(params);
     const pagination = extractUsersPagination(payload);

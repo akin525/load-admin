@@ -311,9 +311,11 @@ const buildRequestParams = (filters: WalletTransactionFilters) => {
 const fetchWalletTransactions = async (filters: WalletTransactionFilters, page = 1): Promise<WalletTransactionsState> => {
   try {
     const requestedLimit = Number(filters.limit) || 100;
+    const skip = Math.max(page - 1, 0) * requestedLimit;
     const payload = await adminService.getWalletTransactions({
       ...buildRequestParams(filters),
       page,
+      skip,
       limit: requestedLimit,
     });
     const pagination = extractPaginationMeta(payload, requestedLimit);

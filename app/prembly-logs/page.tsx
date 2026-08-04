@@ -167,9 +167,10 @@ const buildRequestParams = (filters: PremblyLogFilters) => {
 const fetchPremblyLogs = async (filters: PremblyLogFilters, page = 1): Promise<PremblyLogsState> => {
   try {
     const requestedLimit = Number(filters.limit) || 100;
+    const skip = Math.max(page - 1, 0) * requestedLimit;
     const payload = await adminService.getPremblyLogs({
       ...buildRequestParams(filters),
-      page,
+      skip,
       limit: requestedLimit,
     });
     const pagination = extractPaginationMeta(payload, requestedLimit);

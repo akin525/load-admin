@@ -197,9 +197,10 @@ const buildRequestParams = (filters: PushNotificationLogFilters) => {
 const fetchPushNotificationLogs = async (filters: PushNotificationLogFilters, page = 1): Promise<PushNotificationLogsState> => {
   try {
     const requestedLimit = Number(filters.limit) || 100;
+    const skip = Math.max(page - 1, 0) * requestedLimit;
     const payload = await adminService.getPushNotificationLogs({
       ...buildRequestParams(filters),
-      page,
+      skip,
       limit: requestedLimit,
     });
     const pagination = extractPaginationMeta(payload, requestedLimit);

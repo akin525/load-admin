@@ -161,9 +161,10 @@ const buildRequestParams = (filters: RecentKycFilters) => {
 const fetchRecentKycs = async (filters: RecentKycFilters, page = 1): Promise<RecentKycState> => {
   try {
     const requestedLimit = Number(filters.limit) || 100;
+    const skip = Math.max(page - 1, 0) * requestedLimit;
     const payload = await adminService.getRecentKycs({
       ...buildRequestParams(filters),
-      page,
+      skip,
       limit: requestedLimit,
     });
     const pagination = extractPaginationMeta(payload, requestedLimit);

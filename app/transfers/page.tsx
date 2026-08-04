@@ -484,9 +484,10 @@ export default function TransfersPage() {
     setState((prev) => ({ ...prev, loading: true, error: "" }));
     try {
       const requestedLimit = Number(nextFilters.limit) || 1000;
+      const skip = Math.max(nextPage - 1, 0) * requestedLimit;
       const response = await adminService.getTransfers({
         ...nextFilters,
-        page: nextPage,
+        skip,
         limit: requestedLimit,
       } as any);
       const rows = extractTransferRows(response);
